@@ -1,0 +1,7 @@
+colorlog
+Jinja2
+pandas
+ruff
+tabulate
+typer
+typing
