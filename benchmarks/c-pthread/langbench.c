@@ -55,13 +55,14 @@ int main(int argc, char **argv) {
 
   pthread_t threads[num_threads];
   Chunk chunks[num_threads];
+  size_t current_pos = 0;
   for (size_t i = 0; i < num_threads; i++) {
-    chunks[i].size = chunk_size + chunk_size_overflow;
-    chunks[i].left = left + chunk_size * i;
-    chunks[i].right = right + chunk_size * i;
+    chunks[i].size = chunk_size + (i < chunk_size_overflow ? 1 : 0);
+    chunks[i].left = left + current_pos;
+    chunks[i].right = right + current_pos;
     chunks[i].result = 0;
+    current_pos += chunks[i].size;
     pthread_create(&threads[i], NULL, compute, &chunks[i]);
-    --chunk_size_overflow;
   }
 
   double result = 0;
