@@ -1,4 +1,5 @@
 Language,Elapsed Time,System Time,User Time,CPU Usage
-nodejs-worker,1.87,0.54,17.57,967%
-c,7.78,0.04,7.74,99%
-nodejs,12.25,0.23,12.02,100%
+nodejs-worker,1.79,0.61,16.73,968%
+bunjs,7.09,0.16,6.94,100%
+c,7.85,0.04,7.8,99%
+nodejs,11.92,0.25,11.67,100%
