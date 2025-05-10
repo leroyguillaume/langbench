@@ -6,14 +6,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 Benchmarks ran on 534 MB.
 
-| Language      |   Elapsed Time |   System Time |   User Time | CPU Usage   |
-|:--------------|---------------:|--------------:|------------:|:------------|
-| c-pthread     |           0.97 |          0.12 |        9.38 | 975%        |
-| bunjs-worker  |           1.19 |          0.39 |       10.12 | 880%        |
-| nodejs-worker |           1.85 |          0.51 |       18.3  | 1015%       |
-| c             |           6.95 |          0.09 |        6.85 | 99%         |
-| bunjs         |           7.16 |          0.11 |        7.05 | 100%        |
-| nodejs        |          14.83 |          0.24 |       14.59 | 100%        |
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th></tr><tr><td>c-pthread</td><td>1.74</td><td>675</td><td>0.25</td><td>11.53</td><tr><td>bunjs-worker</td><td>1.88</td><td>673</td><td>0.34</td><td>12.31</td><tr><td>nodejs-worker</td><td>3.28</td><td>669</td><td>0.85</td><td>21.13</td><tr><td>c</td><td>8.43</td><td>99</td><td>0.08</td><td>8.33</td><tr><td>bunjs</td><td>8.71</td><td>100</td><td>0.34</td><td>8.37</td><tr><td>nodejs</td><td>14.34</td><td>100</td><td>0.19</td><td>14.15</td></table>
 
 ## Usage
 
