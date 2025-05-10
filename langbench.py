@@ -22,7 +22,9 @@ def main(
         int, Option("--data-size", help="Size of the data to generate")
     ] = 140000000,
     dry_run: Annotated[bool, Option("--dry-run", help="Dry run")] = False,
-    langs: Annotated[list[str], Option(help="Language to run the benchmarks for")] = [],
+    langs: Annotated[
+        list[str], Option("-l", "--lang", help="Language to run the benchmarks for")
+    ] = [],
     log_level: Annotated[str, Option("--log-level", help="Log level")] = "INFO",
     output_filepath: Annotated[
         str, Option("-o", "--output", help="Filepath to store the results")
@@ -52,6 +54,9 @@ def main(
     logger.setLevel(log_level)
     if len(langs) == 0:
         langs = [dir for dir in os.listdir(benchmarks_dir)]
+    results = None
+    if os.path.isfile(output_filepath):
+        results = pandas.read_csv(output_filepath)
     logging.info("🔨 Building base image")
     run(
         [
@@ -64,7 +69,6 @@ def main(
             "base",
         ]
     )
-    results = None
     for lang in langs:
         tag = f"langbench-{lang}"
         logging.info(f"🔨 Building {tag} image")
@@ -79,7 +83,10 @@ def main(
         if results is None:
             results = result
         else:
-            results = pandas.concat([results, result], ignore_index=True)
+            if lang in results["Language"].values:
+                results.loc[results["Language"] == lang] = result.values
+            else:
+                results = pandas.concat([results, result], ignore_index=True)
     if not dry_run:
         results.sort_values(by=["Elapsed Time"], inplace=True)
         results.to_csv(output_filepath, index=False)
