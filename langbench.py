@@ -21,6 +21,7 @@ def main(
     data_size: Annotated[
         int, Option("--data-size", help="Size of the data to generate")
     ] = 40000000,
+    dry_run: Annotated[bool, Option("--dry-run", help="Dry run")] = False,
     langs: Annotated[list[str], Option(help="Language to run the benchmarks for")] = [],
     log_level: Annotated[str, Option("--log-level", help="Log level")] = "INFO",
     output_filepath: Annotated[
@@ -79,19 +80,20 @@ def main(
             results = result
         else:
             results = pandas.concat([results, result], ignore_index=True)
-    results.sort_values(by=["Elapsed Time"], inplace=True)
-    results.to_csv(output_filepath, index=False)
-    table = results.to_markdown(index=False)
-    logging.debug("📖 Loading README template")
-    with open(readme_template_filepath, "r") as readme_template_file:
-        readme_template = Template(
-            readme_template_file.read(), keep_trailing_newline=True
-        )
-    logging.debug("📝 Writing README.md")
-    data_size_mb = round(data_size * 4 / 1024 / 1024)
-    readme = readme_template.render(data_size=f"{data_size_mb} MB", table=table)
-    with open("README.md", "w") as readme_file:
-        readme_file.write(readme)
+    if not dry_run:
+        results.sort_values(by=["Elapsed Time"], inplace=True)
+        results.to_csv(output_filepath, index=False)
+        table = results.to_markdown(index=False)
+        logging.debug("📖 Loading README template")
+        with open(readme_template_filepath, "r") as readme_template_file:
+            readme_template = Template(
+                readme_template_file.read(), keep_trailing_newline=True
+            )
+        logging.debug("📝 Writing README.md")
+        data_size_mb = round(data_size * 4 / 1024 / 1024)
+        readme = readme_template.render(data_size=f"{data_size_mb} MB", table=table)
+        with open("README.md", "w") as readme_file:
+            readme_file.write(readme)
 
 
 def run(cmd: list[str]):
