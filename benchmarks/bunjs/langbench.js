@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+// @ts-nocheck
+
 const { argv, exit } = process;
 
 if (argv.length < 4) {
@@ -14,9 +16,7 @@ if (size <= 0) {
 
 let left, right;
 try {
-  // @ts-ignore
   const file = Bun.file(argv[2]);
-  // @ts-ignore
   const buffer = await file.arrayBuffer();
   if (buffer.byteLength < size * 2 * 4) {
     throw new Error("File too small");
@@ -30,7 +30,6 @@ try {
 
 let result = 0;
 for (let i = 0; i < size; ++i) {
-  // @ts-ignore
   result += Math.sqrt(Math.abs(Math.cos(left[i]) * Math.sin(right[i])));
 }
 
