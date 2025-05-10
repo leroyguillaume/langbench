@@ -4,7 +4,9 @@ import csv
 from dataclasses import dataclass
 from jinja2 import Template
 import logging
+import multiprocessing
 import os
+import platform
 import subprocess
 import typer
 from typer import Option
@@ -53,6 +55,9 @@ def main(
         list[str], Option("-l", "--lang", help="Language to run the benchmarks for")
     ] = [],
     log_level: Annotated[str, Option("--log-level", help="Log level")] = "INFO",
+    only_render: Annotated[
+        bool, Option("--only-render", help="Only render the README")
+    ] = False,
     output_filepath: Annotated[
         str, Option("-o", "--output", help="Filepath to store the results")
     ] = "results.csv",
@@ -95,37 +100,46 @@ def main(
                     system_time=float(row[2]),
                     user_time=float(row[3]),
                 )
-    logging.info("🔨 Building base image")
-    run(
-        [
-            "docker",
-            "build",
-            "--build-arg",
-            f"DATA_SIZE={data_size}",
-            "-t",
-            "langbench-base",
-            "base",
-        ]
-    )
-    for lang in langs:
-        tag = f"langbench-{lang}"
-        logging.info(f"🔨 Building {tag} image")
-        run(["docker", "build", "-t", tag, f"{benchmarks_dir}/{lang}"])
-        logging.info(f"🏃 Running benchmarks for {lang}")
-        run(["docker", "run", "-v", f"./{results_dir}/{lang}:/var/lib/langbench", tag])
-        result_filepath = f"{results_dir}/{lang}/result.csv"
-        logging.debug(f"📄 Loading results from {result_filepath}")
-        with open(result_filepath, "r") as result_file:
-            reader = csv.reader(result_file)
-            row = next(reader)
-        result = LangResult(
-            cpu_usage=int(row[3].removesuffix("%")),
-            elapsed_time=float(row[0]),
-            lang=lang,
-            system_time=float(row[1]),
-            user_time=float(row[2]),
+    if not only_render:
+        logging.info("🔨 Building base image")
+        run(
+            [
+                "docker",
+                "build",
+                "--build-arg",
+                f"DATA_SIZE={data_size}",
+                "-t",
+                "langbench-base",
+                "base",
+            ]
         )
-        results[lang] = result
+        for lang in langs:
+            tag = f"langbench-{lang}"
+            logging.info(f"🔨 Building {tag} image")
+            run(["docker", "build", "-t", tag, f"{benchmarks_dir}/{lang}"])
+            logging.info(f"🏃 Running benchmarks for {lang}")
+            run(
+                [
+                    "docker",
+                    "run",
+                    "-v",
+                    f"./{results_dir}/{lang}:/var/lib/langbench",
+                    tag,
+                ]
+            )
+            result_filepath = f"{results_dir}/{lang}/result.csv"
+            logging.debug(f"📄 Loading results from {result_filepath}")
+            with open(result_filepath, "r") as result_file:
+                reader = csv.reader(result_file)
+                row = next(reader)
+            result = LangResult(
+                cpu_usage=int(row[3].removesuffix("%")),
+                elapsed_time=float(row[0]),
+                lang=lang,
+                system_time=float(row[1]),
+                user_time=float(row[2]),
+            )
+            results[lang] = result
     if not dry_run:
         sorted_results = sorted(results.values(), key=lambda x: x.elapsed_time)
         logging.debug(f"📝 Writing results to {output_filepath}")
@@ -149,25 +163,59 @@ def main(
             )
         logging.debug("📝 Writing README.md")
         data_size_mb = round(data_size * 4 / 1024 / 1024)
-        results_table = html_table(
-            HEADERS, [result.to_list() for result in sorted_results]
-        )
+        results_table = generate_results_table(sorted_results)
+        compare_table = generate_compare_table(sorted_results)
         readme = readme_template.render(
-            data_size=f"{data_size_mb} MB", results_table=results_table
+            compare_table=compare_table,
+            cores=multiprocessing.cpu_count(),
+            cpu=platform.processor(),
+            data_size=f"{data_size_mb} MB",
+            results_table=results_table,
+            threads=os.cpu_count(),
         )
         with open("README.md", "w") as readme_file:
             readme_file.write(readme)
 
 
-def html_table(headers: list[str], rows: list[list[str]]) -> str:
+def generate_compare_table(sorted_results: list[LangResult]) -> str:
     html = "<table><tr>"
-    for header in headers:
+    html += "<th></th>"
+    for result_src in sorted_results:
+        html += f"<th>{result_src.lang}</th>"
+    html += "</tr>"
+    for result_src in sorted_results:
+        html += "<tr>"
+        html += f"<th>{result_src.lang}</th>"
+        for result_tgt in sorted_results:
+            style = ""
+            if result_src.lang == result_tgt.lang:
+                val = ""
+            else:
+                ratio = round(result_src.elapsed_time - result_tgt.elapsed_time, 2)
+                val = str(ratio)
+                if ratio < 0:
+                    style = "color: red;"
+                elif ratio > 0:
+                    style = "color: green;"
+            html += f"<td style='{style}'>{val}</td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+
+def generate_results_table(sorted_results: list[LangResult]) -> str:
+    html = "<table><tr>"
+    for header in HEADERS:
         html += f"<th>{header}</th>"
     html += "</tr>"
-    for row in rows:
+    for result in sorted_results:
         html += "<tr>"
-        for cell in row:
-            html += f"<td>{cell}</td>"
+        html += f"<td>{result.lang}</td>"
+        html += f"<td>{result.elapsed_time}</td>"
+        html += f"<td>{result.system_time}</td>"
+        html += f"<td>{result.user_time}</td>"
+        html += f"<td>{result.cpu_usage}</td>"
+        html += "</tr>"
     html += "</table>"
     return html
 
