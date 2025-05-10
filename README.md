@@ -8,6 +8,7 @@ Benchmarks ran on 534 MB.
 
 | Language   |   Elapsed Time |   System Time |   User Time | CPU Usage   |
 |:-----------|---------------:|--------------:|------------:|:------------|
+| c-pthread  |           1.82 |          0.33 |       11.61 | 655%        |
 | c          |           8.38 |          0.13 |        8.24 | 99%         |
 | nodejs     |          14.29 |          0.19 |       14.09 | 99%         |
 
