@@ -1,7 +1,7 @@
 Language,Elapsed Time (s),System Time (s),User Time (s),CPU Usage (%)
-c-pthread,1.74,0.25,11.53,675
-bunjs-worker,1.88,0.34,12.31,673
-nodejs-worker,3.28,0.85,21.13,669
-c,8.43,0.08,8.33,99
-bunjs,8.71,0.34,8.37,100
-nodejs,14.34,0.19,14.15,100
+c-pthread,1.59,0.11,11.48,728
+bunjs-worker,1.9,0.44,12.08,658
+nodejs-worker,2.97,0.65,19.45,675
+c,8.32,0.08,8.23,99
+bunjs,8.46,0.13,8.33,100
+nodejs,14.44,0.43,14.01,100
