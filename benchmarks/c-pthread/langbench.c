@@ -38,16 +38,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  int *left = malloc(size * sizeof(int));
-  int *right = malloc(size * sizeof(int));
+  int *data = malloc(size * sizeof(int) * 2);
 
   FILE *file = fopen(argv[1], "r");
   if (!file) {
     fprintf(stderr, "Error: Could not open file %s\n", argv[1]);
     return 1;
   }
-  fread(left, sizeof(int), size, file);
-  fread(right, sizeof(int), size, file);
+  fread(data, sizeof(int), size, file);
+  fread(data + size, sizeof(int), size, file);
   fclose(file);
 
   unsigned chunk_size = size / num_threads;
@@ -58,8 +57,8 @@ int main(int argc, char **argv) {
   size_t current_pos = 0;
   for (size_t i = 0; i < num_threads; i++) {
     chunks[i].size = chunk_size + (i < chunk_size_overflow ? 1 : 0);
-    chunks[i].left = left + current_pos;
-    chunks[i].right = right + current_pos;
+    chunks[i].left = data + current_pos;
+    chunks[i].right = data + size + current_pos;
     chunks[i].result = 0;
     current_pos += chunks[i].size;
     pthread_create(&threads[i], NULL, compute, &chunks[i]);
@@ -73,8 +72,7 @@ int main(int argc, char **argv) {
 
   printf("%f\n", result);
 
-  free(left);
-  free(right);
+  free(data);
 
   return 0;
 }
