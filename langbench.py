@@ -1,16 +1,43 @@
 #!/usr/bin/env python3
 
+import csv
+from dataclasses import dataclass
 from jinja2 import Template
 import logging
 import os
-import pandas
 import subprocess
 import typer
 from typer import Option
 from typing import Annotated
 import colorlog
 
+HEADERS = [
+    "Language",
+    "Elapsed Time (s)",
+    "System Time (s)",
+    "User Time (s)",
+    "CPU Usage (%)",
+]
+
 app = typer.Typer()
+
+
+@dataclass
+class LangResult:
+    cpu_usage: int
+    elapsed_time: float
+    lang: str
+    system_time: float
+    user_time: float
+
+    def to_list(self) -> list[str]:
+        return [
+            self.lang,
+            self.elapsed_time,
+            self.cpu_usage,
+            self.system_time,
+            self.user_time,
+        ]
 
 
 @app.command()
@@ -54,9 +81,20 @@ def main(
     logger.setLevel(log_level)
     if len(langs) == 0:
         langs = [dir for dir in os.listdir(benchmarks_dir)]
-    results = None
+    results = {}
     if os.path.isfile(output_filepath):
-        results = pandas.read_csv(output_filepath)
+        logging.debug("📄 Loading existing results")
+        with open(output_filepath, "r") as result_file:
+            reader = csv.reader(result_file)
+            next(reader, None)
+            for row in reader:
+                results[row[0]] = LangResult(
+                    cpu_usage=int(row[4]),
+                    elapsed_time=float(row[1]),
+                    lang=row[0],
+                    system_time=float(row[2]),
+                    user_time=float(row[3]),
+                )
     logging.info("🔨 Building base image")
     run(
         [
@@ -75,22 +113,35 @@ def main(
         run(["docker", "build", "-t", tag, f"{benchmarks_dir}/{lang}"])
         logging.info(f"🏃 Running benchmarks for {lang}")
         run(["docker", "run", "-v", f"./{results_dir}/{lang}:/var/lib/langbench", tag])
-        result = pandas.read_csv(
-            f"{results_dir}/{lang}/result.csv",
-            names=["Elapsed Time", "System Time", "User Time", "CPU Usage"],
+        result_filepath = f"{results_dir}/{lang}/result.csv"
+        logging.debug(f"📄 Loading results from {result_filepath}")
+        with open(result_filepath, "r") as result_file:
+            reader = csv.reader(result_file)
+            row = next(reader)
+        result = LangResult(
+            cpu_usage=int(row[3].removesuffix("%")),
+            elapsed_time=float(row[0]),
+            lang=lang,
+            system_time=float(row[1]),
+            user_time=float(row[2]),
         )
-        result.insert(0, "Language", lang)
-        if results is None:
-            results = result
-        else:
-            if lang in results["Language"].values:
-                results.loc[results["Language"] == lang] = result.values
-            else:
-                results = pandas.concat([results, result], ignore_index=True)
+        results[lang] = result
     if not dry_run:
-        results.sort_values(by=["Elapsed Time"], inplace=True)
-        results.to_csv(output_filepath, index=False)
-        table = results.to_markdown(index=False)
+        sorted_results = sorted(results.values(), key=lambda x: x.elapsed_time)
+        logging.debug(f"📝 Writing results to {output_filepath}")
+        with open(output_filepath, "w") as output_file:
+            writer = csv.writer(output_file)
+            writer.writerow(HEADERS)
+            for result in sorted_results:
+                writer.writerow(
+                    [
+                        result.lang,
+                        result.elapsed_time,
+                        result.system_time,
+                        result.user_time,
+                        result.cpu_usage,
+                    ]
+                )
         logging.debug("📖 Loading README template")
         with open(readme_template_filepath, "r") as readme_template_file:
             readme_template = Template(
@@ -98,9 +149,27 @@ def main(
             )
         logging.debug("📝 Writing README.md")
         data_size_mb = round(data_size * 4 / 1024 / 1024)
-        readme = readme_template.render(data_size=f"{data_size_mb} MB", table=table)
+        results_table = html_table(
+            HEADERS, [result.to_list() for result in sorted_results]
+        )
+        readme = readme_template.render(
+            data_size=f"{data_size_mb} MB", results_table=results_table
+        )
         with open("README.md", "w") as readme_file:
             readme_file.write(readme)
+
+
+def html_table(headers: list[str], rows: list[list[str]]) -> str:
+    html = "<table><tr>"
+    for header in headers:
+        html += f"<th>{header}</th>"
+    html += "</tr>"
+    for row in rows:
+        html += "<tr>"
+        for cell in row:
+            html += f"<td>{cell}</td>"
+    html += "</table>"
+    return html
 
 
 def run(cmd: list[str]):
