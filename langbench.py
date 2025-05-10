@@ -20,7 +20,7 @@ def main(
     ] = "benchmarks",
     data_size: Annotated[
         int, Option("--data-size", help="Size of the data to generate")
-    ] = 40000000,
+    ] = 140000000,
     dry_run: Annotated[bool, Option("--dry-run", help="Dry run")] = False,
     langs: Annotated[list[str], Option(help="Language to run the benchmarks for")] = [],
     log_level: Annotated[str, Option("--log-level", help="Log level")] = "INFO",

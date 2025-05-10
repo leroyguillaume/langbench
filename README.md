@@ -4,11 +4,12 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 ## Results
 
-Benchmarks ran on 153 MB.
+Benchmarks ran on 534 MB.
 
 | Language   |   Elapsed Time |   System Time |   User Time | CPU Usage   |
 |:-----------|---------------:|--------------:|------------:|:------------|
-| c          |           2.82 |          0.06 |        2.75 | 99%         |
+| c          |           7.64 |          0.04 |        7.6  | 99%         |
+| nodejs     |          11.97 |          0.14 |       11.82 | 100%        |
 
 ## Usage
 

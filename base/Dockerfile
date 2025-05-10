@@ -31,7 +31,9 @@ RUN \
     apt-get update && \
     apt-get install -y \
         --no-install-recommends \
-        time=1.9-0.2 && \
+        time=1.9-0.2 \
+        ca-certificates=20230311 \
+        curl=7.88.1-10+deb12u12 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /var/lib/langbench
