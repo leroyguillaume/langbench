@@ -24,12 +24,8 @@ int main(int argc, char **argv) {
     printf("Error: Could not open file %s\n", argv[1]);
     return 1;
   }
-  for (size_t i = 0; i < size; i++) {
-    fread(&left[i], sizeof(int), 1, file);
-  }
-  for (size_t i = 0; i < size; i++) {
-    fread(&right[i], sizeof(int), 1, file);
-  }
+  fread(left, sizeof(int), size, file);
+  fread(right, sizeof(int), size, file);
   fclose(file);
 
   double result = 0;
