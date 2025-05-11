@@ -26,4 +26,4 @@ CMD ["sh", "-c", "java -cp /usr/local/src/langbench/ SingleThread ${DATA_FILE} $
 
 FROM base AS multithreads
 
-CMD ["sh", "-c", "java -cp /usr/local/src/langbench/ MultiThread ${DATA_FILE} ${DATA_SIZE} $(nproc)"]
+CMD ["sh", "-c", "java -cp /usr/local/src/langbench/ MultiThread ${DATA_FILE} ${DATA_SIZE} ${THREADS}"]

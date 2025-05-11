@@ -19,4 +19,4 @@ CMD ["sh", "-c", "/root/.nvm/versions/node/v24.0.1/bin/node /usr/local/src/langb
 
 FROM base AS multithreads
 
-CMD ["sh", "-c", "/root/.nvm/versions/node/v24.0.1/bin/node /usr/local/src/langbench/multithreads.js ${DATA_FILE} ${DATA_SIZE} $(nproc)"]
+CMD ["sh", "-c", "/root/.nvm/versions/node/v24.0.1/bin/node /usr/local/src/langbench/multithreads.js ${DATA_FILE} ${DATA_SIZE} ${THREADS}"]

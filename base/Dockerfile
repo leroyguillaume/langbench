@@ -45,4 +45,8 @@ RUN \
     mkdir -p /etc/langbench && \
     random "${DATA_FILE}" "${DATA_SIZE}"
 
-ENTRYPOINT ["time", "-f", "%e,%S,%U,%P,%M", "-o", "result.csv"]
+COPY entrypoint.sh /usr/local/bin/entrypoint
+
+RUN chmod +x /usr/local/bin/entrypoint
+
+ENTRYPOINT ["entrypoint"]
