@@ -48,4 +48,4 @@ FROM langbench-base AS multithreads
 
 COPY --from=build /usr/local/bin/langbench-mt /usr/local/bin/langbench-mt
 
-CMD ["sh", "-c", "langbench-mt ${DATA_FILE} ${DATA_SIZE} $(nproc)"]
+CMD ["sh", "-c", "langbench-mt ${DATA_FILE} ${DATA_SIZE} ${THREADS}"]

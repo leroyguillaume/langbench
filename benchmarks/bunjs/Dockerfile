@@ -13,4 +13,4 @@ CMD ["sh", "-c", "/root/.bun/bin/bun /usr/local/src/langbench/singlethread.js ${
 
 FROM base AS multithreads
 
-CMD ["sh", "-c", "/root/.bun/bin/bun /usr/local/src/langbench/multithreads.js ${DATA_FILE} ${DATA_SIZE} $(nproc)"]
+CMD ["sh", "-c", "/root/.bun/bin/bun /usr/local/src/langbench/multithreads.js ${DATA_FILE} ${DATA_SIZE} ${THREADS}"]
