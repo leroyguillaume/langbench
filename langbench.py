@@ -97,19 +97,21 @@ def main(
         SINGLETHREAD_BENCHMARK: {},
         MULTITHREADS_BENCHMARK: {},
     }
-    if os.path.isfile(csv_dirpath):
+    if os.path.isdir(csv_dirpath):
         logging.debug("📄 Loading existing results")
-        with open(csv_dirpath, "r") as result_file:
-            reader = csv.reader(result_file)
-            next(reader, None)
-            for row in reader:
-                results[row[0]] = LangResult(
-                    cpu_usage=int(row[4]),
-                    elapsed_time=float(row[1]),
-                    lang=row[0],
-                    system_time=float(row[2]),
-                    user_time=float(row[3]),
-                )
+        for csv_filepath in os.listdir(csv_dirpath):
+            bench = csv_filepath.removesuffix(".csv")
+            with open(f"{csv_dirpath}/{csv_filepath}", "r") as result_file:
+                reader = csv.reader(result_file)
+                next(reader, None)
+                for row in reader:
+                    results[bench][row[0]] = LangResult(
+                        cpu_usage=int(row[4]),
+                        elapsed_time=float(row[1]),
+                        lang=row[0],
+                        system_time=float(row[2]),
+                        user_time=float(row[3]),
+                    )
     if not only_render:
         logging.info("🔨 Building base image")
         run(
@@ -229,17 +231,8 @@ def generate_compare_table(sorted_results: list[LangResult]) -> str:
         html += "<tr>"
         html += f"<th>{result_src.lang}</th>"
         for result_tgt in sorted_results:
-            style = ""
-            if result_src.lang == result_tgt.lang:
-                val = ""
-            else:
-                ratio = round(result_src.elapsed_time - result_tgt.elapsed_time, 2)
-                val = str(ratio)
-                if ratio < 0:
-                    style = "color: red;"
-                elif ratio > 0:
-                    style = "color: green;"
-            html += f"<td style='{style}'>{val}</td>"
+            ratio = round(result_src.elapsed_time * 100 / result_tgt.elapsed_time, 2)
+            html += f"<td>{ratio}%</td>"
         html += "</tr>"
     html += "</table>"
     return html
