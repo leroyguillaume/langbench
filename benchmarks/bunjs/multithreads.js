@@ -38,25 +38,29 @@ async function main() {
     // Use arrayBuffer for efficient binary data handling
     const buffer = await file.arrayBuffer();
 
-    // Create direct views into the buffer for zero-copy access
-    const left = new Int32Array(buffer, 0, size);
-    const right = new Int32Array(buffer, size * 4, size);
+    // Create a SharedArrayBuffer and copy data from the original buffer
+    const sharedBuffer = new SharedArrayBuffer(buffer.byteLength);
+    new Uint8Array(sharedBuffer).set(new Uint8Array(buffer));
+
+    // Note: Original 'left' and 'right' Int32Array views on 'buffer' are no longer needed here for transfer.
+    // The partitioning logic below uses 'size' (elements in one logical array) and 'chunkSize'.
 
     // Spawn workers and distribute the workload
     const workers = [];
     const promises = [];
 
-    for (let i = 0; i < numWorkers; i++) {
-      const startIdx = i * chunkSize;
-      const endIdx = Math.min(startIdx + chunkSize, size);
+    const leftArrayByteOffsetInSAB = 0;
+    const rightArrayByteOffsetInSAB = size * 4; // 'size' is element count of one array
 
-      if (startIdx >= size) break;
+    for (let i = 0; i < numWorkers; i++) {
+      const startIdx = i * chunkSize; // element index from start of logical array
+      const endIdx = Math.min(startIdx + chunkSize, size);
+      const chunkElementCount = endIdx - startIdx;
+
+      if (startIdx >= size) break; // No more data to process
 
       const worker = new Worker(new URL("./worker.js", import.meta.url));
       workers.push(worker);
-
-      const leftChunk = left.slice(startIdx, endIdx);
-      const rightChunk = right.slice(startIdx, endIdx);
 
       // Create promise for worker result
       const promise = new Promise((resolve) => {
@@ -64,16 +68,14 @@ async function main() {
       });
       promises.push(promise);
 
-      // Send data to worker with transferable objects for zero-copy transfer
-      worker.postMessage(
-        {
-          leftChunk: leftChunk.buffer,
-          rightChunk: rightChunk.buffer,
-          startIdx,
-          endIdx,
-        },
-        [leftChunk.buffer, rightChunk.buffer]
-      );
+      // Send data to worker. SharedArrayBuffer is shared, not transferred.
+      worker.postMessage({
+        sharedBuffer,
+        leftArrayByteOffsetInSAB,
+        rightArrayByteOffsetInSAB,
+        chunkStartElementOffset: startIdx,
+        chunkElementCount,
+      });
     }
 
     // Collect results from all workers
