@@ -170,9 +170,9 @@ def main(
                     all_cpu_usages.append(int(row[3].removesuffix("%")))
                     all_max_memory.append(float(row[4]))
 
-                avg_elapsed_time = sum(all_elapsed_times) / num_runs
-                avg_system_time = sum(all_system_times) / num_runs
-                avg_user_time = sum(all_user_times) / num_runs
+                avg_elapsed_time = round(sum(all_elapsed_times) / num_runs, 2)
+                avg_system_time = round(sum(all_system_times) / num_runs, 2)
+                avg_user_time = round(sum(all_user_times) / num_runs, 2)
                 avg_cpu_usage = int(round(sum(all_cpu_usages) / num_runs))
                 avg_max_memory = round(sum(all_max_memory) / num_runs / 1024, 2)
 
