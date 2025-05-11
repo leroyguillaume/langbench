@@ -21,6 +21,10 @@ HEADERS = [
     "CPU Usage (%)",
 ]
 
+SINGLETHREAD_BENCHMARK = "singlethread"
+MULTITHREADS_BENCHMARK = "multithreads"
+BENCHMARKS = [SINGLETHREAD_BENCHMARK, MULTITHREADS_BENCHMARK]
+
 app = typer.Typer()
 
 
@@ -44,6 +48,9 @@ class LangResult:
 
 @app.command()
 def main(
+    benchmarks: Annotated[
+        list[str], Option("-b", "--benchmarks", help="Benchmarks to run")
+    ] = BENCHMARKS,
     benchmarks_dir: Annotated[
         str, Option("--benchmarks-dir", help="Directory containing the benchmarks")
     ] = "benchmarks",
@@ -58,9 +65,9 @@ def main(
     only_render: Annotated[
         bool, Option("--only-render", help="Only render the README")
     ] = False,
-    output_filepath: Annotated[
-        str, Option("-o", "--output", help="Filepath to store the results")
-    ] = "results.csv",
+    csv_dirpath: Annotated[
+        str, Option("--csv-dir", help="Directory to store the CSV results")
+    ] = "csv",
     readme_template_filepath: Annotated[
         str, Option("--readme-template", help="Filepath to the README template")
     ] = "README.md.j2",
@@ -86,10 +93,13 @@ def main(
     logger.setLevel(log_level)
     if len(langs) == 0:
         langs = [dir for dir in os.listdir(benchmarks_dir)]
-    results = {}
-    if os.path.isfile(output_filepath):
+    results = {
+        SINGLETHREAD_BENCHMARK: {},
+        MULTITHREADS_BENCHMARK: {},
+    }
+    if os.path.isfile(csv_dirpath):
         logging.debug("📄 Loading existing results")
-        with open(output_filepath, "r") as result_file:
+        with open(csv_dirpath, "r") as result_file:
             reader = csv.reader(result_file)
             next(reader, None)
             for row in reader:
@@ -114,48 +124,68 @@ def main(
             ]
         )
         for lang in langs:
-            tag = f"langbench-{lang}"
-            logging.info(f"🔨 Building {tag} image")
-            run(["docker", "build", "-t", tag, f"{benchmarks_dir}/{lang}"])
-            logging.info(f"🏃 Running benchmarks for {lang}")
-            run(
-                [
-                    "docker",
-                    "run",
-                    "-v",
-                    f"./{results_dir}/{lang}:/var/lib/langbench",
-                    tag,
-                ]
-            )
-            result_filepath = f"{results_dir}/{lang}/result.csv"
-            logging.debug(f"📄 Loading results from {result_filepath}")
-            with open(result_filepath, "r") as result_file:
-                reader = csv.reader(result_file)
-                row = next(reader)
-            result = LangResult(
-                cpu_usage=int(row[3].removesuffix("%")),
-                elapsed_time=float(row[0]),
-                lang=lang,
-                system_time=float(row[1]),
-                user_time=float(row[2]),
-            )
-            results[lang] = result
-    if not dry_run:
-        sorted_results = sorted(results.values(), key=lambda x: x.elapsed_time)
-        logging.debug(f"📝 Writing results to {output_filepath}")
-        with open(output_filepath, "w") as output_file:
-            writer = csv.writer(output_file)
-            writer.writerow(HEADERS)
-            for result in sorted_results:
-                writer.writerow(
+            for bench in benchmarks:
+                tag = f"langbench-{lang}-{bench}"
+                logging.info(f"🔨 Building {tag} image")
+                run(
                     [
-                        result.lang,
-                        result.elapsed_time,
-                        result.system_time,
-                        result.user_time,
-                        result.cpu_usage,
+                        "docker",
+                        "build",
+                        "--target",
+                        bench,
+                        "-t",
+                        tag,
+                        f"{benchmarks_dir}/{lang}",
                     ]
                 )
+                result_dirpath = f"{results_dir}/{lang}/{bench}"
+                logging.info(f"🏃 Running benchmark {bench} for {lang}")
+                run(
+                    [
+                        "docker",
+                        "run",
+                        "-v",
+                        f"./{result_dirpath}:/var/lib/langbench",
+                        tag,
+                    ]
+                )
+                result_filepath = f"{result_dirpath}/result.csv"
+                logging.debug(f"📄 Loading results from {result_filepath}")
+                with open(result_filepath, "r") as result_file:
+                    reader = csv.reader(result_file)
+                    row = next(reader)
+                result = LangResult(
+                    cpu_usage=int(row[3].removesuffix("%")),
+                    elapsed_time=float(row[0]),
+                    lang=lang,
+                    system_time=float(row[1]),
+                    user_time=float(row[2]),
+                )
+                results[bench][lang] = result
+    if not dry_run:
+        sorted_results = {}
+        if not os.path.isdir(csv_dirpath):
+            logging.debug(f"📂 Creating directory {csv_dirpath}")
+            os.makedirs(csv_dirpath)
+        for bench in BENCHMARKS:
+            sorted_results[bench] = sorted(
+                results[bench].values(), key=lambda x: x.elapsed_time
+            )
+            output_filepath = f"{csv_dirpath}/{bench}.csv"
+            logging.debug(f"📝 Writing results to {output_filepath}")
+            with open(output_filepath, "w") as output_file:
+                writer = csv.writer(output_file)
+                writer.writerow(HEADERS)
+                for result in sorted_results[bench]:
+                    writer.writerow(
+                        [
+                            result.lang,
+                            result.elapsed_time,
+                            result.system_time,
+                            result.user_time,
+                            result.cpu_usage,
+                        ]
+                    )
         logging.debug("📖 Loading README template")
         with open(readme_template_filepath, "r") as readme_template_file:
             readme_template = Template(
@@ -163,14 +193,26 @@ def main(
             )
         logging.debug("📝 Writing README.md")
         data_size_mb = round(data_size * 4 / 1024 / 1024)
-        results_table = generate_results_table(sorted_results)
-        compare_table = generate_compare_table(sorted_results)
+        results_table_st = generate_results_table(
+            sorted_results[SINGLETHREAD_BENCHMARK]
+        )
+        compare_table_st = generate_compare_table(
+            sorted_results[SINGLETHREAD_BENCHMARK]
+        )
+        results_table_mt = generate_results_table(
+            sorted_results[MULTITHREADS_BENCHMARK]
+        )
+        compare_table_mt = generate_compare_table(
+            sorted_results[MULTITHREADS_BENCHMARK]
+        )
         readme = readme_template.render(
-            compare_table=compare_table,
+            compare_table_st=compare_table_st,
+            compare_table_mt=compare_table_mt,
             cores=multiprocessing.cpu_count(),
             cpu=platform.processor(),
             data_size=f"{data_size_mb} MB",
-            results_table=results_table,
+            results_table_st=results_table_st,
+            results_table_mt=results_table_mt,
             threads=os.cpu_count(),
         )
         with open("README.md", "w") as readme_file:
