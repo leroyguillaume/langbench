@@ -8,7 +8,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 **Processor**: arm
 
-**Cores**: 12
+**Cores**: 8
 
 ### Data
 
@@ -18,7 +18,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 #### Results
 
-<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>c</td><td>0.87</td><td>0.05</td><td>10.08</td><td>1152</td><td>535.55</td></tr><tr><td>bunjs</td><td>1.06</td><td>0.23</td><td>10.21</td><td>978</td><td>1159.28</td></tr><tr><td>nodejs</td><td>1.72</td><td>0.34</td><td>17.42</td><td>1030</td><td>1609.23</td></tr></table>
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>c</td><td>1.55</td><td>0.09</td><td>11.73</td><td>763</td><td>535.62</td></tr><tr><td>java</td><td>1.71</td><td>0.08</td><td>12.39</td><td>729</td><td>583.57</td></tr><tr><td>bunjs</td><td>1.81</td><td>0.32</td><td>12.01</td><td>679</td><td>1143.47</td></tr><tr><td>nodejs</td><td>3.0</td><td>0.52</td><td>20.56</td><td>703</td><td>1513.36</td></tr></table>
 
 #### CPU Usage Comparison
 
@@ -26,7 +26,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 *A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
 
-<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>82.08%</td><td>50.58%</td></tr><tr><th>bunjs</th><td>121.84%</td><td>100.0%</td><td>61.63%</td></tr><tr><th>nodejs</th><td>197.7%</td><td>162.26%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>java</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>90.64%</td><td>85.64%</td><td>51.67%</td></tr><tr><th>java</th><td>110.32%</td><td>100.0%</td><td>94.48%</td><td>57.0%</td></tr><tr><th>bunjs</th><td>116.77%</td><td>105.85%</td><td>100.0%</td><td>60.33%</td></tr><tr><th>nodejs</th><td>193.55%</td><td>175.44%</td><td>165.75%</td><td>100.0%</td></tr></table>
 
 #### Memory Usage Comparison
 
@@ -34,13 +34,13 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 *A value of 50% indicates that the row language uses half the memory of the column language.*
 
-<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>46.2%</td><td>33.28%</td></tr><tr><th>bunjs</th><td>216.47%</td><td>100.0%</td><td>72.04%</td></tr><tr><th>nodejs</th><td>300.48%</td><td>138.81%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>java</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>91.78%</td><td>46.84%</td><td>35.39%</td></tr><tr><th>java</th><td>108.95%</td><td>100.0%</td><td>51.04%</td><td>38.56%</td></tr><tr><th>bunjs</th><td>213.49%</td><td>195.94%</td><td>100.0%</td><td>75.56%</td></tr><tr><th>nodejs</th><td>282.54%</td><td>259.33%</td><td>132.35%</td><td>100.0%</td></tr></table>
 
 ### Singlethreaded
 
 #### Results
 
-<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>bunjs</td><td>7.22</td><td>0.11</td><td>7.12</td><td>100</td><td>578.54</td></tr><tr><td>c</td><td>7.29</td><td>0.02</td><td>7.25</td><td>99</td><td>535.47</td></tr><tr><td>nodejs</td><td>12.6</td><td>0.18</td><td>12.42</td><td>100</td><td>589.1</td></tr></table>
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>c</td><td>8.29</td><td>0.01</td><td>8.28</td><td>99</td><td>535.47</td></tr><tr><td>bunjs</td><td>8.56</td><td>0.15</td><td>8.41</td><td>100</td><td>578.59</td></tr><tr><td>java</td><td>8.82</td><td>0.02</td><td>8.81</td><td>100</td><td>581.99</td></tr><tr><td>nodejs</td><td>15.94</td><td>0.18</td><td>15.77</td><td>100</td><td>589.06</td></tr></table>
 
 #### CPU Usage Comparison
 
@@ -48,7 +48,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 *A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
 
-<table><tr><th></th><th>bunjs</th><th>c</th><th>nodejs</th></tr><tr><th>bunjs</th><td>100.0%</td><td>99.04%</td><td>57.3%</td></tr><tr><th>c</th><td>100.97%</td><td>100.0%</td><td>57.86%</td></tr><tr><th>nodejs</th><td>174.52%</td><td>172.84%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>bunjs</th><th>java</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>96.85%</td><td>93.99%</td><td>52.01%</td></tr><tr><th>bunjs</th><td>103.26%</td><td>100.0%</td><td>97.05%</td><td>53.7%</td></tr><tr><th>java</th><td>106.39%</td><td>103.04%</td><td>100.0%</td><td>55.33%</td></tr><tr><th>nodejs</th><td>192.28%</td><td>186.21%</td><td>180.73%</td><td>100.0%</td></tr></table>
 
 #### Memory Usage Comparison
 
@@ -56,7 +56,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 *A value of 50% indicates that the row language uses half the memory of the column language.*
 
-<table><tr><th></th><th>bunjs</th><th>c</th><th>nodejs</th></tr><tr><th>bunjs</th><td>100.0%</td><td>108.04%</td><td>98.21%</td></tr><tr><th>c</th><td>92.56%</td><td>100.0%</td><td>90.9%</td></tr><tr><th>nodejs</th><td>101.83%</td><td>110.02%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>bunjs</th><th>java</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>92.55%</td><td>92.01%</td><td>90.9%</td></tr><tr><th>bunjs</th><td>108.05%</td><td>100.0%</td><td>99.42%</td><td>98.22%</td></tr><tr><th>java</th><td>108.69%</td><td>100.59%</td><td>100.0%</td><td>98.8%</td></tr><tr><th>nodejs</th><td>110.01%</td><td>101.81%</td><td>101.21%</td><td>100.0%</td></tr></table>
 
 ## Usage
 
