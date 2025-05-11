@@ -30,7 +30,7 @@ async function main() {
     const file = Bun.file(argv[2]);
 
     // Get file size to validate before loading
-    const fileSize = await file.size;
+    const fileSize = file.size;
     if (fileSize < size * 2 * 4) {
       throw new Error("File too small");
     }
@@ -52,12 +52,9 @@ async function main() {
 
       if (startIdx >= size) break;
 
-      // Create worker
       const worker = new Worker(new URL("./worker.js", import.meta.url));
       workers.push(worker);
 
-      // Use slice to create new array buffers for transferring
-      // This avoids detaching the original buffer
       const leftChunk = left.slice(startIdx, endIdx);
       const rightChunk = right.slice(startIdx, endIdx);
 
@@ -81,10 +78,14 @@ async function main() {
 
     // Collect results from all workers
     const results = await Promise.all(promises);
-    const totalResult = results.reduce((acc, val) => acc + val, 0);
+    let totalResult = 0;
+    for (let i = 0; i < results.length; i++) {
+      totalResult += results[i];
+    }
 
-    // Terminate workers
-    workers.forEach((worker) => worker.terminate());
+    for (let i = 0; i < workers.length; i++) {
+      workers[i].terminate();
+    }
 
     console.log(totalResult);
   } catch (err) {

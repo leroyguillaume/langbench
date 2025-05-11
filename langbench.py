@@ -55,6 +55,9 @@ def main(
         list[str], Option("-l", "--lang", help="Language to run the benchmarks for")
     ] = [],
     log_level: Annotated[str, Option("--log-level", help="Log level")] = "INFO",
+    num_runs: Annotated[
+        int, Option("--num-runs", help="Number of times to run each benchmark")
+    ] = 3,
     only_render: Annotated[
         bool, Option("--only-render", help="Only render the README")
     ] = False,
@@ -136,28 +139,53 @@ def main(
                 )
                 result_dirpath = f"{results_dir}/{lang}/{bench}"
                 logging.info(f"🏃 Running benchmark {bench} for {lang}")
-                value = run(
-                    [
-                        "docker",
-                        "run",
-                        "-v",
-                        f"./{result_dirpath}:/var/lib/langbench",
-                        tag,
-                    ]
+                all_elapsed_times = []
+                all_system_times = []
+                all_user_times = []
+                all_cpu_usages = []
+                all_max_memory = []
+                for i in range(num_runs):
+                    logging.info(f"🔄 Run {i + 1}/{num_runs} for {lang} - {bench}")
+                    value = run(
+                        [
+                            "docker",
+                            "run",
+                            "-v",
+                            f"./{result_dirpath}:/var/lib/langbench",
+                            tag,
+                        ]
+                    )
+
+                    logging.info(f"🧮 Result: {value}")
+                    result_filepath = f"{result_dirpath}/result.csv"
+                    logging.debug(
+                        f"📄 Loading results from {result_filepath} for run {i + 1}"
+                    )
+                    with open(result_filepath, "r") as result_file:
+                        reader = csv.reader(result_file)
+                        row = next(reader)
+                    all_elapsed_times.append(float(row[0]))
+                    all_system_times.append(float(row[1]))
+                    all_user_times.append(float(row[2]))
+                    all_cpu_usages.append(int(row[3].removesuffix("%")))
+                    all_max_memory.append(float(row[4]))
+
+                avg_elapsed_time = round(sum(all_elapsed_times) / num_runs, 2)
+                avg_system_time = round(sum(all_system_times) / num_runs, 2)
+                avg_user_time = round(sum(all_user_times) / num_runs, 2)
+                avg_cpu_usage = int(round(sum(all_cpu_usages) / num_runs))
+                avg_max_memory = round(sum(all_max_memory) / num_runs / 1024, 2)
+
+                logging.info(
+                    f"📊 Averaged result for {lang} - {bench}: Elapsed={avg_elapsed_time:.2f}s, CPU={avg_cpu_usage}%"
                 )
-                logging.info(f"🧮 Result: {value}")
-                result_filepath = f"{result_dirpath}/result.csv"
-                logging.debug(f"📄 Loading results from {result_filepath}")
-                with open(result_filepath, "r") as result_file:
-                    reader = csv.reader(result_file)
-                    row = next(reader)
                 result = LangResult(
-                    cpu_usage=int(row[3].removesuffix("%")),
-                    elapsed_time=float(row[0]),
+                    cpu_usage=avg_cpu_usage,
+                    elapsed_time=avg_elapsed_time,
                     lang=lang,
-                    max_memory=round(int(row[4]) / 1024, 2),
-                    system_time=float(row[1]),
-                    user_time=float(row[2]),
+                    max_memory=avg_max_memory,
+                    system_time=avg_system_time,
+                    user_time=avg_user_time,
                 )
                 results[bench][lang] = result
     if not dry_run:
