@@ -142,7 +142,7 @@ def main(
                 )
                 result_dirpath = f"{results_dir}/{lang}/{bench}"
                 logging.info(f"🏃 Running benchmark {bench} for {lang}")
-                run(
+                value = run(
                     [
                         "docker",
                         "run",
@@ -151,6 +151,7 @@ def main(
                         tag,
                     ]
                 )
+                logging.info(f"🧮 Result: {value}")
                 result_filepath = f"{result_dirpath}/result.csv"
                 logging.debug(f"📄 Loading results from {result_filepath}")
                 with open(result_filepath, "r") as result_file:
@@ -255,12 +256,12 @@ def generate_results_table(sorted_results: list[LangResult]) -> str:
     return html
 
 
-def run(cmd: list[str]):
+def run(cmd: list[str]) -> str:
     program = cmd[0]
     logging.debug(f"⚡ Running command: {cmd}")
     process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout = process.stdout.decode("utf-8")
-    stderr = process.stderr.decode("utf-8")
+    stdout = process.stdout.decode("utf-8").strip()
+    stderr = process.stderr.decode("utf-8").strip()
     for line in stdout.splitlines():
         logging.debug(f"{program}: {line}")
     if process.returncode == 0:
@@ -273,6 +274,7 @@ def run(cmd: list[str]):
         for line in stderr.splitlines():
             logging.error(f"💥 {program}: {line}")
         exit(process.returncode)
+    return stdout
 
 
 if __name__ == "__main__":

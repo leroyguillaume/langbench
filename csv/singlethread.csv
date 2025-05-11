@@ -1,4 +1,4 @@
 Language,Elapsed Time (s),System Time (s),User Time (s),CPU Usage (%)
+c,8.3,0.01,8.29,99
 bunjs,8.49,0.14,8.35,100
-c,9.93,0.13,9.76,99
 nodejs,14.31,0.38,13.93,99

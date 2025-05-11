@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 typedef struct {
   int *left;
@@ -26,11 +29,12 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  int size = atoi(argv[2]) / 2;
+  int size = atoi(argv[2]);
   if (size <= 0) {
     fprintf(stderr, "Error: Size must be a positive integer\n");
     return 1;
   }
+  int half_size = size / 2;
 
   int num_threads = atoi(argv[3]);
   if (num_threads <= 0) {
@@ -38,28 +42,29 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  int *left = malloc(size * sizeof(int));
-  int *right = malloc(size * sizeof(int));
-
-  FILE *file = fopen(argv[1], "r");
-  if (!file) {
+  int fd = open(argv[1], O_RDONLY);
+  if (fd == -1) {
     fprintf(stderr, "Error: Could not open file %s\n", argv[1]);
     return 1;
   }
-  fread(left, sizeof(int), size, file);
-  fread(right, sizeof(int), size, file);
-  fclose(file);
 
-  unsigned chunk_size = size / num_threads;
-  unsigned chunk_size_overflow = size % num_threads;
+  int *data = mmap(NULL, size * sizeof(int), PROT_READ, MAP_PRIVATE, fd, 0);
+  if (data == MAP_FAILED) {
+    fprintf(stderr, "Error: Memory mapping failed\n");
+    close(fd);
+    return 1;
+  }
+
+  unsigned chunk_size = half_size / num_threads;
+  unsigned chunk_size_overflow = half_size % num_threads;
 
   pthread_t threads[num_threads];
   Chunk chunks[num_threads];
   size_t current_pos = 0;
   for (size_t i = 0; i < num_threads; i++) {
     chunks[i].size = chunk_size + (i < chunk_size_overflow ? 1 : 0);
-    chunks[i].left = left + current_pos;
-    chunks[i].right = right + current_pos;
+    chunks[i].left = data + current_pos;
+    chunks[i].right = data + half_size + current_pos;
     chunks[i].result = 0;
     current_pos += chunks[i].size;
     pthread_create(&threads[i], NULL, compute, &chunks[i]);
@@ -73,8 +78,8 @@ int main(int argc, char **argv) {
 
   printf("%f\n", result);
 
-  free(left);
-  free(right);
+  munmap(data, size * sizeof(int));
+  close(fd);
 
   return 0;
 }
