@@ -10,7 +10,7 @@ import platform
 import subprocess
 import typer
 from typer import Option
-from typing import Annotated
+from typing import Annotated, Callable
 import colorlog
 
 HEADERS = [
@@ -19,6 +19,7 @@ HEADERS = [
     "System Time (s)",
     "User Time (s)",
     "CPU Usage (%)",
+    "Max Memory (MB)",
 ]
 
 SINGLETHREAD_BENCHMARK = "singlethread"
@@ -33,17 +34,9 @@ class LangResult:
     cpu_usage: int
     elapsed_time: float
     lang: str
+    max_memory: float
     system_time: float
     user_time: float
-
-    def to_list(self) -> list[str]:
-        return [
-            self.lang,
-            self.elapsed_time,
-            self.cpu_usage,
-            self.system_time,
-            self.user_time,
-        ]
 
 
 @app.command()
@@ -109,6 +102,7 @@ def main(
                         cpu_usage=int(row[4]),
                         elapsed_time=float(row[1]),
                         lang=row[0],
+                        max_memory=float(row[5]),
                         system_time=float(row[2]),
                         user_time=float(row[3]),
                     )
@@ -161,6 +155,7 @@ def main(
                     cpu_usage=int(row[3].removesuffix("%")),
                     elapsed_time=float(row[0]),
                     lang=lang,
+                    max_memory=round(int(row[4]) / 1024, 2),
                     system_time=float(row[1]),
                     user_time=float(row[2]),
                 )
@@ -187,6 +182,7 @@ def main(
                             result.system_time,
                             result.user_time,
                             result.cpu_usage,
+                            result.max_memory,
                         ]
                     )
         logging.debug("📖 Loading README template")
@@ -197,20 +193,32 @@ def main(
         logging.debug("📝 Writing README.md")
         data_size_mb = round(data_size * 4 / 1024 / 1024)
         results_table_st = generate_results_table(
-            sorted_results[SINGLETHREAD_BENCHMARK]
+            sorted_results[SINGLETHREAD_BENCHMARK],
         )
-        compare_table_st = generate_compare_table(
-            sorted_results[SINGLETHREAD_BENCHMARK]
+        compare_cpu_table_st = generate_compare_table(
+            sorted_results[SINGLETHREAD_BENCHMARK],
+            lambda result: result.elapsed_time,
+        )
+        compare_mem_table_st = generate_compare_table(
+            sorted_results[SINGLETHREAD_BENCHMARK],
+            lambda result: result.max_memory,
         )
         results_table_mt = generate_results_table(
             sorted_results[MULTITHREADS_BENCHMARK]
         )
-        compare_table_mt = generate_compare_table(
-            sorted_results[MULTITHREADS_BENCHMARK]
+        compare_cpu_table_mt = generate_compare_table(
+            sorted_results[MULTITHREADS_BENCHMARK],
+            lambda result: result.elapsed_time,
+        )
+        compare_mem_table_mt = generate_compare_table(
+            sorted_results[MULTITHREADS_BENCHMARK],
+            lambda result: result.max_memory,
         )
         readme = readme_template.render(
-            compare_table_st=compare_table_st,
-            compare_table_mt=compare_table_mt,
+            compare_cpu_table_mt=compare_cpu_table_mt,
+            compare_cpu_table_st=compare_cpu_table_st,
+            compare_mem_table_mt=compare_mem_table_mt,
+            compare_mem_table_st=compare_mem_table_st,
             cores=multiprocessing.cpu_count(),
             cpu=platform.processor(),
             data_size=f"{data_size_mb} MB",
@@ -222,7 +230,9 @@ def main(
             readme_file.write(readme)
 
 
-def generate_compare_table(sorted_results: list[LangResult]) -> str:
+def generate_compare_table(
+    sorted_results: list[LangResult], val: Callable[[LangResult], float]
+) -> str:
     html = "<table><tr>"
     html += "<th></th>"
     for result_src in sorted_results:
@@ -232,7 +242,9 @@ def generate_compare_table(sorted_results: list[LangResult]) -> str:
         html += "<tr>"
         html += f"<th>{result_src.lang}</th>"
         for result_tgt in sorted_results:
-            ratio = round(result_src.elapsed_time * 100 / result_tgt.elapsed_time, 2)
+            val_src = val(result_src)
+            val_tgt = val(result_tgt)
+            ratio = round(val_src * 100 / val_tgt, 2)
             html += f"<td>{ratio}%</td>"
         html += "</tr>"
     html += "</table>"
@@ -251,6 +263,7 @@ def generate_results_table(sorted_results: list[LangResult]) -> str:
         html += f"<td>{result.system_time}</td>"
         html += f"<td>{result.user_time}</td>"
         html += f"<td>{result.cpu_usage}</td>"
+        html += f"<td>{result.max_memory}</td>"
         html += "</tr>"
     html += "</table>"
     return html

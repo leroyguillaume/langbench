@@ -1,4 +1,4 @@
-Language,Elapsed Time (s),System Time (s),User Time (s),CPU Usage (%)
-c,1.52,0.06,11.81,777
-bunjs,2.23,0.72,12.42,588
-nodejs,2.91,0.42,20.41,715
+Language,Elapsed Time (s),System Time (s),User Time (s),CPU Usage (%),Max Memory (MB)
+c,1.53,0.1,11.72,770,535.58
+bunjs,1.73,0.28,11.94,704,1144.46
+nodejs,2.85,0.44,19.61,703,1443.32

@@ -45,4 +45,4 @@ RUN \
     mkdir -p /etc/langbench && \
     random "${DATA_FILE}" "${DATA_SIZE}"
 
-ENTRYPOINT ["time", "-f", "%e,%S,%U,%P", "-o", "result.csv"]
+ENTRYPOINT ["time", "-f", "%e,%S,%U,%P,%M", "-o", "result.csv"]
