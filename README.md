@@ -16,31 +16,47 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 ### Multithreaded
 
-**Results**
+#### Results
 
-<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th></tr><tr><td>c</td><td>1.52</td><td>0.06</td><td>11.81</td><td>777</td></tr><tr><td>bunjs</td><td>2.23</td><td>0.72</td><td>12.42</td><td>588</td></tr><tr><td>nodejs</td><td>2.91</td><td>0.42</td><td>20.41</td><td>715</td></tr></table>
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>c</td><td>1.53</td><td>0.1</td><td>11.72</td><td>770</td><td>535.58</td></tr><tr><td>bunjs</td><td>1.73</td><td>0.28</td><td>11.94</td><td>704</td><td>1144.46</td></tr><tr><td>nodejs</td><td>2.85</td><td>0.44</td><td>19.61</td><td>703</td><td>1443.32</td></tr></table>
 
-**Comparison**
+#### CPU Usage Comparison
 
-A value of 100% indicates equal performance between the row and column languages.
+*A value of 100% indicates equal performance between the row and column languages.*
 
-A value of 50% indicates that the row language performs the computation twice as fast as the column language.
+*A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
 
-<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>68.16%</td><td>52.23%</td></tr><tr><th>bunjs</th><td>146.71%</td><td>100.0%</td><td>76.63%</td></tr><tr><th>nodejs</th><td>191.45%</td><td>130.49%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>88.44%</td><td>53.68%</td></tr><tr><th>bunjs</th><td>113.07%</td><td>100.0%</td><td>60.7%</td></tr><tr><th>nodejs</th><td>186.27%</td><td>164.74%</td><td>100.0%</td></tr></table>
+
+#### Memory Usage Comparison
+
+*A value of 100% indicates equal memory usage between the row and column languages.*
+
+*A value of 50% indicates that the row language uses half the memory of the column language.*
+
+<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>46.8%</td><td>37.11%</td></tr><tr><th>bunjs</th><td>213.69%</td><td>100.0%</td><td>79.29%</td></tr><tr><th>nodejs</th><td>269.49%</td><td>126.11%</td><td>100.0%</td></tr></table>
 
 ### Singlethreaded
 
-**Results**
+#### Results
 
-<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th></tr><tr><td>c</td><td>8.3</td><td>0.01</td><td>8.29</td><td>99</td></tr><tr><td>bunjs</td><td>8.49</td><td>0.14</td><td>8.35</td><td>100</td></tr><tr><td>nodejs</td><td>14.26</td><td>0.25</td><td>14.01</td><td>100</td></tr></table>
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th><th>Max Memory (MB)</th></tr><tr><td>c</td><td>8.27</td><td>0.01</td><td>8.25</td><td>99</td><td>535.45</td></tr><tr><td>bunjs</td><td>8.58</td><td>0.18</td><td>8.4</td><td>100</td><td>578.48</td></tr><tr><td>nodejs</td><td>13.96</td><td>0.13</td><td>13.82</td><td>99</td><td>588.92</td></tr></table>
 
-**Comparison**
+#### CPU Usage Comparison
 
-A value of 100% indicates equal performance between the row and column languages.
+*A value of 100% indicates equal performance between the row and column languages.*
 
-A value of 50% indicates that the row language performs the computation twice as fast as the column language.
+*A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
 
-<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>97.76%</td><td>58.2%</td></tr><tr><th>bunjs</th><td>102.29%</td><td>100.0%</td><td>59.54%</td></tr><tr><th>nodejs</th><td>171.81%</td><td>167.96%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>96.39%</td><td>59.24%</td></tr><tr><th>bunjs</th><td>103.75%</td><td>100.0%</td><td>61.46%</td></tr><tr><th>nodejs</th><td>168.8%</td><td>162.7%</td><td>100.0%</td></tr></table>
+
+#### Memory Usage Comparison
+
+*A value of 100% indicates equal memory usage between the row and column languages.*
+
+*A value of 50% indicates that the row language uses half the memory of the column language.*
+
+<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>92.56%</td><td>90.92%</td></tr><tr><th>bunjs</th><td>108.04%</td><td>100.0%</td><td>98.23%</td></tr><tr><th>nodejs</th><td>109.99%</td><td>101.8%</td><td>100.0%</td></tr></table>
 
 ## Usage
 

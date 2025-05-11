@@ -10,7 +10,7 @@ import platform
 import subprocess
 import typer
 from typer import Option
-from typing import Annotated
+from typing import Annotated, Callable
 import colorlog
 
 HEADERS = [
@@ -19,6 +19,7 @@ HEADERS = [
     "System Time (s)",
     "User Time (s)",
     "CPU Usage (%)",
+    "Max Memory (MB)",
 ]
 
 SINGLETHREAD_BENCHMARK = "singlethread"
@@ -33,17 +34,9 @@ class LangResult:
     cpu_usage: int
     elapsed_time: float
     lang: str
+    max_memory: float
     system_time: float
     user_time: float
-
-    def to_list(self) -> list[str]:
-        return [
-            self.lang,
-            self.elapsed_time,
-            self.cpu_usage,
-            self.system_time,
-            self.user_time,
-        ]
 
 
 @app.command()
@@ -112,6 +105,7 @@ def main(
                         cpu_usage=int(row[4]),
                         elapsed_time=float(row[1]),
                         lang=row[0],
+                        max_memory=float(row[5]),
                         system_time=float(row[2]),
                         user_time=float(row[3]),
                     )
@@ -149,7 +143,7 @@ def main(
                 all_system_times = []
                 all_user_times = []
                 all_cpu_usages = []
-
+                all_max_memory = []
                 for i in range(num_runs):
                     logging.info(f"🔄 Run {i + 1}/{num_runs} for {lang} - {bench}")
                     value = run(
@@ -174,11 +168,13 @@ def main(
                     all_system_times.append(float(row[1]))
                     all_user_times.append(float(row[2]))
                     all_cpu_usages.append(int(row[3].removesuffix("%")))
+                    all_max_memory.append(float(row[4]))
 
                 avg_elapsed_time = sum(all_elapsed_times) / num_runs
                 avg_system_time = sum(all_system_times) / num_runs
                 avg_user_time = sum(all_user_times) / num_runs
                 avg_cpu_usage = int(round(sum(all_cpu_usages) / num_runs))
+                avg_max_memory = round(sum(all_max_memory) / num_runs / 1024, 2)
 
                 logging.info(
                     f"📊 Averaged result for {lang} - {bench}: Elapsed={avg_elapsed_time:.2f}s, CPU={avg_cpu_usage}%"
@@ -187,6 +183,7 @@ def main(
                     cpu_usage=avg_cpu_usage,
                     elapsed_time=avg_elapsed_time,
                     lang=lang,
+                    max_memory=avg_max_memory,
                     system_time=avg_system_time,
                     user_time=avg_user_time,
                 )
@@ -213,6 +210,7 @@ def main(
                             result.system_time,
                             result.user_time,
                             result.cpu_usage,
+                            result.max_memory,
                         ]
                     )
         logging.debug("📖 Loading README template")
@@ -223,20 +221,32 @@ def main(
         logging.debug("📝 Writing README.md")
         data_size_mb = round(data_size * 4 / 1024 / 1024)
         results_table_st = generate_results_table(
-            sorted_results[SINGLETHREAD_BENCHMARK]
+            sorted_results[SINGLETHREAD_BENCHMARK],
         )
-        compare_table_st = generate_compare_table(
-            sorted_results[SINGLETHREAD_BENCHMARK]
+        compare_cpu_table_st = generate_compare_table(
+            sorted_results[SINGLETHREAD_BENCHMARK],
+            lambda result: result.elapsed_time,
+        )
+        compare_mem_table_st = generate_compare_table(
+            sorted_results[SINGLETHREAD_BENCHMARK],
+            lambda result: result.max_memory,
         )
         results_table_mt = generate_results_table(
             sorted_results[MULTITHREADS_BENCHMARK]
         )
-        compare_table_mt = generate_compare_table(
-            sorted_results[MULTITHREADS_BENCHMARK]
+        compare_cpu_table_mt = generate_compare_table(
+            sorted_results[MULTITHREADS_BENCHMARK],
+            lambda result: result.elapsed_time,
+        )
+        compare_mem_table_mt = generate_compare_table(
+            sorted_results[MULTITHREADS_BENCHMARK],
+            lambda result: result.max_memory,
         )
         readme = readme_template.render(
-            compare_table_st=compare_table_st,
-            compare_table_mt=compare_table_mt,
+            compare_cpu_table_mt=compare_cpu_table_mt,
+            compare_cpu_table_st=compare_cpu_table_st,
+            compare_mem_table_mt=compare_mem_table_mt,
+            compare_mem_table_st=compare_mem_table_st,
             cores=multiprocessing.cpu_count(),
             cpu=platform.processor(),
             data_size=f"{data_size_mb} MB",
@@ -248,7 +258,9 @@ def main(
             readme_file.write(readme)
 
 
-def generate_compare_table(sorted_results: list[LangResult]) -> str:
+def generate_compare_table(
+    sorted_results: list[LangResult], val: Callable[[LangResult], float]
+) -> str:
     html = "<table><tr>"
     html += "<th></th>"
     for result_src in sorted_results:
@@ -258,7 +270,9 @@ def generate_compare_table(sorted_results: list[LangResult]) -> str:
         html += "<tr>"
         html += f"<th>{result_src.lang}</th>"
         for result_tgt in sorted_results:
-            ratio = round(result_src.elapsed_time * 100 / result_tgt.elapsed_time, 2)
+            val_src = val(result_src)
+            val_tgt = val(result_tgt)
+            ratio = round(val_src * 100 / val_tgt, 2)
             html += f"<td>{ratio}%</td>"
         html += "</tr>"
     html += "</table>"
@@ -277,6 +291,7 @@ def generate_results_table(sorted_results: list[LangResult]) -> str:
         html += f"<td>{result.system_time}</td>"
         html += f"<td>{result.user_time}</td>"
         html += f"<td>{result.cpu_usage}</td>"
+        html += f"<td>{result.max_memory}</td>"
         html += "</tr>"
     html += "</table>"
     return html
