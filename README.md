@@ -57,6 +57,6 @@ result = ∑ sqrt(|cos(left[i]) * sin(right[i])|)
 **MacOS**:
 
 ```bash
-brew install clang-format hadolint pre-commit
+brew install hadolint pre-commit
 pre-commit install
 ```

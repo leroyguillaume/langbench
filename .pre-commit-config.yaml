@@ -22,12 +22,6 @@ repos:
         args:
           - --fix
       - id: ruff-format
-  - repo: https://github.com/pocc/pre-commit-hooks
-    rev: v1.3.5
-    hooks:
-      - id: clang-format
-        args:
-          - -i
   - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.12.1b3
     hooks:
