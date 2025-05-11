@@ -81,10 +81,14 @@ async function main() {
 
     // Collect results from all workers
     const results = await Promise.all(promises);
-    const totalResult = results.reduce((acc, val) => acc + val, 0);
+    let totalResult = 0;
+    for (let i = 0; i < results.length; i++) {
+      totalResult += results[i];
+    }
 
-    // Terminate workers
-    workers.forEach((worker) => worker.terminate());
+    for (let i = 0; i < workers.length; i++) {
+      workers[i].terminate();
+    }
 
     console.log(totalResult);
   } catch (err) {
