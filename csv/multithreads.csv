@@ -1,5 +1,6 @@
 Language,Elapsed Time (s),System Time (s),User Time (s),CPU Usage (%),Max Memory (MB)
 c,1.61,0.11,12.17,762,535.54
+rust,1.68,0.14,12.7,765,535.99
 java,1.77,0.09,13.34,756,583.34
 bunjs,1.87,0.37,12.6,692,1143.71
 nodejs,2.8,0.45,19.21,701,1455.04
