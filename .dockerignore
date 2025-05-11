@@ -10,11 +10,11 @@ Dockerfile
 .github
 
 # langbench
+csv
 results
 langbench.py
 README.md
 README.md.j2
-results.csv
 
 # pre-commit
 .pre-commit-config.yaml
