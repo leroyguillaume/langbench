@@ -250,6 +250,7 @@ def main(
             cores=multiprocessing.cpu_count(),
             cpu=platform.processor(),
             data_size=f"{data_size_mb} MB",
+            num_runs=num_runs,
             results_table_st=results_table_st,
             results_table_mt=results_table_mt,
             threads=os.cpu_count(),

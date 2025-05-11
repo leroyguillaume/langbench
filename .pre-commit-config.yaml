@@ -22,6 +22,7 @@ repos:
         args:
           - --fix
       - id: ruff-format
+        exclude: ^benchmarks
   - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.12.1b3
     hooks:
