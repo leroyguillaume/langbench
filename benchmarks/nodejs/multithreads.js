@@ -23,14 +23,20 @@ if (!isMainThread) {
   parentPort?.postMessage(res);
 }
 
-if (argv.length < 4) {
-  console.log(`Usage: ${argv[1]} <filepath> <size>`);
+if (argv.length < 5) {
+  console.error(`Usage: ${argv[1]} <filepath> <size> <threads>`);
   exit(1);
 }
 
 const size = Math.floor(Number(argv[3]) / 2);
 if (size <= 0) {
-  console.log("Error: Size must be a positive integer");
+  console.error("Error: Size must be a positive integer");
+  exit(1);
+}
+
+const numThreads = Math.floor(Number(argv[4]));
+if (numThreads <= 0) {
+  console.error("Error: Number of threads must be a positive integer");
   exit(1);
 }
 
@@ -43,11 +49,10 @@ try {
   left = new Int32Array(buffer.buffer, 0, size);
   right = new Int32Array(buffer.buffer, size * 4, size);
 } catch (err) {
-  console.log(`Error: Could not open file ${argv[2]}`);
+  console.error(`Error: Could not open file ${argv[2]}`);
   exit(1);
 }
 
-const numThreads = Math.min(os.cpus().length, size);
 const chunk = Math.ceil(size / numThreads);
 const promises = [];
 
