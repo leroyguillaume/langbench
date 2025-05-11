@@ -18,7 +18,7 @@ LangBench is a simple benchmarking tool that processes numeric data and computes
 
 **Results**
 
-<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th></tr><tr><td>c</td><td>1.52</td><td>0.06</td><td>11.81</td><td>777</td></tr><tr><td>bunjs</td><td>1.98</td><td>0.49</td><td>12.01</td><td>629</td></tr><tr><td>nodejs</td><td>2.91</td><td>0.42</td><td>20.41</td><td>715</td></tr></table>
+<table><tr><th>Language</th><th>Elapsed Time (s)</th><th>System Time (s)</th><th>User Time (s)</th><th>CPU Usage (%)</th></tr><tr><td>c</td><td>1.52</td><td>0.06</td><td>11.81</td><td>777</td></tr><tr><td>bunjs</td><td>2.23</td><td>0.72</td><td>12.42</td><td>588</td></tr><tr><td>nodejs</td><td>2.91</td><td>0.42</td><td>20.41</td><td>715</td></tr></table>
 
 **Comparison**
 
@@ -26,7 +26,7 @@ A value of 100% indicates equal performance between the row and column languages
 
 A value of 50% indicates that the row language performs the computation twice as fast as the column language.
 
-<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>76.77%</td><td>52.23%</td></tr><tr><th>bunjs</th><td>130.26%</td><td>100.0%</td><td>68.04%</td></tr><tr><th>nodejs</th><td>191.45%</td><td>146.97%</td><td>100.0%</td></tr></table>
+<table><tr><th></th><th>c</th><th>bunjs</th><th>nodejs</th></tr><tr><th>c</th><td>100.0%</td><td>68.16%</td><td>52.23%</td></tr><tr><th>bunjs</th><td>146.71%</td><td>100.0%</td><td>76.63%</td></tr><tr><th>nodejs</th><td>191.45%</td><td>130.49%</td><td>100.0%</td></tr></table>
 
 ### Singlethreaded
 
