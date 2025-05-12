@@ -2,19 +2,26 @@
 
 LangBench is a simple benchmarking tool that processes numeric data and computes a mathematical result.
 
+## Disclaimer
+
+We're trying to optimize the code for each language with its specific features but
+we're not experts in all of them.
+
+If you have any suggestions, you're welcome to open an issue or a PR!
+
 ## Benchmark
 
 ### Hardware Specifications
 
-**Processor**: x86_64
+**Processor**: arm
 
-**Cores**: 4
+**Cores**: 8
 
 ### Data
 
 **Size**: 534 MB
 
-**Number of iterations:** 10
+**Number of iterations:** 3
 
 ### Multithreaded
 
@@ -89,6 +96,9 @@ result = ∑ sqrt(|cos(left[i]) * sin(right[i])|)
 ```
 
 ## Contributing
+
+If you want to add a new language or optimize the existing ones,
+you're welcome to contribute!
 
 ### Installation
 
