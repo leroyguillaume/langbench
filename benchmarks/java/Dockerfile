@@ -1,5 +1,5 @@
 # hadolint ignore=DL3006
-FROM langbench-base AS base
+FROM localhost/langbench-base AS base
 
 ENV PATH="/opt/jdk/jdk-24.0.1/bin:$PATH"
 

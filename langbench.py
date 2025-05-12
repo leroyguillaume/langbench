@@ -50,7 +50,19 @@ def main(
     data_size: Annotated[
         int, Option("--data-size", help="Size of the data to generate")
     ] = 140000000,
+    docker_build_context: Annotated[
+        str | None, Option("--docker-build-context", help="Docker build context")
+    ] = None,
+    docker_cache: Annotated[
+        str | None, Option("--docker-cache", help="Docker cache")
+    ] = None,
+    docker_registry: Annotated[
+        str | None, Option("--docker-registry", help="Docker registry")
+    ] = None,
     dry_run: Annotated[bool, Option("--dry-run", help="Dry run")] = False,
+    csv_dirpath: Annotated[
+        str, Option("--csv-dir", help="Directory to store the CSV results")
+    ] = "csv",
     langs: Annotated[
         list[str], Option("-l", "--lang", help="Language to run the benchmarks for")
     ] = [],
@@ -61,9 +73,9 @@ def main(
     only_render: Annotated[
         bool, Option("--only-render", help="Only render the README")
     ] = False,
-    csv_dirpath: Annotated[
-        str, Option("--csv-dir", help="Directory to store the CSV results")
-    ] = "csv",
+    push_base_image: Annotated[
+        bool, Option("--push-base-image", help="Push the base image")
+    ] = False,
     readme_template_filepath: Annotated[
         str, Option("--readme-template", help="Filepath to the README template")
     ] = "README.md.j2",
@@ -110,32 +122,29 @@ def main(
                         user_time=float(row[3]),
                     )
     if not only_render:
-        logging.info("🔨 Building base image")
-        run(
-            [
-                "docker",
-                "build",
-                "--build-arg",
-                f"DATA_SIZE={data_size}",
-                "-t",
-                "langbench-base",
-                "base",
-            ]
+        base_tag = "langbench-base"
+        logging.info(f"🔨 Building {base_tag} image")
+        run_docker_build(
+            "base",
+            base_tag,
+            docker_registry,
+            docker_build_context,
+            docker_cache,
+            {"DATA_SIZE": data_size},
         )
+        if docker_registry and push_base_image:
+            run(["docker", "push", f"{docker_registry}/{base_tag}"])
         for lang in langs:
             for bench in benchmarks:
                 tag = f"langbench-{lang}-{bench}"
                 logging.info(f"🔨 Building {tag} image")
-                run(
-                    [
-                        "docker",
-                        "build",
-                        "--target",
-                        bench,
-                        "-t",
-                        tag,
-                        f"{benchmarks_dir}/{lang}",
-                    ]
+                run_docker_build(
+                    f"{benchmarks_dir}/{lang}",
+                    tag,
+                    docker_registry,
+                    docker_build_context,
+                    docker_cache,
+                    target=bench,
                 )
                 result_dirpath = f"{results_dir}/{lang}/{bench}"
                 logging.info(f"🏃 Running benchmark {bench} for {lang}")
@@ -317,6 +326,37 @@ def run(cmd: list[str]) -> str:
             logging.error(f"💥 {program}: {line}")
         exit(process.returncode)
     return stdout
+
+
+def run_docker_build(
+    context: str,
+    tag: str,
+    registry: str | None,
+    build_context: str | None,
+    cache: str | None,
+    build_args: dict[str, str] = {},
+    target: str | None = None,
+) -> str:
+    args = ["docker", "build", "-t", tag, "--load"]
+    if registry:
+        args.extend(["-t", f"{registry}/{tag}"])
+    if build_context:
+        args.extend(["--build-context", build_context])
+    if target:
+        args.extend(["--target", target])
+    if cache:
+        args.extend(
+            [
+                "--cache-from",
+                f"type=local,src={cache}",
+                "--cache-to",
+                f"type=local,dest={cache}",
+            ]
+        )
+    for key, value in build_args.items():
+        args.extend(["--build-arg", f"{key}={value}"])
+    args.append(context)
+    return run(args)
 
 
 if __name__ == "__main__":
