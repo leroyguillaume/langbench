@@ -1,4 +1,4 @@
-FROM openjdk:24-jdk-slim-bookworm AS base
+FROM oven/bun:debian AS base
 
 RUN \
     apt-get update && \
@@ -8,20 +8,18 @@ RUN \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/lib/langbench/result
 
-WORKDIR /usr/local/src/langbench
+WORKDIR /usr/src/local/langbench
 
-COPY *.java .
-
-RUN javac ./*.java
+COPY *.ts .
 
 WORKDIR /var/lib/langbench
 
 FROM base AS st-mergesort
 
 ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
-CMD ["sh", "-c", "java -cp /usr/local/src/langbench StMergeSort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
+CMD ["sh", "-c", "bun /usr/src/local/langbench/st-mergesort.ts $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
 ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
-CMD ["sh", "-c", "java -cp /usr/local/src/langbench MtMergeSort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]
+CMD ["sh", "-c", "bun /usr/src/local/langbench/mt-mergesort.ts $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]

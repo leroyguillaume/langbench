@@ -1,6 +1,9 @@
 # langbench
-results
+data
+temp
 
 # python
 .ruff_cache
-venv
+.venv
+*.egg-info
+*.pyc

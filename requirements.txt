@@ -1,5 +1,0 @@
-colorlog
-Jinja2
-ruff
-typer
-typing

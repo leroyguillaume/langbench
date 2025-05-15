@@ -1,22 +1,25 @@
-# hadolint ignore=DL3006
-FROM langbench-base AS base
-
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-ARG NODE_VERSION=24
-ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=$NODE_VERSION
-
-COPY *.js /usr/local/src/langbench/
+FROM node:20-slim AS base
 
 RUN \
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
-    bash $NVM_DIR/nvm.sh install $NODE_VERSION
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        time=1.9-0.2 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /var/lib/langbench/result
 
-FROM base AS singlethread
+WORKDIR /usr/src/local/langbench
 
-CMD ["sh", "-c", "/root/.nvm/versions/node/v24.0.1/bin/node /usr/local/src/langbench/singlethread.js ${DATA_FILE} ${DATA_SIZE}"]
+COPY *.js .
 
-FROM base AS multithreads
+WORKDIR /var/lib/langbench
 
-CMD ["sh", "-c", "/root/.nvm/versions/node/v24.0.1/bin/node /usr/local/src/langbench/multithreads.js ${DATA_FILE} ${DATA_SIZE} ${THREADS}"]
+FROM base AS st-mergesort
+
+ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
+CMD ["sh", "-c", "node /usr/src/local/langbench/st-mergesort.js $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
+
+FROM base AS mt-mergesort
+
+ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
+CMD ["sh", "-c", "node /usr/src/local/langbench/mt-mergesort.js $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]

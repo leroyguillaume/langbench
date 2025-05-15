@@ -1,24 +1,24 @@
 name: langbench
 
 concurrency:
-  group: langbench
+  group: langbench-${{ github.ref_name }}
   cancel-in-progress: true
 
 on:
   workflow_dispatch:
     inputs:
-      num_runs:
-        description: Number of runs
-        required: true
+      count:
+        description: The number of integers to generate
         type: number
-        default: 10
-      data_size:
-        description: Number of integers to generate
         required: true
+        default: 10000000
+      iterations:
+        description: The number of iterations
         type: number
-        default: 140000000
-      log_level:
-        description: Log level
+        required: true
+        default: 5
+      log-level:
+        description: The log level
         required: true
         type: choice
         options:
@@ -28,21 +28,21 @@ on:
           - ERROR
         default: INFO
       commit:
-        description: Commit the results
-        required: true
+        description: Commit and push the results
         type: boolean
+        required: true
         default: true
 
 jobs:
   langbench:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runs_on:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+    runs-on: ${{ matrix.runs_on }}
     permissions:
       contents: write
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 80:5000
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -51,49 +51,73 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.13
-          cache: pip
+
+      - name: set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          enable-cache: true
 
       - name: set up buildx
         uses: docker/setup-buildx-action@v3
         with:
           install: true
-          driver-opts: network=host
+
+      - name: restore data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: data-${{ inputs.count }}-${{ inputs.iterations }}-${{ hashFiles('data/**') }}
+          restore-keys: |
+            data-${{ inputs.count }}-${{ inputs.iterations }}-
 
       - name: restore buildx cache
         uses: actions/cache/restore@v4
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ inputs.data_size }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.os }}-${{ hashFiles('**/Dockerfile') }}
           restore-keys: |
-            buildx-${{ inputs.data_size }}-
+            buildx-${{ runner.os }}-
             buildx-
 
-      - name: install dependencies
-        run: pip install -r requirements.txt
+      - name: install langbench
+        run: uv pip install --system .
+
+      - name: generate data
+        run: |
+          if [ ! -d data ]; then
+            langbench generate-data \
+              -c ${{ inputs.count }} \
+              -i ${{ inputs.iterations }}
+          fi
 
       - name: run langbench
         run: |
-          ./langbench.py \
-            --data-size ${{ inputs.data_size }} \
-            --num-runs ${{ inputs.num_runs }} \
-            --log-level ${{ inputs.log_level }} \
-            --docker-registry localhost \
-            --docker-build-context langbench-base=docker-image://localhost/langbench-base:latest \
-            --docker-cache /tmp/.buildx-cache \
-            --push-base-image
+          langbench run \
+            -c ${{ inputs.count }} \
+            -i ${{ inputs.iterations }} \
+            --log-level ${{ inputs.log-level }} \
+            --docker-cache /tmp/.buildx-cache
 
-      - name: commit results
+      - name: commit and push
         if: inputs.commit
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          git add csv README.md
+          git add results.json reports
           git commit -m "update results"
           git push
+
+      - name: save data cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data
+          key: data-${{ inputs.count }}-${{ inputs.iterations }}-${{ hashFiles('data/**') }}
 
       - name: save buildx cache
         uses: actions/cache/save@v4
         if: always()
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ inputs.data_size }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.os }}-${{ hashFiles('**/Dockerfile') }}

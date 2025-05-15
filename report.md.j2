@@ -1,0 +1,72 @@
+# {{ result.benchmark.name }}
+
+{{ result.benchmark.description }}.
+
+**Architecture:** {{ result.arch }}
+
+**CPU cores:** {{ result.cores }}
+
+**Count:** {{ result.count }}
+
+**Iterations:** {{ result.iterations }}
+
+## Results
+
+<table>
+  <tr>
+    <th>Language</th>
+    <th>Elapsed time (s)</th>
+    <th>System time (s)</th>
+    <th>User time (s)</th>
+    <th>CPU usage (%)</th>
+    <th>Max memory (MB)</th>
+  </tr>
+  {%- for language_result in result %}
+  <tr>
+    <td>{{ language_result.language }}</td>
+    <td>{{ language_result.metrics.time | round(2) }}</td>
+    <td>{{ language_result.metrics.system_time | round(2) }}</td>
+    <td>{{ language_result.metrics.user_time | round(2) }}</td>
+    <td>{{ language_result.metrics.cpu_usage | round(2) }}</td>
+    <td>{{ (language_result.metrics.max_memory / 1024) | round(2) }}</td>
+  </tr>
+  {%- endfor %}
+</table>
+
+## Time comparison
+
+<table>
+  <tr>
+    <th></th>
+    {%- for language_result in result %}
+    <th>{{ language_result.language }}</th>
+    {%- endfor %}
+  </tr>
+  {%- for language_result_src in result %}
+  <tr>
+    <th>{{ language_result_src.language }}</th>
+    {%- for language_result_tgt in result %}
+    <td>{{ ((language_result_src.metrics.time / language_result_tgt.metrics.time) * 100) | round(2) }}%</td>
+    {%- endfor %}
+  </tr>
+  {%- endfor %}
+</table>
+
+## Memory comparison
+
+<table>
+  <tr>
+    <th></th>
+    {%- for language_result in result %}
+    <th>{{ language_result.language }}</th>
+    {%- endfor %}
+  </tr>
+  {%- for language_result_src in result %}
+  <tr>
+    <th>{{ language_result_src.language }}</th>
+    {%- for language_result_tgt in result %}
+    <td>{{ ((language_result_src.metrics.max_memory / language_result_tgt.metrics.max_memory) * 100) | round(2) }}%</td>
+    {%- endfor %}
+  </tr>
+  {%- endfor %}
+</table>

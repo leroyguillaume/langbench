@@ -1,110 +1,20 @@
-# LangBench
+# Reports
 
-LangBench is a simple benchmarking tool that processes numeric data and computes a mathematical result.
-
-## Disclaimer
-
-We're trying to optimize the code for each language with its specific features but
-we're not experts in all of them.
-
-If you have any suggestions, you're welcome to open an issue or a PR!
-
-## Benchmark
-
-### Hardware Specifications
-
-**Processor**: {{ cpu }}
-
-**Cores**: {{ cores }}
-
-### Data
-
-**Size**: {{ data_size }}
-
-**Number of iterations:** {{ num_runs }}
-
-### Multithreaded
-
-#### Results
-
-{{ results_table_mt }}
-
-#### CPU Usage Comparison
-
-*A value of 100% indicates equal performance between the row and column languages.*
-
-*A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
-
-{{ compare_cpu_table_mt }}
-
-#### Memory Usage Comparison
-
-*A value of 100% indicates equal memory usage between the row and column languages.*
-
-*A value of 50% indicates that the row language uses half the memory of the column language.*
-
-{{ compare_mem_table_mt }}
-
-### Singlethreaded
-
-#### Results
-
-{{ results_table_st }}
-
-#### CPU Usage Comparison
-
-*A value of 100% indicates equal performance between the row and column languages.*
-
-*A value of 50% indicates that the row language performs the computation twice as fast as the column language.*
-
-{{ compare_cpu_table_st }}
-
-#### Memory Usage Comparison
-
-*A value of 100% indicates equal memory usage between the row and column languages.*
-
-*A value of 50% indicates that the row language uses half the memory of the column language.*
-
-{{ compare_mem_table_st }}
-
-## Usage
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-./langbench.py --help
-```
-
-## Algorithm Description
-
-The algorithm works as follows:
-
-1. It reads pairs of integers from an input file.
-2. For each pair of integers (`left[i]`, `right[i]`):
-   - Computes `cos(left[i])`
-   - Computes `sin(right[i])`
-   - Multiplies these values together
-   - Takes the absolute value of the result
-   - Computes the square root of this value
-3. Sums all these calculations to produce a final result
-
-Mathematically, the algorithm computes:
-
-```
-result = ∑ sqrt(|cos(left[i]) * sin(right[i])|)
-```
-
-## Contributing
-
-If you want to add a new language or optimize the existing ones,
-you're welcome to contribute!
-
-### Installation
-
-**MacOS**:
-
-```bash
-brew install hadolint pre-commit
-pre-commit install
-```
+<table>
+  <tr>
+    <th>Benchmark</th>
+    <th>Description</th>
+    <th>Architecture</th>
+    <th>CPUs</th>
+  </tr>
+  {%- for result in results %}
+  <tr>
+    <td>
+      <a href="{{ result.benchmark.name }}_{{ result.arch }}_{{ result.cores }}_{{ result.count }}_{{ result.iterations }}.md">{{ result.benchmark.name }}</a>
+    </td>
+    <td>{{ result.benchmark.description }}</td>
+    <td>{{ result.arch }}</td>
+    <td>{{ result.cores }}</td>
+  </tr>
+  {%- endfor %}
+</table>

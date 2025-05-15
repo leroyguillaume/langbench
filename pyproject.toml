@@ -1,0 +1,15 @@
+[project]
+name = "langbench"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "colorlog",
+    "jinja2",
+    "pydantic",
+    "typer",
+]
+
+[project.scripts]
+langbench = "main:app"
