@@ -76,9 +76,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ runner.os }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.arch }}-${{ hashFiles('**/Dockerfile') }}
           restore-keys: |
-            buildx-${{ runner.os }}-
+            buildx-${{ runner.arch }}-
             buildx-
 
       - name: install langbench
@@ -122,4 +122,4 @@ jobs:
         if: always()
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ runner.os }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.arch }}-${{ hashFiles('**/Dockerfile') }}
