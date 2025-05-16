@@ -36,6 +36,7 @@ on:
 jobs:
   langbench:
     strategy:
+      max-parallel: 1
       matrix:
         runs_on:
           - ubuntu-22.04
@@ -106,6 +107,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git add results.json reports
           git commit -m "update results"
+          git pull --rebase
           git push
 
       - name: save data cache
