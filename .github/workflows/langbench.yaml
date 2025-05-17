@@ -4,6 +4,9 @@ concurrency:
   group: langbench-${{ github.ref_name }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
@@ -49,8 +52,6 @@ jobs:
           - ubuntu-22.04
           - ubuntu-22.04-arm
     runs-on: ${{ matrix.runs_on }}
-    permissions:
-      contents: write
     steps:
       - name: checkout
         uses: actions/checkout@v4
