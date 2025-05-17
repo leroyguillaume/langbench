@@ -158,6 +158,13 @@ def run(
             help="The Docker cache directory",
         ),
     ] = None,
+    dry_run: Annotated[
+        bool,
+        Option(
+            "--dry-run",
+            help="Do not save the results",
+        ),
+    ] = False,
     exclude_benchmarks: Annotated[
         list[str],
         Option(
@@ -392,15 +399,16 @@ def run(
             logging.info(
                 f"📊 {language} - {benchmark.name} results: time={time} memory={max_memory}"
             )
-    logging.debug(f"📁 Creating directory {results_dirpath}")
-    results_dirpath.mkdir(parents=True, exist_ok=True)
-    for result in results:
-        filepath = f"{results_dirpath}/{result.benchmark.name}_{result.arch}_{result.cores}_{result.count}_{result.iterations}.json"
-        logging.debug(f"💾 Saving result to {filepath}")
-        result_json = result.model_dump_json()
-        with open(filepath, "w") as file:
-            file.write(f"{result_json}\n")
-    logging.info(f"💾 Results saved into {results_dirpath}")
+    if not dry_run:
+        logging.debug(f"📁 Creating directory {results_dirpath}")
+        results_dirpath.mkdir(parents=True, exist_ok=True)
+        for result in results:
+            filepath = f"{results_dirpath}/{result.benchmark.name}_{result.arch}_{result.cores}_{result.count}_{result.iterations}.json"
+            logging.debug(f"💾 Saving result to {filepath}")
+            result_json = result.model_dump_json()
+            with open(filepath, "w") as file:
+                file.write(f"{result_json}\n")
+            logging.info(f"💾 Results saved into {results_dirpath}")
     if not no_render:
         __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
     if not no_clean:
