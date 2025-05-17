@@ -14,12 +14,12 @@ COPY *.js .
 
 WORKDIR /var/lib/langbench
 
+ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
+
 FROM base AS st-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "node /usr/src/local/langbench/st-mergesort.js $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "node /usr/src/local/langbench/mt-mergesort.js $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]

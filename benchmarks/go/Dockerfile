@@ -1,11 +1,17 @@
-FROM rust:1.75-slim AS build
+FROM golang:1.24-bookworm AS build
 
 WORKDIR /usr/local/src/langbench
 
-COPY Cargo.toml .
+COPY go.mod .
 COPY src src
 
-RUN cargo build --release
+RUN \
+    go build \
+        -o /usr/local/bin/langbench-mt-mergesort \
+        ./src/mt_mergesort.go && \
+    go build \
+        -o /usr/local/bin/langbench-st-mergesort \
+        ./src/st_mergesort.go
 
 FROM debian:bookworm-slim AS base
 
@@ -23,12 +29,12 @@ ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 
 FROM base AS st-mergesort
 
-COPY --from=build /usr/local/src/langbench/target/release/st-mergesort /usr/local/bin/langbench-st-mergesort
+COPY --from=build /usr/local/bin/langbench-st-mergesort /usr/local/bin/langbench-st-mergesort
 
 CMD ["sh", "-c", "langbench-st-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
-COPY --from=build /usr/local/src/langbench/target/release/mt-mergesort /usr/local/bin/langbench-mt-mergesort
+COPY --from=build /usr/local/bin/langbench-mt-mergesort /usr/local/bin/langbench-mt-mergesort
 
 CMD ["sh", "-c", "langbench-mt-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]

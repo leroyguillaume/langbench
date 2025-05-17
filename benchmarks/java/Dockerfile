@@ -16,12 +16,12 @@ RUN javac ./*.java
 
 WORKDIR /var/lib/langbench
 
+ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
+
 FROM base AS st-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "java -cp /usr/local/src/langbench StMergeSort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "java -cp /usr/local/src/langbench MtMergeSort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]

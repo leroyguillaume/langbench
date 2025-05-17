@@ -39,7 +39,7 @@ ENV_VAR_README_TEMPLATE = "LANGBENCH_README_TEMPLATE"
 ENV_VAR_REPORT_TEMPLATE = "LANGBENCH_REPORT_TEMPLATE"
 ENV_VAR_RESULTS_DIR = "LANGBENCH_RESULTS_DIR"
 
-DEFAULT_COUNT = 10_000_000
+DEFAULT_COUNT = 25
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_ITERATIONS = 1
 DEFAULT_LOG_LEVEL = "INFO"
@@ -158,13 +158,6 @@ def run(
             help="The Docker cache directory",
         ),
     ] = None,
-    dry_run: Annotated[
-        bool,
-        Option(
-            "--dry-run",
-            help="Do not save the results",
-        ),
-    ] = False,
     exclude_benchmarks: Annotated[
         list[str],
         Option(
@@ -203,13 +196,6 @@ def run(
         Option(
             "--no-clean",
             help="Do not clean the temporary directory",
-        ),
-    ] = False,
-    no_render: Annotated[
-        bool,
-        Option(
-            "--no-render",
-            help="Do not render the reports",
         ),
     ] = False,
     only_benchmarks: Annotated[
@@ -270,6 +256,13 @@ def run(
             help="The temporary directory",
         ),
     ] = Path("temp"),
+    write: Annotated[
+        bool,
+        Option(
+            "--write",
+            help="Write the results",
+        ),
+    ] = False,
 ):
     __configure_logging(log_level)
     docker_build_cmd = [
@@ -399,7 +392,7 @@ def run(
             logging.info(
                 f"📊 {language} - {benchmark.name} results: time={time} memory={max_memory}"
             )
-    if not dry_run:
+    if write:
         logging.debug(f"📁 Creating directory {results_dirpath}")
         results_dirpath.mkdir(parents=True, exist_ok=True)
         for result in results:
@@ -409,8 +402,6 @@ def run(
             with open(filepath, "w") as file:
                 file.write(f"{result_json}\n")
         logging.info("💾 Results saved")
-        if not no_render:
-            __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
     if not no_clean:
         logging.debug(f"🧹 Cleaning directory {temp_dirpath}")
         shutil.rmtree(temp_dirpath)
