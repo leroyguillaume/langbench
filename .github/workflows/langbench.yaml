@@ -55,6 +55,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: set up python
         uses: actions/setup-python@v5
@@ -144,6 +146,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: set up python
         uses: actions/setup-python@v5
