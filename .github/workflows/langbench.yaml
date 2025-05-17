@@ -86,6 +86,7 @@ jobs:
           path: /tmp/.buildx-cache
           key: buildx-${{ runner.arch }}-${{ hashFiles('benchmarks/**') }}-${{ inputs.languages }}
           restore-keys: |
+            buildx-${{ runner.arch }}-${{ hashFiles('benchmarks/**') }}-
             buildx-${{ runner.arch }}-
             buildx-
 
