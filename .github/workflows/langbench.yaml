@@ -84,7 +84,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ runner.arch }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.arch }}-${{ hashFiles('benchmarks/**') }}-${{ inputs.languages }}
           restore-keys: |
             buildx-${{ runner.arch }}-
             buildx-
@@ -134,7 +134,7 @@ jobs:
         if: always()
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ runner.arch }}-${{ hashFiles('**/Dockerfile') }}
+          key: buildx-${{ runner.arch }}-${{ hashFiles('benchmarks/**') }}-${{ inputs.languages }}
 
   render:
     if: inputs.commit
