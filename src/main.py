@@ -283,7 +283,7 @@ def run(
                 "--cache-from",
                 f"type=local,src={docker_cache}",
                 "--cache-to",
-                f"type=local,dest={docker_cache}",
+                f"type=local,dest={docker_cache},mode=max",
             ]
         )
     docker_temp_dirpath_prefix = ""
