@@ -113,7 +113,7 @@ jobs:
             -i ${{ inputs.iterations }} \
             --log-level ${{ inputs.log-level }} \
             --docker-cache /tmp/.buildx-cache \
-            --no-render
+            --write
 
       - name: commit and push results
         if: inputs.commit

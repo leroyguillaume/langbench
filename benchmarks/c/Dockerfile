@@ -38,16 +38,16 @@ RUN \
 
 WORKDIR /var/lib/langbench
 
+ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
+
 FROM base AS st-mergesort
 
 COPY --from=build /usr/local/bin/langbench-st-mergesort /usr/local/bin/langbench-st-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "langbench-st-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
 COPY --from=build /usr/local/bin/langbench-mt-mergesort /usr/local/bin/langbench-mt-mergesort
 
-ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 CMD ["sh", "-c", "langbench-mt-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]
