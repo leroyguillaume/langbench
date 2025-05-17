@@ -13,7 +13,7 @@ WORKDIR /usr/local/src/langbench
 COPY src src
 COPY pyproject.toml pyproject.toml
 
-RUN pip install -e --no-cache-dir .
+RUN pip install --no-cache-dir -e .
 
 WORKDIR /var/lib/langbench
 

@@ -9,38 +9,42 @@ import colorlog
 from jinja2 import Template
 from typer import Argument, Option, Typer
 
-from model import BENCHMARKS, BenchmarkMetrics, BenchmarkResults, LanguageResult
+from model import (
+    BENCHMARKS,
+    BenchmarkMetrics,
+    BenchmarkResult,
+    BenchmarkResults,
+    LanguageResult,
+)
 
 
 ARG_SHORT_COUNT = "-c"
 ARG_SHORT_ITERATIONS = "-i"
-ARG_SHORT_OUTPUT = "-o"
-ARG_SHORT_REPORTS_DIR = "-r"
 
 ARG_LONG_COUNT = "--count"
 ARG_LONG_DATA_DIR = "--data-dir"
 ARG_LONG_ITERATIONS = "--iterations"
 ARG_LONG_LOG_LEVEL = "--log-level"
-ARG_LONG_OUTPUT = "--output"
 ARG_LONG_REPORTS_DIR = "--reports-dir"
 ARG_LONG_README_TEMPLATE = "--readme-template"
 ARG_LONG_REPORT_TEMPLATE = "--report-template"
+ARG_LONG_RESULTS_DIR = "--results-dir"
 
 ENV_VAR_COUNT = "LANGBENCH_COUNT"
 ENV_VAR_DATA_DIR = "LANGBENCH_DATA_DIR"
 ENV_VAR_ITERATIONS = "LANGBENCH_ITERATIONS"
 ENV_VAR_LOG_LEVEL = "LANGBENCH_LOG_LEVEL"
-ENV_VAR_OUTPUT = "LANGBENCH_OUTPUT"
 ENV_VAR_REPORTS_DIR = "LANGBENCH_REPORTS_DIR"
 ENV_VAR_README_TEMPLATE = "LANGBENCH_README_TEMPLATE"
 ENV_VAR_REPORT_TEMPLATE = "LANGBENCH_REPORT_TEMPLATE"
+ENV_VAR_RESULTS_DIR = "LANGBENCH_RESULTS_DIR"
 
 DEFAULT_COUNT = 10_000_000
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_ITERATIONS = 1
 DEFAULT_LOG_LEVEL = "INFO"
-DEFAULT_OUTPUT = Path("results.json")
 DEFAULT_REPORTS_DIR = Path("reports")
+DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_README_TEMPLATE = Path("README.md.j2")
 DEFAULT_REPORT_TEMPLATE = Path("report.md.j2")
 
@@ -87,7 +91,7 @@ def generate_data(
     log_level: Annotated[
         str,
         Option(
-            ARG_LONG_OUTPUT,
+            ARG_LONG_LOG_LEVEL,
             envvar=ENV_VAR_LOG_LEVEL,
             help="The log level",
         ),
@@ -219,15 +223,6 @@ def run(
             help="The languages to run",
         ),
     ] = None,
-    output_filepath: Annotated[
-        Path,
-        Option(
-            ARG_SHORT_OUTPUT,
-            ARG_LONG_OUTPUT,
-            envvar=ENV_VAR_OUTPUT,
-            help="The output file",
-        ),
-    ] = DEFAULT_OUTPUT,
     readme_tpl_filepath: Annotated[
         Path,
         Option(
@@ -239,7 +234,6 @@ def run(
     reports_dirpath: Annotated[
         Path,
         Option(
-            ARG_SHORT_REPORTS_DIR,
             ARG_LONG_REPORTS_DIR,
             envvar=ENV_VAR_REPORTS_DIR,
             help="The reports directory",
@@ -253,6 +247,14 @@ def run(
             help="The report template file",
         ),
     ] = DEFAULT_REPORT_TEMPLATE,
+    results_dirpath: Annotated[
+        Path,
+        Option(
+            ARG_LONG_RESULTS_DIR,
+            envvar=ENV_VAR_RESULTS_DIR,
+            help="The results directory",
+        ),
+    ] = DEFAULT_RESULTS_DIR,
     temp_dirpath: Annotated[
         Path,
         Option(
@@ -281,7 +283,7 @@ def run(
     if not temp_dirpath.is_absolute():
         docker_temp_dirpath_prefix = "./"
     benchmarks = BENCHMARKS
-    results = __load_benchmark_results(output_filepath)
+    results = __load_benchmark_results(results_dirpath)
     if only_benchmarks:
         benchmarks = [
             benchmark for benchmark in BENCHMARKS if benchmark.name in only_benchmarks
@@ -390,11 +392,15 @@ def run(
             logging.info(
                 f"📊 {language} - {benchmark.name} results: time={time} memory={max_memory}"
             )
-    logging.debug(f"💾 Saving results to {output_filepath}")
-    content = results.model_dump_json()
-    with open(output_filepath, "w") as results_file:
-        results_file.write(f"{content}\n")
-    logging.info(f"💾 Results saved to {output_filepath}")
+    logging.debug(f"📁 Creating directory {results_dirpath}")
+    results_dirpath.mkdir(parents=True, exist_ok=True)
+    for result in results:
+        filepath = f"{results_dirpath}/{result.benchmark.name}_{result.arch}_{result.cores}_{result.count}_{result.iterations}.json"
+        logging.debug(f"💾 Saving result to {filepath}")
+        result_json = result.model_dump_json()
+        with open(filepath, "w") as file:
+            file.write(f"{result_json}\n")
+    logging.info(f"💾 Results saved into {results_dirpath}")
     if not no_render:
         __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
     if not no_clean:
@@ -438,7 +444,6 @@ def render(
     reports_dirpath: Annotated[
         Path,
         Option(
-            ARG_SHORT_REPORTS_DIR,
             ARG_LONG_REPORTS_DIR,
             envvar=ENV_VAR_REPORTS_DIR,
             help="The reports directory",
@@ -460,18 +465,17 @@ def render(
             help="The report template file",
         ),
     ] = DEFAULT_REPORT_TEMPLATE,
-    results_filepath: Annotated[
+    results_dirpath: Annotated[
         Path,
         Option(
-            ARG_SHORT_OUTPUT,
-            ARG_LONG_OUTPUT,
-            envvar=ENV_VAR_OUTPUT,
-            help="The results file",
+            ARG_LONG_RESULTS_DIR,
+            envvar=ENV_VAR_RESULTS_DIR,
+            help="The results directory",
         ),
-    ] = DEFAULT_OUTPUT,
+    ] = DEFAULT_RESULTS_DIR,
 ):
     __configure_logging(log_level)
-    results = __load_benchmark_results(results_filepath)
+    results = __load_benchmark_results(results_dirpath)
     __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
 
 
@@ -498,13 +502,14 @@ def __get_data_filepath(data_dirpath: Path, iteration: int) -> Path:
     return data_dirpath / f"data_{(iteration + 1):03d}"
 
 
-def __load_benchmark_results(path: Path) -> BenchmarkResults:
-    if path.is_file():
-        logging.debug(f"📄 Loading benchmarks from {path}")
-        with open(path, "r") as file:
-            return BenchmarkResults.model_validate_json(file.read())
-    else:
-        return BenchmarkResults()
+def __load_benchmark_results(dirpath: Path) -> BenchmarkResults:
+    results = BenchmarkResults()
+    if dirpath.is_dir():
+        for filepath in dirpath.iterdir():
+            logging.debug(f"📄 Loading benchmarks from {filepath}")
+            with open(filepath, "r") as file:
+                results.append(BenchmarkResult.model_validate_json(file.read()))
+    return results
 
 
 def __load_template(filepath: Path) -> Template:

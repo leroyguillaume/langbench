@@ -8,7 +8,7 @@ Merge Sort algorithm implementation running on a single thread.
 
 **Count:** 10000000
 
-**Iterations:** 1
+**Iterations:** 5
 
 ## Results
 
@@ -23,43 +23,43 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>c</td>
-    <td>1.07</td>
+    <td>1.1</td>
     <td>0.04</td>
-    <td>1.03</td>
-    <td>99.0</td>
-    <td>77.55</td>
+    <td>1.05</td>
+    <td>99.4</td>
+    <td>77.52</td>
   </tr>
   <tr>
     <td>java</td>
-    <td>1.16</td>
-    <td>0.06</td>
-    <td>1.11</td>
-    <td>101.0</td>
-    <td>350.82</td>
+    <td>1.21</td>
+    <td>0.09</td>
+    <td>1.14</td>
+    <td>100.8</td>
+    <td>347.11</td>
   </tr>
   <tr>
     <td>bun</td>
-    <td>1.3</td>
-    <td>0.09</td>
+    <td>1.28</td>
+    <td>0.06</td>
     <td>1.23</td>
-    <td>101.0</td>
-    <td>237.79</td>
+    <td>100.8</td>
+    <td>235.58</td>
   </tr>
   <tr>
     <td>nodejs</td>
-    <td>2.71</td>
-    <td>0.13</td>
-    <td>2.69</td>
+    <td>2.75</td>
+    <td>0.1</td>
+    <td>2.77</td>
     <td>104.0</td>
-    <td>157.12</td>
+    <td>157.65</td>
   </tr>
   <tr>
     <td>python</td>
-    <td>51.88</td>
+    <td>51.58</td>
     <td>0.1</td>
-    <td>51.76</td>
+    <td>51.46</td>
     <td>99.0</td>
-    <td>123.86</td>
+    <td>123.84</td>
   </tr>
 </table>
 
@@ -77,41 +77,41 @@ Merge Sort algorithm implementation running on a single thread.
   <tr>
     <th>c</th>
     <td>100.0%</td>
-    <td>92.24%</td>
-    <td>82.31%</td>
-    <td>39.48%</td>
-    <td>2.06%</td>
+    <td>90.76%</td>
+    <td>86.07%</td>
+    <td>39.94%</td>
+    <td>2.13%</td>
   </tr>
   <tr>
     <th>java</th>
-    <td>108.41%</td>
+    <td>110.18%</td>
     <td>100.0%</td>
-    <td>89.23%</td>
-    <td>42.8%</td>
-    <td>2.24%</td>
+    <td>94.84%</td>
+    <td>44.01%</td>
+    <td>2.35%</td>
   </tr>
   <tr>
     <th>bun</th>
-    <td>121.5%</td>
-    <td>112.07%</td>
+    <td>116.18%</td>
+    <td>105.45%</td>
     <td>100.0%</td>
-    <td>47.97%</td>
-    <td>2.51%</td>
+    <td>46.41%</td>
+    <td>2.48%</td>
   </tr>
   <tr>
     <th>nodejs</th>
-    <td>253.27%</td>
-    <td>233.62%</td>
-    <td>208.46%</td>
+    <td>250.36%</td>
+    <td>227.23%</td>
+    <td>215.49%</td>
     <td>100.0%</td>
-    <td>5.22%</td>
+    <td>5.34%</td>
   </tr>
   <tr>
     <th>python</th>
-    <td>4848.6%</td>
-    <td>4472.41%</td>
-    <td>3990.77%</td>
-    <td>1914.39%</td>
+    <td>4689.45%</td>
+    <td>4256.11%</td>
+    <td>4036.31%</td>
+    <td>1873.06%</td>
     <td>100.0%</td>
   </tr>
 </table>
@@ -130,41 +130,41 @@ Merge Sort algorithm implementation running on a single thread.
   <tr>
     <th>c</th>
     <td>100.0%</td>
-    <td>22.1%</td>
-    <td>32.61%</td>
-    <td>49.35%</td>
-    <td>62.61%</td>
+    <td>22.33%</td>
+    <td>32.91%</td>
+    <td>49.17%</td>
+    <td>62.6%</td>
   </tr>
   <tr>
     <th>java</th>
-    <td>452.4%</td>
+    <td>447.78%</td>
     <td>100.0%</td>
-    <td>147.53%</td>
-    <td>223.28%</td>
-    <td>283.23%</td>
+    <td>147.34%</td>
+    <td>220.18%</td>
+    <td>280.3%</td>
   </tr>
   <tr>
     <th>bun</th>
-    <td>306.64%</td>
-    <td>67.78%</td>
+    <td>303.9%</td>
+    <td>67.87%</td>
     <td>100.0%</td>
-    <td>151.34%</td>
-    <td>191.98%</td>
+    <td>149.43%</td>
+    <td>190.24%</td>
   </tr>
   <tr>
     <th>nodejs</th>
-    <td>202.61%</td>
-    <td>44.79%</td>
-    <td>66.08%</td>
+    <td>203.37%</td>
+    <td>45.42%</td>
+    <td>66.92%</td>
     <td>100.0%</td>
-    <td>126.85%</td>
+    <td>127.3%</td>
   </tr>
   <tr>
     <th>python</th>
-    <td>159.73%</td>
-    <td>35.31%</td>
-    <td>52.09%</td>
-    <td>78.83%</td>
+    <td>159.75%</td>
+    <td>35.68%</td>
+    <td>52.57%</td>
+    <td>78.55%</td>
     <td>100.0%</td>
   </tr>
 </table>

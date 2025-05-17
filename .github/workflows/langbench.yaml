@@ -34,9 +34,8 @@ on:
         default: true
 
 jobs:
-  langbench:
+  benchmark:
     strategy:
-      max-parallel: 1
       matrix:
         runs_on:
           - ubuntu-22.04
@@ -92,21 +91,22 @@ jobs:
               -i ${{ inputs.iterations }}
           fi
 
-      - name: run langbench
+      - name: run benchmark
         run: |
           langbench run \
             -c ${{ inputs.count }} \
             -i ${{ inputs.iterations }} \
             --log-level ${{ inputs.log-level }} \
-            --docker-cache /tmp/.buildx-cache
+            --docker-cache /tmp/.buildx-cache \
+            --no-render
 
-      - name: commit and push
+      - name: commit and push results
         if: inputs.commit
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          git add results.json reports
-          git commit -m "update results"
+          git add results
+          git commit -m "benchmark(results): ${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}"
           git pull --rebase
           git push
 
@@ -123,3 +123,37 @@ jobs:
         with:
           path: /tmp/.buildx-cache
           key: buildx-${{ runner.arch }}-${{ hashFiles('**/Dockerfile') }}
+
+  render:
+    if: inputs.commit
+    needs: benchmark
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+
+      - name: set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          enable-cache: true
+
+      - name: install langbench
+        run: uv pip install --system .
+
+      - name: render
+        run: langbench render
+
+      - name: commit and push reports
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add reports
+          git commit -m "benchmark(reports): ${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}"
+          git pull --rebase
+          git push

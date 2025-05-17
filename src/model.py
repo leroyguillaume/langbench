@@ -55,6 +55,9 @@ class BenchmarkResult(BaseModel):
 class BenchmarkResults(BaseModel):
     results: list[BenchmarkResult] = []
 
+    def append(self, result: BenchmarkResult):
+        self.results.append(result)
+
     def get_or_create(
         self, benchmark_name: str, count: int, iterations: int
     ) -> BenchmarkResult:
