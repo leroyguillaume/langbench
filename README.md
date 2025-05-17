@@ -56,7 +56,7 @@ The benchmark implementations are designed to be fair and consistent across lang
 - **Language-Specific Optimizations**: Each implementation uses language-specific optimizations (e.g., Rust's native types, Python's array module, C's compiler flags) but maintains the same algorithmic approach
 - **Consistent I/O**: All implementations use the same binary I/O format for reading input and writing output, ensuring no language gets an unfair advantage from I/O operations
 - **Memory Management**: Each implementation is optimized for its language's memory model while maintaining the same memory access patterns
-- **Threading Model**: Multi-threaded implementations use each language's native threading primitives (e.g., Python's `interpreters` ([PEP 734](https://peps.python.org/pep-0734)), Rust's `stdlib`, C's `pthreads`) but follow the same parallelization strategy
+- **Threading Model**: Multi-threaded implementations use each language's native threading primitives (e.g., Python's [PEP 734](https://peps.python.org/pep-0734), Rust's `stdlib`, C's `pthreads`) but follow the same parallelization strategy
 - **Build Process**: All implementations are compiled with equivalent optimization levels and run in isolated Docker containers with the same resource constraints
 
 ## Install
