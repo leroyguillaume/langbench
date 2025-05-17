@@ -63,7 +63,9 @@ class BenchmarkResults(BaseModel):
     ) -> BenchmarkResult:
         for result in self.results:
             if (
-                result.benchmark.name == benchmark_name
+                result.arch == platform.machine()
+                and result.benchmark.name == benchmark_name
+                and result.cores == multiprocessing.cpu_count()
                 and result.count == count
                 and result.iterations == iterations
             ):
