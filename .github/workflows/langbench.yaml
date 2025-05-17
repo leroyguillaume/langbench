@@ -159,6 +159,9 @@ jobs:
       - name: install langbench
         run: uv pip install --system .
 
+      - name: pull changes
+        run: git pull --rebase
+
       - name: render
         run: langbench render
 
@@ -168,5 +171,4 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git add reports
           git commit -m "benchmark(${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}): update reports"
-          git pull --rebase
           git push
