@@ -121,7 +121,7 @@ jobs:
           git stash
           git pull --rebase
           git stash pop
-          git commit -m "benchmark(results): ${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}"
+          git commit -m "benchmark(${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}): update results"
           git push
 
       - name: save data cache
@@ -171,5 +171,5 @@ jobs:
           git stash
           git pull --rebase
           git stash pop
-          git commit -m "benchmark(reports): ${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}"
+          git commit -m "benchmark(${{ runner.arch }} $(nproc) ${{ inputs.count }} ${{ inputs.iterations }}): update reports"
           git push
