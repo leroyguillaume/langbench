@@ -408,7 +408,7 @@ def run(
             result_json = result.model_dump_json()
             with open(filepath, "w") as file:
                 file.write(f"{result_json}\n")
-            logging.info(f"💾 Results saved into {results_dirpath}")
+        logging.info("💾 Results saved")
         if not no_render:
             __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
     if not no_clean:
