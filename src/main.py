@@ -217,7 +217,7 @@ def run(
         Option(
             "-b",
             "--only-benchmark",
-            envvar="LANGBENCH_ONLY_BENCHMARKS",
+            envvar="LANGBENCH_BENCHMARKS",
             help="The benchmarks to run",
         ),
     ] = None,
@@ -226,7 +226,7 @@ def run(
         Option(
             "-l",
             "--only-language",
-            envvar="LANGBENCH_ONLY_LANGUAGES",
+            envvar="LANGBENCH_LANGUAGES",
             help="The languages to run",
         ),
     ] = None,
@@ -409,8 +409,8 @@ def run(
             with open(filepath, "w") as file:
                 file.write(f"{result_json}\n")
             logging.info(f"💾 Results saved into {results_dirpath}")
-    if not no_render:
-        __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
+        if not no_render:
+            __render(results, reports_dirpath, readme_tpl_filepath, report_tpl_filepath)
     if not no_clean:
         logging.debug(f"🧹 Cleaning directory {temp_dirpath}")
         shutil.rmtree(temp_dirpath)

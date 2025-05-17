@@ -7,6 +7,14 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
+      languages:
+        description: 'Space-separated list of languages to benchmark (default: all)'
+        type: string
+        required: false
+      benchmarks:
+        description: 'Space-separated list of benchmarks to run (default: all)'
+        type: string
+        required: false
       count:
         description: The number of integers to generate
         type: number
@@ -92,6 +100,9 @@ jobs:
           fi
 
       - name: run benchmark
+        env:
+          LANGBENCH_BENCHMARKS: ${{ inputs.benchmarks }}
+          LANGBENCH_LANGUAGES: ${{ inputs.languages }}
         run: |
           langbench run \
             -c ${{ inputs.count }} \
