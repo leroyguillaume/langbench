@@ -55,40 +55,50 @@ fn merge_sort(arr: &mut [i32], left: usize, right: usize) {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 4 {
-        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", args[0]);
+    let mut args = env::args();
+    let program_name = args.next().unwrap();
+
+    let input_file = args.next().unwrap_or_else(|| {
+        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
+        std::process::exit(1);
+    });
+
+    let num_integers: usize = args.next()
+        .and_then(|arg| arg.parse().ok())
+        .unwrap_or_else(|| {
+            eprintln!("Failed to parse number of integers");
+            std::process::exit(1);
+        });
+
+    let output_file = args.next().unwrap_or_else(|| {
+        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
+        std::process::exit(1);
+    });
+
+    if args.next().is_some() {
+        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
         std::process::exit(1);
     }
-
-    let input_file = &args[1];
-    let num_integers: usize = args[2].parse().expect("Failed to parse number of integers");
-    let output_file = &args[3];
 
     // Read input file
     let mut file = File::open(input_file).expect("Failed to open input file");
     let mut buffer = vec![0i32; num_integers];
-    let bytes_to_read = num_integers * std::mem::size_of::<i32>();
-    let mut bytes = vec![0u8; bytes_to_read];
-    file.read_exact(&mut bytes).expect("Failed to read input file");
-
-    // Convert bytes to i32 array
-    for i in 0..num_integers {
-        buffer[i] = i32::from_le_bytes([
-            bytes[i * 4],
-            bytes[i * 4 + 1],
-            bytes[i * 4 + 2],
-            bytes[i * 4 + 3],
-        ]);
-    }
+    file.read_exact(unsafe {
+        std::slice::from_raw_parts_mut(
+            buffer.as_mut_ptr() as *mut u8,
+            num_integers * std::mem::size_of::<i32>()
+        )
+    }).expect("Failed to read input file");
 
     // Perform merge sort
     merge_sort(&mut buffer, 0, num_integers - 1);
 
     // Write output file
     let mut output = File::create(output_file).expect("Failed to create output file");
-    let bytes: Vec<u8> = buffer.iter()
-        .flat_map(|&x| x.to_le_bytes().to_vec())
-        .collect();
-    output.write_all(&bytes).expect("Failed to write output file");
+    output.write_all(unsafe {
+        std::slice::from_raw_parts(
+            buffer.as_ptr() as *const u8,
+            num_integers * std::mem::size_of::<i32>()
+        )
+    }).expect("Failed to write output file");
 }
