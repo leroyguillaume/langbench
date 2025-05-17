@@ -302,6 +302,7 @@ def run(
                 logging.debug(f"⏭️ Skipping benchmark {benchmark.name} (excluded)")
                 continue
             benchmark_result = results.get_or_create(benchmark.name, count, iterations)
+            name = f"langbench-{language}-{benchmark.name}"
             tag = f"langbench-{language}:{benchmark.name}"
             try:
                 logging.info(f"🔨 Building image {tag} from context {language_dirpath}")
@@ -341,9 +342,17 @@ def run(
                     __run(
                         [
                             "docker",
+                            "rm",
+                            "-f",
+                            name,
+                        ]
+                    )
+                    __run(
+                        [
+                            "docker",
                             "run",
                             "--name",
-                            f"langbench-{language}-{benchmark.name}",
+                            name,
                             "--rm",
                             "-e",
                             f"LANGBENCH_DATA_FILE=data/{data_filepath.name}",
