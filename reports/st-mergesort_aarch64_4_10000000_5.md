@@ -78,6 +78,14 @@ Merge Sort algorithm implementation running on a single thread.
     <td>157.96</td>
   </tr>
   <tr>
+    <td>php</td>
+    <td>13.71</td>
+    <td>0.46</td>
+    <td>13.22</td>
+    <td>99.0</td>
+    <td>366.32</td>
+  </tr>
+  <tr>
     <td>python</td>
     <td>92.6</td>
     <td>0.13</td>
@@ -101,6 +109,7 @@ Merge Sort algorithm implementation running on a single thread.
     <th>bun</th>
     <th>julia</th>
     <th>nodejs</th>
+    <th>php</th>
     <th>python</th>
   </tr>
   <tr>
@@ -112,6 +121,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>75.07%</td>
     <td>64.62%</td>
     <td>29.08%</td>
+    <td>7.51%</td>
     <td>1.11%</td>
   </tr>
   <tr>
@@ -123,6 +133,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>88.34%</td>
     <td>76.04%</td>
     <td>34.22%</td>
+    <td>8.84%</td>
     <td>1.31%</td>
   </tr>
   <tr>
@@ -134,6 +145,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>88.48%</td>
     <td>76.16%</td>
     <td>34.27%</td>
+    <td>8.85%</td>
     <td>1.31%</td>
   </tr>
   <tr>
@@ -145,6 +157,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>91.25%</td>
     <td>78.54%</td>
     <td>35.35%</td>
+    <td>9.13%</td>
     <td>1.35%</td>
   </tr>
   <tr>
@@ -156,6 +169,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>100.0%</td>
     <td>86.07%</td>
     <td>38.74%</td>
+    <td>10.0%</td>
     <td>1.48%</td>
   </tr>
   <tr>
@@ -167,6 +181,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>116.18%</td>
     <td>100.0%</td>
     <td>45.0%</td>
+    <td>11.62%</td>
     <td>1.72%</td>
   </tr>
   <tr>
@@ -178,7 +193,20 @@ Merge Sort algorithm implementation running on a single thread.
     <td>258.16%</td>
     <td>222.21%</td>
     <td>100.0%</td>
+    <td>25.83%</td>
     <td>3.83%</td>
+  </tr>
+  <tr>
+    <th>php</th>
+    <td>1331.46%</td>
+    <td>1131.52%</td>
+    <td>1129.65%</td>
+    <td>1095.37%</td>
+    <td>999.56%</td>
+    <td>860.35%</td>
+    <td>387.18%</td>
+    <td>100.0%</td>
+    <td>14.81%</td>
   </tr>
   <tr>
     <th>python</th>
@@ -189,6 +217,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>6748.98%</td>
     <td>5809.03%</td>
     <td>2614.23%</td>
+    <td>675.19%</td>
     <td>100.0%</td>
   </tr>
 </table>
@@ -205,6 +234,7 @@ Merge Sort algorithm implementation running on a single thread.
     <th>bun</th>
     <th>julia</th>
     <th>nodejs</th>
+    <th>php</th>
     <th>python</th>
   </tr>
   <tr>
@@ -216,6 +246,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>33.37%</td>
     <td>25.26%</td>
     <td>49.05%</td>
+    <td>21.15%</td>
     <td>62.61%</td>
   </tr>
   <tr>
@@ -227,6 +258,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>53.43%</td>
     <td>40.43%</td>
     <td>78.53%</td>
+    <td>33.86%</td>
     <td>100.23%</td>
   </tr>
   <tr>
@@ -238,6 +270,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>140.03%</td>
     <td>105.96%</td>
     <td>205.81%</td>
+    <td>88.74%</td>
     <td>262.68%</td>
   </tr>
   <tr>
@@ -249,6 +282,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>33.55%</td>
     <td>25.39%</td>
     <td>49.31%</td>
+    <td>21.26%</td>
     <td>62.94%</td>
   </tr>
   <tr>
@@ -260,6 +294,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>100.0%</td>
     <td>75.67%</td>
     <td>146.98%</td>
+    <td>63.37%</td>
     <td>187.59%</td>
   </tr>
   <tr>
@@ -271,6 +306,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>132.15%</td>
     <td>100.0%</td>
     <td>194.23%</td>
+    <td>83.75%</td>
     <td>247.9%</td>
   </tr>
   <tr>
@@ -282,7 +318,20 @@ Merge Sort algorithm implementation running on a single thread.
     <td>68.04%</td>
     <td>51.49%</td>
     <td>100.0%</td>
+    <td>43.12%</td>
     <td>127.63%</td>
+  </tr>
+  <tr>
+    <th>php</th>
+    <td>472.78%</td>
+    <td>295.31%</td>
+    <td>112.69%</td>
+    <td>470.29%</td>
+    <td>157.79%</td>
+    <td>119.4%</td>
+    <td>231.91%</td>
+    <td>100.0%</td>
+    <td>296.0%</td>
   </tr>
   <tr>
     <th>python</th>
@@ -293,6 +342,7 @@ Merge Sort algorithm implementation running on a single thread.
     <td>53.31%</td>
     <td>40.34%</td>
     <td>78.35%</td>
+    <td>33.78%</td>
     <td>100.0%</td>
   </tr>
 </table>
