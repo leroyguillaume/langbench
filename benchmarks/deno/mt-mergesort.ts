@@ -161,21 +161,13 @@ async function main() {
 
     // Read input file
     const inputData = await Deno.readFile(inputFile);
-    const arr = new Int32Array(numIntegers);
-
-    // Convert buffer to Int32Array
-    for (let i = 0; i < numIntegers; i++) {
-        arr[i] = new DataView(inputData.buffer).getInt32(i * 4, true);
-    }
+    const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
 
     // Perform parallel merge sort
     await mergeSortParallel(arr, 0, numIntegers - 1, 0, maxDepth);
 
     // Write output file
-    const outputBuffer = new Uint8Array(numIntegers * 4);
-    for (let i = 0; i < numIntegers; i++) {
-        new DataView(outputBuffer.buffer).setInt32(i * 4, arr[i], true);
-    }
+    const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
     await Deno.writeFile(outputFile, outputBuffer);
 }
 

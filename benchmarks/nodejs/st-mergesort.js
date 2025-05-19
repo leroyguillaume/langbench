@@ -65,19 +65,11 @@ const outputFile = process.argv[4];
 
 // Read input file
 const buffer = fs.readFileSync(inputFile);
-const arr = new Int32Array(numIntegers);
-
-// Convert buffer to Int32Array
-for (let i = 0; i < numIntegers; i++) {
-    arr[i] = buffer.readInt32LE(i * 4);
-}
+const arr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
 
 // Perform merge sort
 mergeSort(arr, 0, numIntegers - 1);
 
 // Write output file
-const outputBuffer = Buffer.alloc(numIntegers * 4);
-for (let i = 0; i < numIntegers; i++) {
-    outputBuffer.writeInt32LE(arr[i], i * 4);
-}
+const outputBuffer = Buffer.from(arr.buffer, arr.byteOffset, numIntegers * 4);
 fs.writeFileSync(outputFile, outputBuffer);
