@@ -94,7 +94,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>445.46</td>
   </tr>
   <tr>
-    <td>C#</td>
+    <td>c#</td>
     <td>4.73</td>
     <td>0.54</td>
     <td>5.94</td>

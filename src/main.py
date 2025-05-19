@@ -49,7 +49,7 @@ DEFAULT_README_TEMPLATE = Path("README.md.j2")
 DEFAULT_REPORT_TEMPLATE = Path("report.md.j2")
 
 LANGUAGES_LABEL_MAPPING = {
-    "csharp": "C#",
+    "csharp": "c#",
 }
 
 
