@@ -23,7 +23,7 @@
   </tr>
   {%- for language_result in result %}
   <tr>
-    <td>{{ language_result.language }}</td>
+    <td>{{ languages_label_mapping[language_result.language] | default(language_result.language) }}</td>
     <td>{{ language_result.metrics.time | round(2) }}</td>
     <td>{{ language_result.metrics.system_time | round(2) }}</td>
     <td>{{ language_result.metrics.user_time | round(2) }}</td>
