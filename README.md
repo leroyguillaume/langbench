@@ -33,11 +33,17 @@ This project focuses exclusively on measuring raw performance metrics (CPU and m
 - Package management
 - Development workflow
 
-The goal is to provide a clear, objective comparison of how different languages perform the same computational task under identical conditions. This helps developers make informed decisions about language choice when performance is the primary concern.
+The goal is to provide a clear, objective comparison of how different languages perform the same computational task under identical conditions. This helps developers make informed decisions about language choice when performance is the primary concern. 
+
+## Interpretation
+
+The raw time values for a given language are not to be taken separately or as exact performance in seconds, as it includes Docker overhead and is directly linked to the hardware running the benchmark. 
+You can interpret the benchmark by comparing one language to another, for example, comparing its total duration `time`.
+
 
 ## Disclaimer
 
-This project's codebase was primarily written by Claude 3.7 Sonnet, with approximately 90% of the code generated through AI assistance. While the implementations aim to be fair and accurate across different languages, there may be room for optimization and improvement, especially from human experts in each language.
+This project's codebase was primarily written by Claude 3.7 Sonnet, with approximately 90% of the code generated through AI assistance. While the implementations aim to be fair and accurate across different languages, there is probably room for optimization and improvement from human experts in each language.
 
 Contributions are very welcome! If you have expertise in any of the supported languages and can suggest optimizations or improvements to the implementations, please feel free to open a Pull Request (see [CONTRIBUTING](#contributing)). This could include:
 
