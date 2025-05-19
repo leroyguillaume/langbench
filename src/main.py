@@ -48,6 +48,10 @@ DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_README_TEMPLATE = Path("README.md.j2")
 DEFAULT_REPORT_TEMPLATE = Path("report.md.j2")
 
+LANGUAGES_LABEL_MAPPING = {
+    "csharp": "C#",
+}
+
 
 app = Typer()
 
@@ -388,9 +392,10 @@ def run(
             )
             benchmark_result.upsert(result)
             time = round(result.metrics.time, 2)
+            cpu_usage = round(result.metrics.cpu_usage, 2)
             max_memory = round(result.metrics.max_memory / 1024, 2)
             logging.info(
-                f"📊 {language} - {benchmark.name} results: time={time} memory={max_memory}"
+                f"📊 {language} - {benchmark.name} results: time={time} cpu={cpu_usage}% memory={max_memory}"
             )
     if write:
         logging.debug(f"📁 Creating directory {results_dirpath}")
@@ -542,6 +547,7 @@ def __render(
         with open(filepath, "w") as file:
             file.write(
                 report_tpl.render(
+                    languages_label_mapping=LANGUAGES_LABEL_MAPPING,
                     result=result,
                 )
             )
