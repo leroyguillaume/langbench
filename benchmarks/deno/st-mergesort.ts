@@ -1,5 +1,20 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write
 
+// @ts-ignore
+declare const Deno: {
+    args: string[];
+    readFile(path: string): Promise<Uint8Array>;
+    writeFile(path: string, data: Uint8Array): Promise<void>;
+    exit(code: number): never;
+};
+
+// @ts-ignore
+declare global {
+    interface ImportMeta {
+        main: boolean;
+    }
+}
+
 function merge(arr: Int32Array, left: number, mid: number, right: number): void {
     const n1 = mid - left + 1;
     const n2 = right - mid;
@@ -64,13 +79,22 @@ async function main() {
 
     // Read input file
     const inputData = await Deno.readFile(inputFile);
-    const arr = new Int32Array(inputData.buffer);
+    const arr = new Int32Array(numIntegers);
+
+    // Convert buffer to Int32Array
+    for (let i = 0; i < numIntegers; i++) {
+        arr[i] = new DataView(inputData.buffer).getInt32(i * 4, true);
+    }
 
     // Perform merge sort
     mergeSort(arr, 0, numIntegers - 1);
 
     // Write output file
-    await Deno.writeFile(outputFile, new Uint8Array(arr.buffer));
+    const outputBuffer = new Uint8Array(numIntegers * 4);
+    for (let i = 0; i < numIntegers; i++) {
+        new DataView(outputBuffer.buffer).setInt32(i * 4, arr[i], true);
+    }
+    await Deno.writeFile(outputFile, outputBuffer);
 }
 
 if (import.meta.main) {
