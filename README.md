@@ -42,7 +42,7 @@ You can interpret the benchmark by comparing one language to another, for exampl
 
 ## Disclaimer
 
-This project's codebase was primarily written by Claude 3.7 Sonnet, with approximately 90% of the code generated through AI assistance. While the implementations aim to be fair and accurate across different languages, there is probably room for optimization and improvement from human experts in each language.
+This project's codebase was primarily written by Claude 3.7 Sonnet, with approximately 90% of the code generated through AI assistance. **While the implementations aim to be fair and accurate across different languages, there is probably room for optimization and improvement from human experts in each language.**
 
 Contributions are very welcome! If you have expertise in any of the supported languages and can suggest optimizations or improvements to the implementations, please feel free to open a Pull Request (see [CONTRIBUTING](#contributing)). This could include:
 
