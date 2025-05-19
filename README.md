@@ -33,13 +33,12 @@ This project focuses exclusively on measuring raw performance metrics (CPU and m
 - Package management
 - Development workflow
 
-The goal is to provide a clear, objective comparison of how different languages perform the same computational task under identical conditions. This helps developers make informed decisions about language choice when performance is the primary concern. 
+The goal is to provide a clear, objective comparison of how different languages perform the same computational task under identical conditions. This helps developers make informed decisions about language choice when performance is the primary concern.
 
 ## Interpretation
 
-The raw time values for a given language are not to be taken separately or as exact performance in seconds, as it includes Docker overhead and is directly linked to the hardware running the benchmark. 
+The raw time values for a given language are not to be taken separately or as exact performance in seconds, as it includes Docker overhead and is directly linked to the hardware running the benchmark.
 You can interpret the benchmark by comparing one language to another, for example, comparing its total duration `time`.
-
 
 ## Disclaimer
 
