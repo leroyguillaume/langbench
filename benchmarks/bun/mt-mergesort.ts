@@ -9,13 +9,9 @@ function merge(arr: Int32Array, left: number, mid: number, right: number): void 
     const L = new Int32Array(n1);
     const R = new Int32Array(n2);
 
-    // Copy data to temporary arrays
-    for (let i = 0; i < n1; i++) {
-        L[i] = arr[left + i];
-    }
-    for (let j = 0; j < n2; j++) {
-        R[j] = arr[mid + 1 + j];
-    }
+    // Copy data to temporary arrays using memcpy-like approach
+    L.set(arr.slice(left, left + n1));
+    R.set(arr.slice(mid + 1, mid + 1 + n2));
 
     // Merge the temporary arrays back
     let i = 0, j = 0, k = left;
@@ -51,33 +47,34 @@ async function mergeSortParallel(arr: Int32Array, left: number, right: number, d
 
         if (depth < maxDepth) {
             // Create promises for parallel execution
-            const leftPromise = new Promise<void>((resolve) => {
-                const worker = new Worker(new URL(import.meta.url), {
-                    workerData: {
-                        arr: arr.buffer,
-                        left: left,
-                        right: mid,
-                        depth: depth + 1,
-                        maxDepth: maxDepth
-                    }
-                });
-                worker.on('message', () => resolve());
-            });
-
-            const rightPromise = new Promise<void>((resolve) => {
-                const worker = new Worker(new URL(import.meta.url), {
-                    workerData: {
-                        arr: arr.buffer,
-                        left: mid + 1,
-                        right: right,
-                        depth: depth + 1,
-                        maxDepth: maxDepth
-                    }
-                });
-                worker.on('message', () => resolve());
-            });
-
-            await Promise.all([leftPromise, rightPromise]);
+            const [leftResult, rightResult] = await Promise.all([
+                new Promise<void>((resolve, reject) => {
+                    const worker = new Worker(new URL(import.meta.url), {
+                        workerData: {
+                            arr: arr.buffer,
+                            left: left,
+                            right: mid,
+                            depth: depth + 1,
+                            maxDepth: maxDepth
+                        }
+                    });
+                    worker.on('message', () => resolve());
+                    worker.on('error', reject);
+                }),
+                new Promise<void>((resolve, reject) => {
+                    const worker = new Worker(new URL(import.meta.url), {
+                        workerData: {
+                            arr: arr.buffer,
+                            left: mid + 1,
+                            right: right,
+                            depth: depth + 1,
+                            maxDepth: maxDepth
+                        }
+                    });
+                    worker.on('message', () => resolve());
+                    worker.on('error', reject);
+                })
+            ]);
         } else {
             // Sequential sorting for remaining depth
             await mergeSortParallel(arr, left, mid, depth + 1, maxDepth);
@@ -93,7 +90,11 @@ if (!isMainThread) {
     const { arr, left, right, depth, maxDepth } = workerData;
     const sharedArr = new Int32Array(arr);
     mergeSortParallel(sharedArr, left, right, depth, maxDepth)
-        .then(() => parentPort?.postMessage('done'));
+        .then(() => parentPort?.postMessage('done'))
+        .catch(error => {
+            console.error('Worker error:', error);
+            process.exit(1);
+        });
 }
 
 // Main thread code
@@ -108,24 +109,35 @@ if (isMainThread) {
     const numCores = parseInt(process.argv[4]);
     const outputFile = process.argv[5];
 
-    // Calculate max depth for thread creation
-    let maxDepth = 0;
-    let temp = numCores;
-    while (temp > 1) {
-        maxDepth++;
-        temp = Math.floor(temp / 2);
+    try {
+        // Calculate max depth for thread creation
+        let maxDepth = 0;
+        let temp = numCores;
+        while (temp > 1) {
+            maxDepth++;
+            temp = Math.floor(temp / 2);
+        }
+
+        // Read input file
+        const buffer = readFileSync(inputFile);
+        if (buffer.length < numIntegers * 4) {
+            console.error('Error: Input file is too small');
+            process.exit(1);
+        }
+
+        // Create shared array and copy data
+        const sharedBuffer = new SharedArrayBuffer(numIntegers * 4);
+        const arr = new Int32Array(sharedBuffer);
+        const inputArr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
+        arr.set(inputArr);
+
+        // Perform parallel merge sort
+        await mergeSortParallel(arr, 0, numIntegers - 1, 0, maxDepth);
+
+        // Write output file directly, similar to C's fwrite
+        writeFileSync(outputFile, Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength));
+    } catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
     }
-
-    // Read input file
-    const buffer = readFileSync(inputFile);
-    const sharedBuffer = new SharedArrayBuffer(buffer.byteLength);
-    const arr = new Int32Array(sharedBuffer);
-    arr.set(new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers));
-
-    // Perform parallel merge sort
-    mergeSortParallel(arr, 0, numIntegers - 1, 0, maxDepth)
-        .then(() => {
-            // Write output file
-            writeFileSync(outputFile, Buffer.from(arr.buffer));
-        });
 }

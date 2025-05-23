@@ -8,13 +8,9 @@ function merge(arr: Int32Array, left: number, mid: number, right: number): void 
     const L = new Int32Array(n1);
     const R = new Int32Array(n2);
 
-    // Copy data to temporary arrays
-    for (let i = 0; i < n1; i++) {
-        L[i] = arr[left + i];
-    }
-    for (let j = 0; j < n2; j++) {
-        R[j] = arr[mid + 1 + j];
-    }
+    // Copy data to temporary arrays using memcpy-like approach
+    L.set(arr.slice(left, left + n1));
+    R.set(arr.slice(mid + 1, mid + 1 + n2));
 
     // Merge the temporary arrays back
     let i = 0, j = 0, k = left;
@@ -63,12 +59,23 @@ const inputFile = process.argv[2];
 const numIntegers = parseInt(process.argv[3]);
 const outputFile = process.argv[4];
 
-// Read input file
-const buffer = readFileSync(inputFile);
-const arr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
+try {
+    // Read input file
+    const buffer = readFileSync(inputFile);
+    if (buffer.length < numIntegers * 4) {
+        console.error('Error: Input file is too small');
+        process.exit(1);
+    }
 
-// Perform merge sort
-mergeSort(arr, 0, numIntegers - 1);
+    // Create array directly from buffer, similar to C's fread
+    const arr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
 
-// Write output file
-writeFileSync(outputFile, Buffer.from(arr.buffer));
+    // Perform merge sort
+    mergeSort(arr, 0, numIntegers - 1);
+
+    // Write output file directly, similar to C's fwrite
+    writeFileSync(outputFile, Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength));
+} catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+}
