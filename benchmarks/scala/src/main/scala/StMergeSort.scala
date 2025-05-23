@@ -55,7 +55,7 @@ object StMergeSort {
 
   def main(args: Array[String]): Unit = {
     if (args.length != 3) {
-      println("Usage: scala StMergeSort <input_file> <num_integers> <output_file>")
+      System.err.println("Usage: scala StMergeSort <input_file> <num_integers> <output_file>")
       sys.exit(1)
     }
 
@@ -63,17 +63,24 @@ object StMergeSort {
     val numIntegers = args(1).toInt
     val outputFile = args(2)
 
+    // Allocate array for integers
+    val arr = new Array[Int](numIntegers)
+
     try {
       // Read input file
       val fis = new FileInputStream(inputFile)
       val bytes = new Array[Byte](numIntegers * 4)
-      fis.read(bytes)
+      val bytesRead = fis.read(bytes)
       fis.close()
 
-      // Convert bytes to integers using little-endian
+      if (bytesRead != numIntegers * 4) {
+        System.err.println("Error reading input file")
+        sys.exit(1)
+      }
+
+      // Convert bytes to integers
       val bb = ByteBuffer.wrap(bytes)
       bb.order(ByteOrder.LITTLE_ENDIAN)
-      val arr = new Array[Int](numIntegers)
       bb.asIntBuffer().get(arr)
 
       // Perform merge sort
@@ -87,8 +94,11 @@ object StMergeSort {
       fos.write(outBuffer.array())
       fos.close()
     } catch {
+      case e: java.io.FileNotFoundException =>
+        System.err.println("Error opening file: " + e.getMessage)
+        sys.exit(1)
       case e: Exception =>
-        println(s"Error: ${e.getMessage}")
+        System.err.println("Error: " + e.getMessage)
         sys.exit(1)
     }
   }
