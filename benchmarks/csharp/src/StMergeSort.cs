@@ -13,41 +13,39 @@ class StMergeSort
         int[] R = new int[n2];
 
         // Copy data to temporary arrays
-        for (int i = 0; i < n1; i++)
-            L[i] = arr[left + i];
-        for (int j = 0; j < n2; j++)
-            R[j] = arr[mid + 1 + j];
+        Array.Copy(arr, left, L, 0, n1);
+        Array.Copy(arr, mid + 1, R, 0, n2);
 
         // Merge the temporary arrays back
-        int leftIdx = 0, rightIdx = 0, k = left;
-        while (leftIdx < n1 && rightIdx < n2)
+        int i = 0, j = 0, k = left;
+        while (i < n1 && j < n2)
         {
-            if (L[leftIdx] <= R[rightIdx])
+            if (L[i] <= R[j])
             {
-                arr[k] = L[leftIdx];
-                leftIdx++;
+                arr[k] = L[i];
+                i++;
             }
             else
             {
-                arr[k] = R[rightIdx];
-                rightIdx++;
+                arr[k] = R[j];
+                j++;
             }
             k++;
         }
 
         // Copy remaining elements of L[]
-        while (leftIdx < n1)
+        while (i < n1)
         {
-            arr[k] = L[leftIdx];
-            leftIdx++;
+            arr[k] = L[i];
+            i++;
             k++;
         }
 
         // Copy remaining elements of R[]
-        while (rightIdx < n2)
+        while (j < n2)
         {
-            arr[k] = R[rightIdx];
-            rightIdx++;
+            arr[k] = R[j];
+            j++;
             k++;
         }
     }
@@ -56,36 +54,64 @@ class StMergeSort
     {
         if (left < right)
         {
-            int mid = (left + right) / 2;
+            int mid = left + (right - left) / 2;  // Changed to match C version's calculation
             MergeSort(arr, left, mid);
             MergeSort(arr, mid + 1, right);
             Merge(arr, left, mid, right);
         }
     }
 
-    static void Main(string[] args)
+    static int Main(string[] args)
     {
         if (args.Length != 3)
         {
-            Console.WriteLine("Usage: dotnet run <input_file> <num_integers> <output_file>");
-            Environment.Exit(1);
+            Console.Error.WriteLine("Usage: dotnet run <input_file> <num_integers> <output_file>");
+            return 1;
         }
 
         string inputFile = args[0];
-        int numIntegers = int.Parse(args[1]);
+        if (!int.TryParse(args[1], out int numIntegers))
+        {
+            Console.Error.WriteLine("Invalid number of integers");
+            return 1;
+        }
         string outputFile = args[2];
 
-        // Read input file
-        byte[] bytes = File.ReadAllBytes(inputFile);
+        // Allocate array
         int[] arr = new int[numIntegers];
-        Buffer.BlockCopy(bytes, 0, arr, 0, numIntegers * sizeof(int));
 
-        // Perform merge sort
-        MergeSort(arr, 0, numIntegers - 1);
+        try
+        {
+            // Read input file
+            using (FileStream fs = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
+            {
+                byte[] bytes = new byte[numIntegers * sizeof(int)];
+                int bytesRead = fs.Read(bytes, 0, bytes.Length);
+                if (bytesRead != bytes.Length)
+                {
+                    Console.Error.WriteLine("Error reading input file");
+                    return 1;
+                }
+                Buffer.BlockCopy(bytes, 0, arr, 0, bytes.Length);
+            }
 
-        // Write output file
-        byte[] outputBytes = new byte[numIntegers * sizeof(int)];
-        Buffer.BlockCopy(arr, 0, outputBytes, 0, numIntegers * sizeof(int));
-        File.WriteAllBytes(outputFile, outputBytes);
+            // Perform merge sort
+            MergeSort(arr, 0, numIntegers - 1);
+
+            // Write output file
+            using (FileStream fs = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
+            {
+                byte[] outputBytes = new byte[numIntegers * sizeof(int)];
+                Buffer.BlockCopy(arr, 0, outputBytes, 0, outputBytes.Length);
+                fs.Write(outputBytes, 0, outputBytes.Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
+        }
+
+        return 0;
     }
 }
