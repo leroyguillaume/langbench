@@ -6,7 +6,7 @@ RUN \
         time=1.9-0.2 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    docker-php-ext-install pcntl && \
+    docker-php-ext-install pcntl shmop && \
     mkdir -p /var/lib/langbench/result && \
     echo "memory_limit = 4G" > /usr/local/etc/php/conf.d/memory-limit.ini
 

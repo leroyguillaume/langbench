@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 
-function merge(&$arr, $left, $mid, $right) {
+function merge($shm_id, $left, $mid, $right) {
     $n1 = $mid - $left + 1;
     $n2 = $right - $mid;
 
@@ -11,10 +11,12 @@ function merge(&$arr, $left, $mid, $right) {
 
     // Copy data to temporary arrays
     for ($i = 0; $i < $n1; $i++) {
-        $L[$i] = $arr[$left + $i];
+        $L[$i] = shmop_read($shm_id, ($left + $i) * 4, 4);
+        $L[$i] = unpack("i", $L[$i])[1];
     }
     for ($j = 0; $j < $n2; $j++) {
-        $R[$j] = $arr[$mid + 1 + $j];
+        $R[$j] = shmop_read($shm_id, ($mid + 1 + $j) * 4, 4);
+        $R[$j] = unpack("i", $R[$j])[1];
     }
 
     // Merge the temporary arrays back
@@ -22,10 +24,10 @@ function merge(&$arr, $left, $mid, $right) {
     $k = $left;
     while ($i < $n1 && $j < $n2) {
         if ($L[$i] <= $R[$j]) {
-            $arr[$k] = $L[$i];
+            shmop_write($shm_id, pack("i", $L[$i]), $k * 4);
             $i++;
         } else {
-            $arr[$k] = $R[$j];
+            shmop_write($shm_id, pack("i", $R[$j]), $k * 4);
             $j++;
         }
         $k++;
@@ -33,96 +35,55 @@ function merge(&$arr, $left, $mid, $right) {
 
     // Copy remaining elements of L[]
     while ($i < $n1) {
-        $arr[$k] = $L[$i];
+        shmop_write($shm_id, pack("i", $L[$i]), $k * 4);
         $i++;
         $k++;
     }
 
     // Copy remaining elements of R[]
     while ($j < $n2) {
-        $arr[$k] = $R[$j];
+        shmop_write($shm_id, pack("i", $R[$j]), $k * 4);
         $j++;
         $k++;
     }
 }
 
-function merge_sort_sequential(&$arr, $left, $right) {
+function mergeSortThread($shm_id, $left, $right, $depth, $max_depth) {
     if ($left < $right) {
-        $mid = (int)(($left + $right) / 2);
-        merge_sort_sequential($arr, $left, $mid);
-        merge_sort_sequential($arr, $mid + 1, $right);
-        merge($arr, $left, $mid, $right);
-    }
-}
+        $mid = (int)($left + ($right - $left) / 2);
 
-function process_chunk($chunk) {
-    merge_sort_sequential($chunk, 0, count($chunk) - 1);
-    return $chunk;
-}
-
-function merge_sort_parallel($arr, $num_workers) {
-    // Calculate chunk size and distribute tasks
-    $chunk_size = (int)(count($arr) / $num_workers);
-    $chunks = [];
-
-    for ($i = 0; $i < $num_workers; $i++) {
-        $start = $i * $chunk_size;
-        $end = ($i < $num_workers - 1) ? $start + $chunk_size : count($arr);
-        $chunks[] = array_slice($arr, $start, $end - $start);
-    }
-
-    // Process chunks in parallel using pcntl_fork
-    $pids = [];
-    $temp_files = [];
-
-    foreach ($chunks as $i => $chunk) {
-        $temp_file = tempnam(sys_get_temp_dir(), 'sort_');
-        $temp_files[] = $temp_file;
-
-        $pid = pcntl_fork();
-        if ($pid == -1) {
-            die('Could not fork');
-        } else if ($pid) {
-            // Parent process
-            $pids[] = $pid;
+        if ($depth < $max_depth) {
+            // Create child process for left half
+            $pid = pcntl_fork();
+            if ($pid == -1) {
+                die('Could not fork');
+            } else if ($pid) {
+                // Parent process - handle right half
+                mergeSortThread($shm_id, $mid + 1, $right, $depth + 1, $max_depth);
+                pcntl_waitpid($pid, $status);
+            } else {
+                // Child process - handle left half
+                mergeSortThread($shm_id, $left, $mid, $depth + 1, $max_depth);
+                exit(0);
+            }
         } else {
-            // Child process
-            $sorted_chunk = process_chunk($chunk);
-            file_put_contents($temp_file, serialize($sorted_chunk));
-            exit(0);
+            // Sequential sorting for remaining depth
+            mergeSortThread($shm_id, $left, $mid, $depth + 1, $max_depth);
+            mergeSortThread($shm_id, $mid + 1, $right, $depth + 1, $max_depth);
         }
-    }
 
-    // Wait for all child processes to complete
-    foreach ($pids as $pid) {
-        pcntl_waitpid($pid, $status);
+        merge($shm_id, $left, $mid, $right);
     }
-
-    // Collect results from temp files
-    $sorted_chunks = [];
-    foreach ($temp_files as $temp_file) {
-        $sorted_chunks[] = unserialize(file_get_contents($temp_file));
-        unlink($temp_file);
-    }
-
-    // Merge all sorted chunks
-    $result = array_fill(0, count($arr), 0);
-    $current_pos = 0;
-    foreach ($sorted_chunks as $chunk) {
-        foreach ($chunk as $value) {
-            $result[$current_pos] = $value;
-            $current_pos++;
-        }
-    }
-
-    // Final merge sort on the combined array
-    merge_sort_sequential($result, 0, count($result) - 1);
-    return $result;
 }
 
 function main() {
     if (!function_exists('pcntl_fork')) {
-        echo "Error: pcntl extension is required for parallel processing\n";
+        fprintf(STDERR, "Error: pcntl extension is required for parallel processing\n");
+        exit(1);
+    }
+
+    if (!function_exists('shmop_open')) {
+        fprintf(STDERR, "Error: shmop extension is required for shared memory\n");
         exit(1);
     }
 
@@ -130,7 +91,7 @@ function main() {
     $argc = count($argv);
 
     if ($argc != 5) {
-        echo "Usage: php mt-mergesort.php <input_file> <num_integers> <num_cores> <output_file>\n";
+        fprintf(STDERR, "Usage: %s <input_file> <num_integers> <num_cores> <output_file>\n", $argv[0]);
         exit(1);
     }
 
@@ -139,19 +100,61 @@ function main() {
     $num_cores = (int)$argv[3];
     $output_file = $argv[4];
 
+    // Calculate max depth for process creation
+    $max_depth = 0;
+    $temp = $num_cores;
+    while ($temp > 1) {
+        $max_depth++;
+        $temp /= 2;
+    }
+
     // Read input file
-    $arr = array_values(unpack("i*", file_get_contents($input_file)));
+    $input_content = @file_get_contents($input_file);
+    if ($input_content === false) {
+        fprintf(STDERR, "Error opening input file\n");
+        exit(1);
+    }
+
+    $arr = array_values(unpack("i*", $input_content));
     if (count($arr) < $num_integers) {
-        echo "Error: Input file contains fewer integers than specified\n";
+        fprintf(STDERR, "Error: Input file contains fewer integers than specified\n");
         exit(1);
     }
     $arr = array_slice($arr, 0, $num_integers);
 
+    // Create shared memory segment
+    $shm_size = $num_integers * 4; // 4 bytes per integer
+    $shm_id = shmop_open(ftok(__FILE__, 't'), "c", 0644, $shm_size);
+    if ($shm_id === false) {
+        fprintf(STDERR, "Error creating shared memory segment\n");
+        exit(1);
+    }
+
+    // Copy array to shared memory
+    for ($i = 0; $i < $num_integers; $i++) {
+        shmop_write($shm_id, pack("i", $arr[$i]), $i * 4);
+    }
+
     // Perform parallel merge sort
-    $sorted_arr = merge_sort_parallel($arr, $num_cores);
+    mergeSortThread($shm_id, 0, $num_integers - 1, 0, $max_depth);
+
+    // Read result from shared memory
+    $result = array_fill(0, $num_integers, 0);
+    for ($i = 0; $i < $num_integers; $i++) {
+        $value = shmop_read($shm_id, $i * 4, 4);
+        $result[$i] = unpack("i", $value)[1];
+    }
+
+    // Clean up shared memory
+    shmop_delete($shm_id);
+    shmop_close($shm_id);
 
     // Write output file
-    file_put_contents($output_file, pack("i*", ...$sorted_arr));
+    $output_content = pack("i*", ...$result);
+    if (@file_put_contents($output_file, $output_content) === false) {
+        fprintf(STDERR, "Error writing output file\n");
+        exit(1);
+    }
 }
 
 main();

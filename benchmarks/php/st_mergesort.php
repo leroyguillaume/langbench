@@ -46,11 +46,11 @@ function merge(&$arr, $left, $mid, $right) {
     }
 }
 
-function merge_sort(&$arr, $left, $right) {
+function mergeSort(&$arr, $left, $right) {
     if ($left < $right) {
-        $mid = (int)(($left + $right) / 2);
-        merge_sort($arr, $left, $mid);
-        merge_sort($arr, $mid + 1, $right);
+        $mid = (int)($left + ($right - $left) / 2);
+        mergeSort($arr, $left, $mid);
+        mergeSort($arr, $mid + 1, $right);
         merge($arr, $left, $mid, $right);
     }
 }
@@ -60,7 +60,7 @@ function main() {
     $argc = count($argv);
 
     if ($argc != 4) {
-        echo "Usage: php st-mergesort.php <input_file> <num_integers> <output_file>\n";
+        fprintf(STDERR, "Usage: %s <input_file> <num_integers> <output_file>\n", $argv[0]);
         exit(1);
     }
 
@@ -69,18 +69,28 @@ function main() {
     $output_file = $argv[3];
 
     // Read input file
-    $arr = array_values(unpack("i*", file_get_contents($input_file)));
+    $input_content = @file_get_contents($input_file);
+    if ($input_content === false) {
+        fprintf(STDERR, "Error opening input file\n");
+        exit(1);
+    }
+
+    $arr = array_values(unpack("i*", $input_content));
     if (count($arr) < $num_integers) {
-        echo "Error: Input file contains fewer integers than specified\n";
+        fprintf(STDERR, "Error: Input file contains fewer integers than specified\n");
         exit(1);
     }
     $arr = array_slice($arr, 0, $num_integers);
 
     // Perform merge sort
-    merge_sort($arr, 0, $num_integers - 1);
+    mergeSort($arr, 0, $num_integers - 1);
 
     // Write output file
-    file_put_contents($output_file, pack("i*", ...$arr));
+    $output_content = pack("i*", ...$arr);
+    if (@file_put_contents($output_file, $output_content) === false) {
+        fprintf(STDERR, "Error writing output file\n");
+        exit(1);
+    }
 }
 
 main();
