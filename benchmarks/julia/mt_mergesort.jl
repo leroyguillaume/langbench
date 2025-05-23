@@ -47,49 +47,26 @@ function merge!(arr::Vector{Int32}, left::Int, mid::Int, right::Int)
     end
 end
 
-function merge_sort_sequential!(arr::Vector{Int32}, left::Int, right::Int)
+function merge_sort_parallel!(arr::Vector{Int32}, left::Int, right::Int, depth::Int, max_depth::Int)
     if left < right
         mid = div(left + right, 2)
-        merge_sort_sequential!(arr, left, mid)
-        merge_sort_sequential!(arr, mid + 1, right)
+
+        if depth < max_depth
+            # Create threads for left and right halves
+            left_task = Threads.@spawn merge_sort_parallel!(arr, left, mid, depth + 1, max_depth)
+            right_task = Threads.@spawn merge_sort_parallel!(arr, mid + 1, right, depth + 1, max_depth)
+
+            # Wait for both tasks to complete
+            wait(left_task)
+            wait(right_task)
+        else
+            # Sequential sorting for remaining depth
+            merge_sort_parallel!(arr, left, mid, depth + 1, max_depth)
+            merge_sort_parallel!(arr, mid + 1, right, depth + 1, max_depth)
+        end
+
         merge!(arr, left, mid, right)
     end
-end
-
-function process_chunk(chunk::Vector{Int32})
-    merge_sort_sequential!(chunk, 1, length(chunk))
-    return chunk
-end
-
-function merge_sort_parallel!(arr::Vector{Int32}, num_workers::Int)
-    # Calculate chunk size and create chunks
-    chunk_size = div(length(arr), num_workers)
-    chunks = Vector{Vector{Int32}}(undef, num_workers)
-
-    for i in 1:num_workers
-        start_idx = (i-1) * chunk_size + 1
-        end_idx = i == num_workers ? length(arr) : i * chunk_size
-        chunks[i] = arr[start_idx:end_idx]
-    end
-
-    # Sort chunks in parallel
-    @threads for i in 1:num_workers
-        chunks[i] = process_chunk(chunks[i])
-    end
-
-    # Merge all sorted chunks
-    result = Vector{Int32}(undef, length(arr))
-    current_pos = 1
-    for chunk in chunks
-        for i in 1:length(chunk)
-            result[current_pos] = chunk[i]
-            current_pos += 1
-        end
-    end
-
-    # Final merge sort on the combined array
-    merge_sort_sequential!(result, 1, length(result))
-    return result
 end
 
 function main()
@@ -106,6 +83,14 @@ function main()
     # Set number of threads
     Threads.nthreads() != num_cores && @warn "Requested $num_cores threads but got $(Threads.nthreads())"
 
+    # Calculate max depth for thread creation
+    max_depth = 0
+    temp = num_cores
+    while temp > 1
+        max_depth += 1
+        temp ÷= 2
+    end
+
     # Read input file
     arr = Vector{Int32}(undef, num_integers)
     open(input_file, "r") do io
@@ -113,11 +98,11 @@ function main()
     end
 
     # Perform parallel merge sort
-    sorted_arr = merge_sort_parallel!(arr, num_cores)
+    merge_sort_parallel!(arr, 1, length(arr), 0, max_depth)
 
     # Write output file
     open(output_file, "w") do io
-        write(io, sorted_arr)
+        write(io, arr)
     end
 end
 

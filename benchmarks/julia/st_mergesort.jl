@@ -47,7 +47,7 @@ end
 
 function merge_sort!(arr::Vector{Int32}, left::Int, right::Int)
     if left < right
-        mid = div(left + right, 2)
+        mid = left + div(right - left, 2)  # Match C's calculation style
         merge_sort!(arr, left, mid)
         merge_sort!(arr, mid + 1, right)
         merge!(arr, left, mid, right)
@@ -71,7 +71,7 @@ function main()
     end
 
     # Perform merge sort
-    merge_sort!(arr, 1, num_integers)
+    merge_sort!(arr, 1, num_integers)  # Note: Julia is 1-based indexing
 
     # Write output file
     open(output_file, "w") do io
