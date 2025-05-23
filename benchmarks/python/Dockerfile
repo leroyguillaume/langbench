@@ -10,10 +10,7 @@ RUN \
 
 WORKDIR /usr/local/src/langbench
 
-COPY src src
-COPY pyproject.toml pyproject.toml
-
-RUN pip install --no-cache-dir -e .
+COPY *.py .
 
 WORKDIR /var/lib/langbench
 
@@ -21,8 +18,8 @@ ENTRYPOINT ["/usr/bin/time", "-f", "%e,%S,%U,%P,%M", "-o", "result/result.csv"]
 
 FROM base AS st-mergesort
 
-CMD ["sh", "-c", "langbench-st-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
+CMD ["sh", "-c", "python /usr/local/src/langbench/st-mergesort.py $LANGBENCH_DATA_FILE $LANGBENCH_COUNT result/data"]
 
 FROM base AS mt-mergesort
 
-CMD ["sh", "-c", "langbench-mt-mergesort $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]
+CMD ["sh", "-c", "python /usr/local/src/langbench/mt-mergesort.py $LANGBENCH_DATA_FILE $LANGBENCH_COUNT $LANGBENCH_CORES result/data"]
