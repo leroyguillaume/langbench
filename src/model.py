@@ -26,6 +26,7 @@ class BenchmarkMetrics(BaseModel):
 
 
 class LanguageResult(BaseModel):
+    commit: str | None = None
     language: str
     metrics: BenchmarkMetrics
 
@@ -44,6 +45,7 @@ class BenchmarkResult(BaseModel):
     def upsert(self, result: LanguageResult):
         for existing_result in self.results:
             if existing_result.language == result.language:
+                existing_result.commit = result.commit
                 existing_result.metrics = result.metrics
                 return
         self.results.append(result)
