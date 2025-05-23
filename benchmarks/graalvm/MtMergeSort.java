@@ -117,19 +117,25 @@ public class MtMergeSort {
             temp /= 2;
         }
 
+        // Allocate array
+        int[] arr = new int[numIntegers];
+
         try {
             // Read input file
             FileInputStream fis = new FileInputStream(inputFile);
             byte[] bytes = new byte[numIntegers * 4];
-            fis.read(bytes);
+            int bytesRead = fis.read(bytes);
             fis.close();
+
+            if (bytesRead != numIntegers * 4) {
+                System.err.println("Error reading input file");
+                System.exit(1);
+            }
 
             // Convert bytes to integers
             ByteBuffer bb = ByteBuffer.wrap(bytes);
             bb.order(ByteOrder.LITTLE_ENDIAN);
-            IntBuffer ib = bb.asIntBuffer();
-            int[] arr = new int[numIntegers];
-            ib.get(arr);
+            bb.asIntBuffer().get(arr);
 
             // Create ForkJoinPool with specified number of threads
             ForkJoinPool pool = new ForkJoinPool(numCores);
@@ -148,6 +154,9 @@ public class MtMergeSort {
             fos.write(outBuffer.array());
             fos.close();
 
+        } catch (FileNotFoundException e) {
+            System.err.println("Error opening file: " + e.getMessage());
+            System.exit(1);
         } catch (IOException e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(1);
