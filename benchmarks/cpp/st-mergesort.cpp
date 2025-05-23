@@ -62,10 +62,26 @@ int main(int argc, char* argv[]) {
     int num_integers = std::atoi(argv[2]);
     const char* output_file = argv[3];
 
-    // Read input file
+    // Allocate memory for the array
     std::vector<int32_t> arr(num_integers);
+    if (arr.empty()) {
+        std::cerr << "Memory allocation failed" << std::endl;
+        return 1;
+    }
+
+    // Read input file
     std::ifstream in(input_file, std::ios::binary);
+    if (!in) {
+        std::cerr << "Error opening input file" << std::endl;
+        return 1;
+    }
+
     in.read(reinterpret_cast<char*>(arr.data()), num_integers * sizeof(int32_t));
+    if (in.gcount() != num_integers * sizeof(int32_t)) {
+        std::cerr << "Error reading input file" << std::endl;
+        in.close();
+        return 1;
+    }
     in.close();
 
     // Perform merge sort
@@ -73,7 +89,17 @@ int main(int argc, char* argv[]) {
 
     // Write output file
     std::ofstream out(output_file, std::ios::binary);
+    if (!out) {
+        std::cerr << "Error opening output file" << std::endl;
+        return 1;
+    }
+
     out.write(reinterpret_cast<const char*>(arr.data()), num_integers * sizeof(int32_t));
+    if (!out) {
+        std::cerr << "Error writing output file" << std::endl;
+        out.close();
+        return 1;
+    }
     out.close();
 
     return 0;
