@@ -47,7 +47,7 @@ fn merge(arr: &mut [i32], left: usize, mid: usize, right: usize) {
 
 fn merge_sort(arr: &mut [i32], left: usize, right: usize) {
     if left < right {
-        let mid = (left + right) / 2;
+        let mid = left + (right - left) / 2;
         merge_sort(arr, left, mid);
         merge_sort(arr, mid + 1, right);
         merge(arr, left, mid, right);
@@ -55,50 +55,60 @@ fn merge_sort(arr: &mut [i32], left: usize, right: usize) {
 }
 
 fn main() {
-    let mut args = env::args();
-    let program_name = args.next().unwrap();
-
-    let input_file = args.next().unwrap_or_else(|| {
-        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
-        std::process::exit(1);
-    });
-
-    let num_integers: usize = args.next()
-        .and_then(|arg| arg.parse().ok())
-        .unwrap_or_else(|| {
-            eprintln!("Failed to parse number of integers");
-            std::process::exit(1);
-        });
-
-    let output_file = args.next().unwrap_or_else(|| {
-        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
-        std::process::exit(1);
-    });
-
-    if args.next().is_some() {
-        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", program_name);
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 4 {
+        eprintln!("Usage: {} <input_file> <num_integers> <output_file>", args[0]);
         std::process::exit(1);
     }
 
+    let input_file = &args[1];
+    let num_integers: usize = args[2].parse().unwrap_or_else(|_| {
+        eprintln!("Failed to parse number of integers");
+        std::process::exit(1);
+    });
+    let output_file = &args[3];
+
     // Read input file
-    let mut file = File::open(input_file).expect("Failed to open input file");
+    let mut file = match File::open(input_file) {
+        Ok(file) => file,
+        Err(_) => {
+            eprintln!("Error opening input file");
+            std::process::exit(1);
+        }
+    };
+
     let mut buffer = vec![0i32; num_integers];
-    file.read_exact(unsafe {
+    let buffer_bytes = unsafe {
         std::slice::from_raw_parts_mut(
             buffer.as_mut_ptr() as *mut u8,
             num_integers * std::mem::size_of::<i32>()
         )
-    }).expect("Failed to read input file");
+    };
+    if file.read_exact(buffer_bytes).is_err() {
+        eprintln!("Error reading input file");
+        std::process::exit(1);
+    }
 
     // Perform merge sort
     merge_sort(&mut buffer, 0, num_integers - 1);
 
     // Write output file
-    let mut output = File::create(output_file).expect("Failed to create output file");
-    output.write_all(unsafe {
+    let mut output = match File::create(output_file) {
+        Ok(file) => file,
+        Err(_) => {
+            eprintln!("Error opening output file");
+            std::process::exit(1);
+        }
+    };
+
+    let buffer_bytes = unsafe {
         std::slice::from_raw_parts(
             buffer.as_ptr() as *const u8,
             num_integers * std::mem::size_of::<i32>()
         )
-    }).expect("Failed to write output file");
+    };
+    if output.write_all(buffer_bytes).is_err() {
+        eprintln!("Error writing output file");
+        std::process::exit(1);
+    }
 }
