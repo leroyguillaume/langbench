@@ -8,13 +8,9 @@ function merge(arr, left, mid, right) {
     const L = new Int32Array(n1);
     const R = new Int32Array(n2);
 
-    // Copy data to temporary arrays
-    for (let i = 0; i < n1; i++) {
-        L[i] = arr[left + i];
-    }
-    for (let j = 0; j < n2; j++) {
-        R[j] = arr[mid + 1 + j];
-    }
+    // Copy data to temporary arrays using memcpy-like approach
+    L.set(arr.slice(left, left + n1));
+    R.set(arr.slice(mid + 1, mid + 1 + n2));
 
     // Merge the temporary arrays back
     let i = 0, j = 0, k = left;
@@ -55,7 +51,7 @@ function mergeSort(arr, left, right) {
 
 // Main function
 if (process.argv.length !== 5) {
-    console.error('Usage: node st-mergesort.js <input_file> <num_integers> <output_file>');
+    console.error(`Usage: ${process.argv[1]} <input_file> <num_integers> <output_file>`);
     process.exit(1);
 }
 
@@ -64,12 +60,25 @@ const numIntegers = parseInt(process.argv[3]);
 const outputFile = process.argv[4];
 
 // Read input file
-const buffer = fs.readFileSync(inputFile);
+let buffer;
+try {
+    buffer = fs.readFileSync(inputFile);
+} catch (err) {
+    console.error('Error opening input file');
+    process.exit(1);
+}
+
+// Create array from buffer
 const arr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
 
 // Perform merge sort
 mergeSort(arr, 0, numIntegers - 1);
 
 // Write output file
-const outputBuffer = Buffer.from(arr.buffer, arr.byteOffset, numIntegers * 4);
-fs.writeFileSync(outputFile, outputBuffer);
+try {
+    const outputBuffer = Buffer.from(arr.buffer, arr.byteOffset, numIntegers * 4);
+    fs.writeFileSync(outputFile, outputBuffer);
+} catch (err) {
+    console.error('Error writing output file');
+    process.exit(1);
+}
