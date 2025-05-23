@@ -51,7 +51,7 @@ func merge(arr []int32, left, mid, right int) {
 // mergeSort performs sequential merge sort
 func mergeSort(arr []int32, left, right int) {
 	if left < right {
-		mid := (left + right) / 2
+		mid := left + (right-left)/2
 		mergeSort(arr, left, mid)
 		mergeSort(arr, mid+1, right)
 		merge(arr, left, mid, right)
@@ -63,7 +63,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) != 3 {
-		fmt.Println("Usage: go run st-mergesort.go <input_file> <num_integers> <output_file>")
+		fmt.Fprintf(os.Stderr, "Usage: %s <input_file> <num_integers> <output_file>\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -71,8 +71,10 @@ func main() {
 	numIntegers := parseInt(args[1])
 	outputFile := args[2]
 
-	// Read input file
+	// Allocate memory for the array
 	arr := make([]int32, numIntegers)
+
+	// Read input file
 	file, err := os.Open(inputFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)

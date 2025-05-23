@@ -8,6 +8,15 @@ import (
 	"unsafe"
 )
 
+// ThreadArgs holds the arguments for a merge sort operation
+type ThreadArgs struct {
+	arr       []int32
+	left      int
+	right     int
+	depth     int
+	maxDepth  int
+}
+
 // merge combines two sorted subarrays into a single sorted array
 func merge(arr []int32, left, mid, right int) {
 	n1 := mid - left + 1
@@ -49,75 +58,71 @@ func merge(arr []int32, left, mid, right int) {
 	}
 }
 
-// mergeSortSequential performs sequential merge sort
-func mergeSortSequential(arr []int32, left, right int) {
+// mergeSortThread performs parallel merge sort using goroutines
+func mergeSortThread(args *ThreadArgs) {
+	arr := args.arr
+	left := args.left
+	right := args.right
+	depth := args.depth
+	maxDepth := args.maxDepth
+
 	if left < right {
-		mid := (left + right) / 2
-		mergeSortSequential(arr, left, mid)
-		mergeSortSequential(arr, mid+1, right)
+		mid := left + (right-left)/2
+
+		if depth < maxDepth {
+			// Create goroutines for left and right halves
+			var wg sync.WaitGroup
+			wg.Add(2)
+
+			// Process left half
+			go func() {
+				defer wg.Done()
+				leftArgs := &ThreadArgs{
+					arr:      arr,
+					left:     left,
+					right:    mid,
+					depth:    depth + 1,
+					maxDepth: maxDepth,
+				}
+				mergeSortThread(leftArgs)
+			}()
+
+			// Process right half
+			go func() {
+				defer wg.Done()
+				rightArgs := &ThreadArgs{
+					arr:      arr,
+					left:     mid + 1,
+					right:    right,
+					depth:    depth + 1,
+					maxDepth: maxDepth,
+				}
+				mergeSortThread(rightArgs)
+			}()
+
+			wg.Wait()
+		} else {
+			// Sequential sorting for remaining depth
+			leftArgs := &ThreadArgs{
+				arr:      arr,
+				left:     left,
+				right:    mid,
+				depth:    depth + 1,
+				maxDepth: maxDepth,
+			}
+			rightArgs := &ThreadArgs{
+				arr:      arr,
+				left:     mid + 1,
+				right:    right,
+				depth:    depth + 1,
+				maxDepth: maxDepth,
+			}
+			mergeSortThread(leftArgs)
+			mergeSortThread(rightArgs)
+		}
+
 		merge(arr, left, mid, right)
 	}
-}
-
-// processChunk sorts a chunk of the array
-func processChunk(chunk []int32) []int32 {
-	mergeSortSequential(chunk, 0, len(chunk)-1)
-	return chunk
-}
-
-// mergeSortParallel performs parallel merge sort using goroutines
-func mergeSortParallel(arr []int32, numWorkers int) []int32 {
-	// Create channels for task distribution and results
-	tasks := make(chan []int32, numWorkers)
-	results := make(chan []int32, numWorkers)
-	var wg sync.WaitGroup
-
-	// Start worker goroutines
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for chunk := range tasks {
-				results <- processChunk(chunk)
-			}
-		}()
-	}
-
-	// Calculate chunk size and distribute tasks
-	chunkSize := len(arr) / numWorkers
-	for i := 0; i < numWorkers; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
-		if i == numWorkers-1 {
-			end = len(arr)
-		}
-		tasks <- arr[start:end]
-	}
-	close(tasks)
-
-	// Wait for all workers to finish
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results
-	sortedChunks := make([][]int32, 0, numWorkers)
-	for chunk := range results {
-		sortedChunks = append(sortedChunks, chunk)
-	}
-
-	// Combine all sorted chunks
-	result := make([]int32, len(arr))
-	currentPos := 0
-	for _, chunk := range sortedChunks {
-		copy(result[currentPos:], chunk)
-		currentPos += len(chunk)
-	}
-
-	// Final merge sort on the combined array
-	mergeSortSequential(result, 0, len(result)-1)
-	return result
 }
 
 func main() {
@@ -125,7 +130,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) != 4 {
-		fmt.Println("Usage: go run mt-mergesort.go <input_file> <num_integers> <num_cores> <output_file>")
+		fmt.Fprintf(os.Stderr, "Usage: %s <input_file> <num_integers> <num_cores> <output_file>\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -134,8 +139,18 @@ func main() {
 	numCores := parseInt(args[2])
 	outputFile := args[3]
 
-	// Read input file
+	// Calculate max depth for goroutine creation
+	maxDepth := 0
+	temp := numCores
+	for temp > 1 {
+		maxDepth++
+		temp /= 2
+	}
+
+	// Allocate memory for the array
 	arr := make([]int32, numIntegers)
+
+	// Read input file
 	file, err := os.Open(inputFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)
@@ -151,7 +166,14 @@ func main() {
 	}
 
 	// Perform parallel merge sort
-	sortedArr := mergeSortParallel(arr, numCores)
+	threadArgs := &ThreadArgs{
+		arr:      arr,
+		left:     0,
+		right:    len(arr) - 1,
+		depth:    0,
+		maxDepth: maxDepth,
+	}
+	mergeSortThread(threadArgs)
 
 	// Write output file
 	outFile, err := os.Create(outputFile)
@@ -162,7 +184,7 @@ func main() {
 	defer outFile.Close()
 
 	// Write all integers at once
-	_, err = outFile.Write(unsafe.Slice((*byte)(unsafe.Pointer(&sortedArr[0])), len(sortedArr)*4))
+	_, err = outFile.Write(unsafe.Slice((*byte)(unsafe.Pointer(&arr[0])), len(arr)*4))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing output file: %v\n", err)
 		os.Exit(1)
