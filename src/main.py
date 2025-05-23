@@ -221,30 +221,6 @@ def run(
             help="The languages to run",
         ),
     ] = None,
-    readme_tpl_filepath: Annotated[
-        Path,
-        Option(
-            ARG_LONG_README_TEMPLATE,
-            envvar=ENV_VAR_README_TEMPLATE,
-            help="The README template file",
-        ),
-    ] = DEFAULT_README_TEMPLATE,
-    reports_dirpath: Annotated[
-        Path,
-        Option(
-            ARG_LONG_REPORTS_DIR,
-            envvar=ENV_VAR_REPORTS_DIR,
-            help="The reports directory",
-        ),
-    ] = DEFAULT_REPORTS_DIR,
-    report_tpl_filepath: Annotated[
-        Path,
-        Option(
-            ARG_LONG_REPORT_TEMPLATE,
-            envvar=ENV_VAR_REPORT_TEMPLATE,
-            help="The report template file",
-        ),
-    ] = DEFAULT_REPORT_TEMPLATE,
     results_dirpath: Annotated[
         Path,
         Option(
@@ -299,6 +275,11 @@ def run(
     elif benchmarks_dirpath.is_dir():
         for language_dirpath in benchmarks_dirpath.iterdir():
             languages.append(language_dirpath.name)
+    try:
+        commit = __run(["git", "rev-parse", "HEAD"]).strip()
+    except CommandFailedException as err:
+        commit = None
+        __log_command_failed(err)
     for language in languages:
         if language in exclude_languages:
             logging.debug(f"⏭️ Skipping language {language} (excluded)")
@@ -388,6 +369,7 @@ def run(
                     metrics.time += float(row[0])
                     metrics.user_time += float(row[2])
             result = LanguageResult(
+                commit=commit,
                 language=language,
                 metrics=metrics.avg(iterations),
             )

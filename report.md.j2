@@ -15,6 +15,7 @@
 <table>
   <tr>
     <th>Language</th>
+    <th>Commit</th>
     <th>Elapsed time (s)</th>
     <th>System time (s)*</th>
     <th>User time (s)*</th>
@@ -24,6 +25,15 @@
   {%- for language_result in result %}
   <tr>
     <td>{{ languages_label_mapping[language_result.language] | default(language_result.language) }}</td>
+    <td>
+      {%- if language_result.commit %}
+      <a href="https://github.com/leroyguillaume/langbench/blob/{{ language_result.commit }}/benchmarks/{{ language_result.language }}">
+        {{ language_result.commit | truncate(length=7, end="") }}
+      </a>
+      {%- else %}
+      n/a
+      {%- endif %}
+    </td>
     <td>{{ language_result.metrics.time | round(2) }}</td>
     <td>{{ language_result.metrics.system_time | round(2) }}</td>
     <td>{{ language_result.metrics.user_time | round(2) }}</td>
