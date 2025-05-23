@@ -79,22 +79,43 @@ void parallelMergeSort(std::vector<int32_t>& arr, int left, int right, int depth
 
 int main(int argc, char* argv[]) {
     if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <num_integers> <output_file> <num_threads>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input_file> <num_integers> <num_cores> <output_file>" << std::endl;
         return 1;
     }
 
     const char* input_file = argv[1];
     int num_integers = std::atoi(argv[2]);
-    int num_threads = std::atoi(argv[3]);
+    int num_cores = std::atoi(argv[3]);
     const char* output_file = argv[4];
 
-    // Calculate max depth based on number of threads
-    int max_depth = static_cast<int>(std::log2(num_threads));
+    // Calculate max depth based on number of cores
+    int max_depth = 0;
+    int temp = num_cores;
+    while (temp > 1) {
+        max_depth++;
+        temp /= 2;
+    }
+
+    // Allocate memory for the array
+    std::vector<int32_t> arr(num_integers);
+    if (arr.empty()) {
+        std::cerr << "Memory allocation failed" << std::endl;
+        return 1;
+    }
 
     // Read input file
-    std::vector<int32_t> arr(num_integers);
     std::ifstream in(input_file, std::ios::binary);
+    if (!in) {
+        std::cerr << "Error opening input file" << std::endl;
+        return 1;
+    }
+
     in.read(reinterpret_cast<char*>(arr.data()), num_integers * sizeof(int32_t));
+    if (in.gcount() != num_integers * sizeof(int32_t)) {
+        std::cerr << "Error reading input file" << std::endl;
+        in.close();
+        return 1;
+    }
     in.close();
 
     // Perform parallel merge sort
@@ -102,7 +123,17 @@ int main(int argc, char* argv[]) {
 
     // Write output file
     std::ofstream out(output_file, std::ios::binary);
+    if (!out) {
+        std::cerr << "Error opening output file" << std::endl;
+        return 1;
+    }
+
     out.write(reinterpret_cast<const char*>(arr.data()), num_integers * sizeof(int32_t));
+    if (!out) {
+        std::cerr << "Error writing output file" << std::endl;
+        out.close();
+        return 1;
+    }
     out.close();
 
     return 0;
