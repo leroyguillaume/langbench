@@ -23,6 +23,14 @@ declare const self: {
     postMessage(data: any): void;
 };
 
+interface ThreadArgs {
+    arr: Int32Array;
+    left: number;
+    right: number;
+    depth: number;
+    maxDepth: number;
+}
+
 function merge(arr: Int32Array, left: number, mid: number, right: number): void {
     const n1 = mid - left + 1;
     const n2 = right - mid;
@@ -67,87 +75,90 @@ function merge(arr: Int32Array, left: number, mid: number, right: number): void 
     }
 }
 
-function mergeSortSequential(arr: Int32Array, left: number, right: number): void {
+async function mergeSortThread(args: ThreadArgs): Promise<void> {
+    const { arr, left, right, depth, maxDepth } = args;
+
     if (left < right) {
         const mid = Math.floor(left + (right - left) / 2);
-        mergeSortSequential(arr, left, mid);
-        mergeSortSequential(arr, mid + 1, right);
+
+        if (depth < maxDepth) {
+            // Create workers for left and right halves
+            const leftPromise = new Promise<void>((resolve) => {
+                const worker = new Worker(new URL(import.meta.url).href, { type: "module" });
+                const leftSlice = arr.slice(left, mid + 1);
+                worker.postMessage({
+                    arr: leftSlice,
+                    left: 0,
+                    right: leftSlice.length - 1,
+                    depth: depth + 1,
+                    maxDepth: maxDepth
+                });
+                worker.onmessage = (e) => {
+                    const sortedLeft = new Int32Array(e.data);
+                    for (let i = 0; i < sortedLeft.length; i++) {
+                        arr[left + i] = sortedLeft[i];
+                    }
+                    worker.terminate();
+                    resolve();
+                };
+            });
+
+            const rightPromise = new Promise<void>((resolve) => {
+                const worker = new Worker(new URL(import.meta.url).href, { type: "module" });
+                const rightSlice = arr.slice(mid + 1, right + 1);
+                worker.postMessage({
+                    arr: rightSlice,
+                    left: 0,
+                    right: rightSlice.length - 1,
+                    depth: depth + 1,
+                    maxDepth: maxDepth
+                });
+                worker.onmessage = (e) => {
+                    const sortedRight = new Int32Array(e.data);
+                    for (let i = 0; i < sortedRight.length; i++) {
+                        arr[mid + 1 + i] = sortedRight[i];
+                    }
+                    worker.terminate();
+                    resolve();
+                };
+            });
+
+            await Promise.all([leftPromise, rightPromise]);
+        } else {
+            // Sequential sorting for remaining depth
+            await mergeSortThread({
+                arr,
+                left,
+                right: mid,
+                depth: depth + 1,
+                maxDepth
+            });
+            await mergeSortThread({
+                arr,
+                left: mid + 1,
+                right,
+                depth: depth + 1,
+                maxDepth
+            });
+        }
+
         merge(arr, left, mid, right);
     }
-}
-
-async function mergeSortParallel(arr: Int32Array, left: number, right: number, depth: number, maxDepth: number): Promise<void> {
-    // Use sequential sort for small arrays or when max depth is reached
-    if (right - left < 10000 || depth >= maxDepth) {
-        mergeSortSequential(arr, left, right);
-        return;
-    }
-
-    const mid = Math.floor(left + (right - left) / 2);
-
-    // Create promises for parallel execution
-    const leftPromise = new Promise<void>((resolve) => {
-        const worker = new Worker(new URL(import.meta.url).href, {
-            type: "module"
-        });
-        // Send only the necessary slice of the array
-        const leftSlice = arr.slice(left, mid + 1);
-        worker.postMessage({
-            arr: leftSlice,
-            left: 0,
-            right: leftSlice.length - 1,
-            depth: depth + 1,
-            maxDepth: maxDepth
-        });
-        worker.onmessage = (e) => {
-            const sortedLeft = new Int32Array(e.data);
-            for (let i = 0; i < sortedLeft.length; i++) {
-                arr[left + i] = sortedLeft[i];
-            }
-            resolve();
-        };
-    });
-
-    const rightPromise = new Promise<void>((resolve) => {
-        const worker = new Worker(new URL(import.meta.url).href, {
-            type: "module"
-        });
-        // Send only the necessary slice of the array
-        const rightSlice = arr.slice(mid + 1, right + 1);
-        worker.postMessage({
-            arr: rightSlice,
-            left: 0,
-            right: rightSlice.length - 1,
-            depth: depth + 1,
-            maxDepth: maxDepth
-        });
-        worker.onmessage = (e) => {
-            const sortedRight = new Int32Array(e.data);
-            for (let i = 0; i < sortedRight.length; i++) {
-                arr[mid + 1 + i] = sortedRight[i];
-            }
-            resolve();
-        };
-    });
-
-    await Promise.all([leftPromise, rightPromise]);
-    merge(arr, left, mid, right);
 }
 
 // Worker thread code
 if (self.name !== "main") {
     self.onmessage = async (e) => {
-        const { arr, left, right, depth, maxDepth } = e.data;
-        const workerArr = new Int32Array(arr);
-        await mergeSortParallel(workerArr, left, right, depth, maxDepth);
-        self.postMessage(workerArr);
+        const args: ThreadArgs = e.data;
+        await mergeSortThread(args);
+        self.postMessage(args.arr);
     };
 }
 
 // Main thread code
 async function main() {
     if (Deno.args.length !== 4) {
-        console.error("Usage: deno run --allow-read --allow-write --allow-net mt-mergesort.ts <input_file> <num_integers> <num_cores> <output_file>");
+        console.error(`Usage: deno run --allow-read --allow-write mt-mergesort.ts <input_file> <num_integers> <num_cores> <output_file>`);
         Deno.exit(1);
     }
 
@@ -155,20 +166,45 @@ async function main() {
     const numIntegers = parseInt(numIntegersStr, 10);
     const numCores = parseInt(numCoresStr, 10);
 
+    if (isNaN(numIntegers) || numIntegers <= 0 || isNaN(numCores) || numCores <= 0) {
+        console.error("Invalid number of integers or cores");
+        Deno.exit(1);
+    }
+
     // Calculate max depth for thread creation
-    // Limit max depth to prevent too many concurrent workers
-    const maxDepth = Math.min(Math.floor(Math.log2(numCores)), 3);
+    let maxDepth = 0;
+    let temp = numCores;
+    while (temp > 1) {
+        maxDepth++;
+        temp = Math.floor(temp / 2);
+    }
 
-    // Read input file
-    const inputData = await Deno.readFile(inputFile);
-    const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
+    try {
+        // Read input file
+        const inputData = await Deno.readFile(inputFile);
+        if (inputData.length < numIntegers * 4) {
+            console.error("Error reading input file: insufficient data");
+            Deno.exit(1);
+        }
 
-    // Perform parallel merge sort
-    await mergeSortParallel(arr, 0, numIntegers - 1, 0, maxDepth);
+        const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
 
-    // Write output file
-    const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
-    await Deno.writeFile(outputFile, outputBuffer);
+        // Perform parallel merge sort
+        await mergeSortThread({
+            arr,
+            left: 0,
+            right: numIntegers - 1,
+            depth: 0,
+            maxDepth
+        });
+
+        // Write output file
+        const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
+        await Deno.writeFile(outputFile, outputBuffer);
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+        Deno.exit(1);
+    }
 }
 
 if (import.meta.main) {

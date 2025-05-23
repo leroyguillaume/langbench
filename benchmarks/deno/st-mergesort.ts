@@ -77,16 +77,31 @@ async function main() {
     const [inputFile, numIntegersStr, outputFile] = Deno.args;
     const numIntegers = parseInt(numIntegersStr, 10);
 
-    // Read input file
-    const inputData = await Deno.readFile(inputFile);
-    const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
+    if (isNaN(numIntegers) || numIntegers <= 0) {
+        console.error("Invalid number of integers");
+        Deno.exit(1);
+    }
 
-    // Perform merge sort
-    mergeSort(arr, 0, numIntegers - 1);
+    try {
+        // Read input file
+        const inputData = await Deno.readFile(inputFile);
+        if (inputData.length < numIntegers * 4) {
+            console.error("Error reading input file: insufficient data");
+            Deno.exit(1);
+        }
 
-    // Write output file
-    const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
-    await Deno.writeFile(outputFile, outputBuffer);
+        const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
+
+        // Perform merge sort
+        mergeSort(arr, 0, numIntegers - 1);
+
+        // Write output file
+        const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
+        await Deno.writeFile(outputFile, outputBuffer);
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+        Deno.exit(1);
+    }
 }
 
 if (import.meta.main) {
