@@ -1,19 +1,4 @@
-#!/usr/bin/env -S deno run --allow-read --allow-write
-
-// @ts-ignore
-declare const Deno: {
-    args: string[];
-    readFile(path: string): Promise<Uint8Array>;
-    writeFile(path: string, data: Uint8Array): Promise<void>;
-    exit(code: number): never;
-};
-
-// @ts-ignore
-declare global {
-    interface ImportMeta {
-        main: boolean;
-    }
-}
+import { readFileSync, writeFileSync } from 'node:fs';
 
 function merge(arr: Int32Array, left: number, mid: number, right: number): void {
     const n1 = mid - left + 1;
@@ -23,13 +8,9 @@ function merge(arr: Int32Array, left: number, mid: number, right: number): void 
     const L = new Int32Array(n1);
     const R = new Int32Array(n2);
 
-    // Copy data to temporary arrays
-    for (let i = 0; i < n1; i++) {
-        L[i] = arr[left + i];
-    }
-    for (let j = 0; j < n2; j++) {
-        R[j] = arr[mid + 1 + j];
-    }
+    // Copy data to temporary arrays using memcpy-like approach
+    L.set(arr.slice(left, left + n1));
+    R.set(arr.slice(mid + 1, mid + 1 + n2));
 
     // Merge the temporary arrays back
     let i = 0, j = 0, k = left;
@@ -68,42 +49,33 @@ function mergeSort(arr: Int32Array, left: number, right: number): void {
     }
 }
 
-async function main() {
-    if (Deno.args.length !== 3) {
-        console.error("Usage: deno run --allow-read --allow-write st-mergesort.ts <input_file> <num_integers> <output_file>");
-        Deno.exit(1);
-    }
-
-    const [inputFile, numIntegersStr, outputFile] = Deno.args;
-    const numIntegers = parseInt(numIntegersStr, 10);
-
-    if (isNaN(numIntegers) || numIntegers <= 0) {
-        console.error("Invalid number of integers");
-        Deno.exit(1);
-    }
-
-    try {
-        // Read input file
-        const inputData = await Deno.readFile(inputFile);
-        if (inputData.length < numIntegers * 4) {
-            console.error("Error reading input file: insufficient data");
-            Deno.exit(1);
-        }
-
-        const arr = new Int32Array(inputData.buffer, inputData.byteOffset, numIntegers);
-
-        // Perform merge sort
-        mergeSort(arr, 0, numIntegers - 1);
-
-        // Write output file
-        const outputBuffer = new Uint8Array(arr.buffer, arr.byteOffset, numIntegers * 4);
-        await Deno.writeFile(outputFile, outputBuffer);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        Deno.exit(1);
-    }
+// Main function
+if (Deno.args.length !== 3) {
+    console.error('Usage: deno run st-mergesort.ts <input_file> <num_integers> <output_file>');
+    Deno.exit(1);
 }
 
-if (import.meta.main) {
-    main();
+const inputFile = Deno.args[0];
+const numIntegers = parseInt(Deno.args[1]);
+const outputFile = Deno.args[2];
+
+try {
+    // Read input file
+    const buffer = await Deno.readFile(inputFile);
+    if (buffer.length < numIntegers * 4) {
+        console.error('Error: Input file is too small');
+        Deno.exit(1);
+    }
+
+    // Create array directly from buffer, similar to C's fread
+    const arr = new Int32Array(buffer.buffer, buffer.byteOffset, numIntegers);
+
+    // Perform merge sort
+    mergeSort(arr, 0, numIntegers - 1);
+
+    // Write output file directly, similar to C's fwrite
+    await Deno.writeFile(outputFile, new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
+} catch (error) {
+    console.error('Error:', error.message);
+    Deno.exit(1);
 }
