@@ -323,6 +323,9 @@ def run(
             metrics = BenchmarkMetrics()
             for i in range(iterations):
                 data_filepath = __get_data_filepath(data_dirpath, i)
+                bench_temp_dirpath = (
+                    f"{docker_temp_dirpath_prefix}{language_temp_dirpath}"
+                )
                 logging.info(
                     f"🏃 Running {language} - {benchmark.name} ({i + 1}/{iterations})"
                 )
@@ -351,7 +354,7 @@ def run(
                             "-v",
                             f"./{data_dirpath}:/var/lib/langbench/data",
                             "-v",
-                            f"{docker_temp_dirpath_prefix}{language_temp_dirpath}:/var/lib/langbench/result",
+                            f"{bench_temp_dirpath}:/var/lib/langbench/result",
                             tag,
                         ]
                     )
@@ -380,6 +383,9 @@ def run(
             logging.info(
                 f"📊 {language} - {benchmark.name} results: time={time} cpu={cpu_usage}% memory={max_memory}"
             )
+            if not no_clean:
+                logging.debug(f"🧹 Cleaning directory {bench_temp_dirpath}")
+                shutil.rmtree(bench_temp_dirpath)
     if write:
         logging.debug(f"📁 Creating directory {results_dirpath}")
         results_dirpath.mkdir(parents=True, exist_ok=True)
