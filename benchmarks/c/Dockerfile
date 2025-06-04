@@ -18,7 +18,8 @@ RUN \
             -O3 \
             -march=native \
             -mtune=native \
-            -flto \
+            -flto=auto \
+            -ffat-lto-objects \
             -ffast-math \
             -fomit-frame-pointer \
             -pthread \
