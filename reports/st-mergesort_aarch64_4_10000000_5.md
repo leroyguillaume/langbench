@@ -15,6 +15,7 @@ Merge Sort algorithm implementation running on a single thread.
 <table>
   <tr>
     <th>Language</th>
+    <th>Commit</th>
     <th>Elapsed time (s)</th>
     <th>System time (s)*</th>
     <th>User time (s)*</th>
@@ -23,6 +24,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>c</td>
+    <td>
+      n/a
+    </td>
     <td>1.03</td>
     <td>0.05</td>
     <td>0.97</td>
@@ -31,6 +35,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>go</td>
+    <td>
+      n/a
+    </td>
     <td>1.21</td>
     <td>0.06</td>
     <td>1.18</td>
@@ -39,6 +46,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>java</td>
+    <td>
+      n/a
+    </td>
     <td>1.21</td>
     <td>0.12</td>
     <td>1.1</td>
@@ -47,6 +57,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>rust</td>
+    <td>
+      n/a
+    </td>
     <td>1.25</td>
     <td>0.06</td>
     <td>1.16</td>
@@ -55,6 +68,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>scala</td>
+    <td>
+      n/a
+    </td>
     <td>1.31</td>
     <td>0.14</td>
     <td>1.23</td>
@@ -63,6 +79,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>bun</td>
+    <td>
+      n/a
+    </td>
     <td>1.37</td>
     <td>0.1</td>
     <td>1.3</td>
@@ -71,6 +90,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>graalvm</td>
+    <td>
+      n/a
+    </td>
     <td>1.49</td>
     <td>0.16</td>
     <td>1.31</td>
@@ -79,6 +101,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>julia</td>
+    <td>
+      n/a
+    </td>
     <td>1.59</td>
     <td>0.12</td>
     <td>1.53</td>
@@ -87,6 +112,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>nodejs</td>
+    <td>
+      n/a
+    </td>
     <td>3.54</td>
     <td>0.32</td>
     <td>3.75</td>
@@ -95,6 +123,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>c#</td>
+    <td>
+      n/a
+    </td>
     <td>6.36</td>
     <td>0.55</td>
     <td>5.41</td>
@@ -103,6 +134,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>php</td>
+    <td>
+      n/a
+    </td>
     <td>13.71</td>
     <td>0.46</td>
     <td>13.22</td>
@@ -111,6 +145,9 @@ Merge Sort algorithm implementation running on a single thread.
   </tr>
   <tr>
     <td>python</td>
+    <td>
+      n/a
+    </td>
     <td>92.6</td>
     <td>0.13</td>
     <td>92.43</td>
