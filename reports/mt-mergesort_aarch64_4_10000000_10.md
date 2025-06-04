@@ -49,6 +49,19 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>98.03</td>
   </tr>
   <tr>
+    <td>rust</td>
+    <td>
+      <a href="https://github.com/leroyguillaume/langbench/blob/506bc78ce7163ab79a135a0045c3d964f248f8dc/benchmarks/rust">
+        506bc78
+      </a>
+    </td>
+    <td>0.39</td>
+    <td>0.07</td>
+    <td>1.26</td>
+    <td>335.2</td>
+    <td>98.56</td>
+  </tr>
+  <tr>
     <td>go</td>
     <td>
       <a href="https://github.com/leroyguillaume/langbench/blob/049f7326057b767701b1f30b88454cc690538d73/benchmarks/go">
@@ -140,19 +153,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>336.69</td>
   </tr>
   <tr>
-    <td>rust</td>
-    <td>
-      <a href="https://github.com/leroyguillaume/langbench/blob/c386a8274fd750977ac1ca64b8d908d63889f872/benchmarks/rust">
-        c386a82
-      </a>
-    </td>
-    <td>3.82</td>
-    <td>4.92</td>
-    <td>6.19</td>
-    <td>290.4</td>
-    <td>114.35</td>
-  </tr>
-  <tr>
     <td>c#</td>
     <td>
       <a href="https://github.com/leroyguillaume/langbench/blob/049f7326057b767701b1f30b88454cc690538d73/benchmarks/csharp">
@@ -215,6 +215,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th></th>
     <th>c</th>
     <th>cpp</th>
+    <th>rust</th>
     <th>go</th>
     <th>graalvm</th>
     <th>java</th>
@@ -222,7 +223,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>nodejs</th>
     <th>bun</th>
     <th>julia</th>
-    <th>rust</th>
     <th>csharp</th>
     <th>deno</th>
     <th>php</th>
@@ -232,6 +232,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>c</th>
     <td>100.0%</td>
     <td>96.03%</td>
+    <td>86.04%</td>
     <td>81.1%</td>
     <td>61.3%</td>
     <td>51.83%</td>
@@ -239,7 +240,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>16.95%</td>
     <td>15.9%</td>
     <td>14.46%</td>
-    <td>8.88%</td>
     <td>7.58%</td>
     <td>3.69%</td>
     <td>1.55%</td>
@@ -249,6 +249,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>cpp</th>
     <td>104.13%</td>
     <td>100.0%</td>
+    <td>89.59%</td>
     <td>84.45%</td>
     <td>63.83%</td>
     <td>53.98%</td>
@@ -256,16 +257,33 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>17.65%</td>
     <td>16.56%</td>
     <td>15.05%</td>
-    <td>9.25%</td>
     <td>7.89%</td>
     <td>3.84%</td>
     <td>1.62%</td>
     <td>0.54%</td>
   </tr>
   <tr>
+    <th>rust</th>
+    <td>116.22%</td>
+    <td>111.61%</td>
+    <td>100.0%</td>
+    <td>94.26%</td>
+    <td>71.25%</td>
+    <td>60.24%</td>
+    <td>48.52%</td>
+    <td>19.7%</td>
+    <td>18.48%</td>
+    <td>16.8%</td>
+    <td>8.81%</td>
+    <td>4.29%</td>
+    <td>1.8%</td>
+    <td>0.6%</td>
+  </tr>
+  <tr>
     <th>go</th>
     <td>123.3%</td>
     <td>118.41%</td>
+    <td>106.09%</td>
     <td>100.0%</td>
     <td>75.59%</td>
     <td>63.91%</td>
@@ -273,7 +291,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>20.9%</td>
     <td>19.61%</td>
     <td>17.83%</td>
-    <td>10.95%</td>
     <td>9.34%</td>
     <td>4.55%</td>
     <td>1.91%</td>
@@ -283,6 +300,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>graalvm</th>
     <td>163.13%</td>
     <td>156.66%</td>
+    <td>140.36%</td>
     <td>132.3%</td>
     <td>100.0%</td>
     <td>84.56%</td>
@@ -290,7 +308,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>27.65%</td>
     <td>25.94%</td>
     <td>23.58%</td>
-    <td>14.49%</td>
     <td>12.36%</td>
     <td>6.02%</td>
     <td>2.53%</td>
@@ -300,6 +317,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>java</th>
     <td>192.92%</td>
     <td>185.27%</td>
+    <td>165.99%</td>
     <td>156.46%</td>
     <td>118.26%</td>
     <td>100.0%</td>
@@ -307,7 +325,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>32.7%</td>
     <td>30.68%</td>
     <td>27.89%</td>
-    <td>17.13%</td>
     <td>14.62%</td>
     <td>7.12%</td>
     <td>3.0%</td>
@@ -317,6 +334,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>scala</th>
     <td>239.53%</td>
     <td>230.03%</td>
+    <td>206.09%</td>
     <td>194.26%</td>
     <td>146.84%</td>
     <td>124.16%</td>
@@ -324,7 +342,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>40.6%</td>
     <td>38.09%</td>
     <td>34.63%</td>
-    <td>21.27%</td>
     <td>18.15%</td>
     <td>8.84%</td>
     <td>3.72%</td>
@@ -334,6 +351,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>nodejs</th>
     <td>589.97%</td>
     <td>566.57%</td>
+    <td>507.61%</td>
     <td>478.47%</td>
     <td>361.66%</td>
     <td>305.81%</td>
@@ -341,7 +359,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>100.0%</td>
     <td>93.81%</td>
     <td>85.29%</td>
-    <td>52.4%</td>
     <td>44.71%</td>
     <td>21.76%</td>
     <td>9.16%</td>
@@ -351,6 +368,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>bun</th>
     <td>628.91%</td>
     <td>603.97%</td>
+    <td>541.12%</td>
     <td>510.05%</td>
     <td>385.53%</td>
     <td>325.99%</td>
@@ -358,7 +376,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>106.6%</td>
     <td>100.0%</td>
     <td>90.92%</td>
-    <td>55.86%</td>
     <td>47.66%</td>
     <td>23.2%</td>
     <td>9.76%</td>
@@ -368,6 +385,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>julia</th>
     <td>691.74%</td>
     <td>664.31%</td>
+    <td>595.18%</td>
     <td>561.0%</td>
     <td>424.05%</td>
     <td>358.56%</td>
@@ -375,33 +393,16 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>117.25%</td>
     <td>109.99%</td>
     <td>100.0%</td>
-    <td>61.44%</td>
     <td>52.43%</td>
     <td>25.52%</td>
     <td>10.74%</td>
     <td>3.56%</td>
   </tr>
   <tr>
-    <th>rust</th>
-    <td>1125.96%</td>
-    <td>1081.3%</td>
-    <td>913.16%</td>
-    <td>690.24%</td>
-    <td>583.64%</td>
-    <td>470.07%</td>
-    <td>190.85%</td>
-    <td>179.03%</td>
-    <td>162.77%</td>
-    <td>100.0%</td>
-    <td>85.33%</td>
-    <td>41.53%</td>
-    <td>17.48%</td>
-    <td>5.79%</td>
-  </tr>
-  <tr>
     <th>csharp</th>
     <td>1319.47%</td>
     <td>1267.14%</td>
+    <td>1135.28%</td>
     <td>1070.1%</td>
     <td>808.86%</td>
     <td>683.94%</td>
@@ -409,7 +410,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>223.65%</td>
     <td>209.8%</td>
     <td>190.75%</td>
-    <td>117.19%</td>
     <td>100.0%</td>
     <td>48.67%</td>
     <td>20.48%</td>
@@ -419,6 +419,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>deno</th>
     <td>2710.91%</td>
     <td>2603.4%</td>
+    <td>2332.49%</td>
     <td>2198.56%</td>
     <td>1661.84%</td>
     <td>1405.2%</td>
@@ -426,7 +427,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>459.5%</td>
     <td>431.05%</td>
     <td>391.9%</td>
-    <td>240.76%</td>
     <td>205.45%</td>
     <td>100.0%</td>
     <td>42.09%</td>
@@ -436,6 +436,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>php</th>
     <td>6441.3%</td>
     <td>6185.84%</td>
+    <td>5542.13%</td>
     <td>5223.92%</td>
     <td>3948.64%</td>
     <td>3338.84%</td>
@@ -443,7 +444,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>1091.8%</td>
     <td>1024.2%</td>
     <td>931.17%</td>
-    <td>572.07%</td>
     <td>488.17%</td>
     <td>237.61%</td>
     <td>100.0%</td>
@@ -453,6 +453,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>python</th>
     <td>19457.23%</td>
     <td>18685.55%</td>
+    <td>16741.12%</td>
     <td>15779.9%</td>
     <td>11927.67%</td>
     <td>10085.63%</td>
@@ -460,7 +461,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>3298.0%</td>
     <td>3093.81%</td>
     <td>2812.79%</td>
-    <td>1728.06%</td>
     <td>1474.63%</td>
     <td>717.74%</td>
     <td>302.07%</td>
@@ -475,6 +475,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th></th>
     <th>c</th>
     <th>cpp</th>
+    <th>rust</th>
     <th>go</th>
     <th>graalvm</th>
     <th>java</th>
@@ -482,7 +483,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>nodejs</th>
     <th>bun</th>
     <th>julia</th>
-    <th>rust</th>
     <th>csharp</th>
     <th>deno</th>
     <th>php</th>
@@ -492,6 +492,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>c</th>
     <td>100.0%</td>
     <td>98.46%</td>
+    <td>97.93%</td>
     <td>67.44%</td>
     <td>54.42%</td>
     <td>22.02%</td>
@@ -499,7 +500,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>17.7%</td>
     <td>19.94%</td>
     <td>28.67%</td>
-    <td>84.41%</td>
     <td>31.83%</td>
     <td>24.13%</td>
     <td>16.23%</td>
@@ -509,6 +509,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>cpp</th>
     <td>101.56%</td>
     <td>100.0%</td>
+    <td>99.46%</td>
     <td>68.49%</td>
     <td>55.27%</td>
     <td>22.36%</td>
@@ -516,16 +517,33 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>17.98%</td>
     <td>20.25%</td>
     <td>29.11%</td>
-    <td>85.73%</td>
     <td>32.33%</td>
     <td>24.51%</td>
     <td>16.48%</td>
     <td>54.38%</td>
   </tr>
   <tr>
+    <th>rust</th>
+    <td>102.11%</td>
+    <td>100.54%</td>
+    <td>100.0%</td>
+    <td>68.86%</td>
+    <td>55.57%</td>
+    <td>22.48%</td>
+    <td>26.08%</td>
+    <td>18.07%</td>
+    <td>20.36%</td>
+    <td>29.27%</td>
+    <td>32.51%</td>
+    <td>24.64%</td>
+    <td>16.57%</td>
+    <td>54.67%</td>
+  </tr>
+  <tr>
     <th>go</th>
     <td>148.28%</td>
     <td>146.0%</td>
+    <td>145.21%</td>
     <td>100.0%</td>
     <td>80.69%</td>
     <td>32.65%</td>
@@ -533,7 +551,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>26.25%</td>
     <td>29.56%</td>
     <td>42.51%</td>
-    <td>125.16%</td>
     <td>47.21%</td>
     <td>35.79%</td>
     <td>24.06%</td>
@@ -543,6 +560,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>graalvm</th>
     <td>183.76%</td>
     <td>180.93%</td>
+    <td>179.96%</td>
     <td>123.93%</td>
     <td>100.0%</td>
     <td>40.46%</td>
@@ -550,7 +568,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>32.53%</td>
     <td>36.64%</td>
     <td>52.68%</td>
-    <td>155.1%</td>
     <td>58.5%</td>
     <td>44.35%</td>
     <td>29.82%</td>
@@ -560,6 +577,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>java</th>
     <td>454.14%</td>
     <td>447.15%</td>
+    <td>444.75%</td>
     <td>306.27%</td>
     <td>247.14%</td>
     <td>100.0%</td>
@@ -567,7 +585,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>80.39%</td>
     <td>90.54%</td>
     <td>130.19%</td>
-    <td>383.32%</td>
     <td>144.58%</td>
     <td>109.61%</td>
     <td>73.69%</td>
@@ -577,6 +594,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>scala</th>
     <td>391.53%</td>
     <td>385.5%</td>
+    <td>383.43%</td>
     <td>264.04%</td>
     <td>213.07%</td>
     <td>86.21%</td>
@@ -584,7 +602,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>69.3%</td>
     <td>78.06%</td>
     <td>112.24%</td>
-    <td>330.47%</td>
     <td>124.64%</td>
     <td>94.49%</td>
     <td>63.53%</td>
@@ -594,6 +611,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>nodejs</th>
     <td>564.95%</td>
     <td>556.25%</td>
+    <td>553.26%</td>
     <td>381.0%</td>
     <td>307.44%</td>
     <td>124.4%</td>
@@ -601,7 +619,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>100.0%</td>
     <td>112.63%</td>
     <td>161.95%</td>
-    <td>476.85%</td>
     <td>179.85%</td>
     <td>136.35%</td>
     <td>91.67%</td>
@@ -611,6 +628,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>bun</th>
     <td>501.58%</td>
     <td>493.85%</td>
+    <td>491.2%</td>
     <td>338.26%</td>
     <td>272.95%</td>
     <td>110.44%</td>
@@ -618,7 +636,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>88.78%</td>
     <td>100.0%</td>
     <td>143.78%</td>
-    <td>423.36%</td>
     <td>159.68%</td>
     <td>121.05%</td>
     <td>81.39%</td>
@@ -628,6 +645,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>julia</th>
     <td>348.84%</td>
     <td>343.47%</td>
+    <td>341.62%</td>
     <td>235.26%</td>
     <td>189.84%</td>
     <td>76.81%</td>
@@ -635,33 +653,16 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>61.75%</td>
     <td>69.55%</td>
     <td>100.0%</td>
-    <td>294.44%</td>
     <td>111.05%</td>
     <td>84.19%</td>
     <td>56.61%</td>
     <td>186.77%</td>
   </tr>
   <tr>
-    <th>rust</th>
-    <td>118.48%</td>
-    <td>116.65%</td>
-    <td>79.9%</td>
-    <td>64.47%</td>
-    <td>26.09%</td>
-    <td>30.26%</td>
-    <td>20.97%</td>
-    <td>23.62%</td>
-    <td>33.96%</td>
-    <td>100.0%</td>
-    <td>37.72%</td>
-    <td>28.59%</td>
-    <td>19.22%</td>
-    <td>63.43%</td>
-  </tr>
-  <tr>
     <th>csharp</th>
     <td>314.12%</td>
     <td>309.28%</td>
+    <td>307.62%</td>
     <td>211.84%</td>
     <td>170.94%</td>
     <td>69.17%</td>
@@ -669,7 +670,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>55.6%</td>
     <td>62.63%</td>
     <td>90.05%</td>
-    <td>265.13%</td>
     <td>100.0%</td>
     <td>75.81%</td>
     <td>50.97%</td>
@@ -679,6 +679,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>deno</th>
     <td>414.34%</td>
     <td>407.96%</td>
+    <td>405.77%</td>
     <td>279.43%</td>
     <td>225.48%</td>
     <td>91.24%</td>
@@ -686,7 +687,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>73.34%</td>
     <td>82.61%</td>
     <td>118.78%</td>
-    <td>349.72%</td>
     <td>131.9%</td>
     <td>100.0%</td>
     <td>67.23%</td>
@@ -696,6 +696,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>php</th>
     <td>616.26%</td>
     <td>606.77%</td>
+    <td>603.51%</td>
     <td>415.6%</td>
     <td>335.36%</td>
     <td>135.7%</td>
@@ -703,7 +704,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>109.08%</td>
     <td>122.86%</td>
     <td>176.66%</td>
-    <td>520.16%</td>
     <td>196.19%</td>
     <td>148.73%</td>
     <td>100.0%</td>
@@ -713,6 +713,7 @@ Merge Sort algorithm implementation running on multiple threads.
     <th>python</th>
     <td>186.77%</td>
     <td>183.9%</td>
+    <td>182.91%</td>
     <td>125.96%</td>
     <td>101.64%</td>
     <td>41.13%</td>
@@ -720,7 +721,6 @@ Merge Sort algorithm implementation running on multiple threads.
     <td>33.06%</td>
     <td>37.24%</td>
     <td>53.54%</td>
-    <td>157.65%</td>
     <td>59.46%</td>
     <td>45.08%</td>
     <td>30.31%</td>
