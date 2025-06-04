@@ -27,7 +27,7 @@ on:
         description: The number of iterations
         type: number
         required: true
-        default: 5
+        default: 10
       log-level:
         description: The log level
         required: true
