@@ -19,10 +19,11 @@ RUN \
             -O3 \
             -march=native \
             -mtune=native \
-            -flto \
             -ffast-math \
             -fomit-frame-pointer \
             -pthread \
+            -flto=auto \
+            -ffat-lto-objects \
             -o "/usr/local/bin/langbench-${file%.cpp}" \
             "${file}"; \
     done
