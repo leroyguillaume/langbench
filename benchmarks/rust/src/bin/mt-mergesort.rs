@@ -2,10 +2,11 @@ use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::thread;
+use std::sync::{Arc, Mutex};
 
 // Structure to pass arguments to the thread function
 struct ThreadArgs {
-    arr: Vec<i32>,
+    arr: Arc<Mutex<Vec<i32>>>,
     left: usize,
     right: usize,
     depth: usize,
@@ -55,8 +56,7 @@ fn merge(arr: &mut [i32], left: usize, mid: usize, right: usize) {
     }
 }
 
-fn merge_sort_thread(args: ThreadArgs) -> Vec<i32> {
-    let mut arr = args.arr;
+fn merge_sort_thread(args: ThreadArgs) {
     let left = args.left;
     let right = args.right;
     let depth = args.depth;
@@ -67,11 +67,8 @@ fn merge_sort_thread(args: ThreadArgs) -> Vec<i32> {
 
         if depth < max_depth {
             // Create threads for left and right halves
-            let (mut left_half, mut right_half) = arr.split_at_mut(mid + 1);
-            let right_half = &mut right_half[..(right - mid)];
-
             let left_args = ThreadArgs {
-                arr: left_half.to_vec(),
+                arr: Arc::clone(&args.arr),
                 left,
                 right: mid,
                 depth: depth + 1,
@@ -79,9 +76,9 @@ fn merge_sort_thread(args: ThreadArgs) -> Vec<i32> {
             };
 
             let right_args = ThreadArgs {
-                arr: right_half.to_vec(),
-                left: 0,
-                right: right - mid - 1,
+                arr: Arc::clone(&args.arr),
+                left: mid + 1,
+                right,
                 depth: depth + 1,
                 max_depth,
             };
@@ -89,19 +86,12 @@ fn merge_sort_thread(args: ThreadArgs) -> Vec<i32> {
             let left_handle = thread::spawn(move || merge_sort_thread(left_args));
             let right_handle = thread::spawn(move || merge_sort_thread(right_args));
 
-            let left_sorted = left_handle.join().unwrap();
-            let right_sorted = right_handle.join().unwrap();
-
-            // Copy sorted results back
-            left_half.copy_from_slice(&left_sorted);
-            right_half.copy_from_slice(&right_sorted);
+            left_handle.join().unwrap();
+            right_handle.join().unwrap();
         } else {
             // Sequential sorting for remaining depth
-            let (mut left_half, mut right_half) = arr.split_at_mut(mid + 1);
-            let right_half = &mut right_half[..(right - mid)];
-
             let left_args = ThreadArgs {
-                arr: left_half.to_vec(),
+                arr: Arc::clone(&args.arr),
                 left,
                 right: mid,
                 depth: depth + 1,
@@ -109,25 +99,21 @@ fn merge_sort_thread(args: ThreadArgs) -> Vec<i32> {
             };
 
             let right_args = ThreadArgs {
-                arr: right_half.to_vec(),
-                left: 0,
-                right: right - mid - 1,
+                arr: Arc::clone(&args.arr),
+                left: mid + 1,
+                right,
                 depth: depth + 1,
                 max_depth,
             };
 
-            let left_sorted = merge_sort_thread(left_args);
-            let right_sorted = merge_sort_thread(right_args);
-
-            // Copy sorted results back
-            left_half.copy_from_slice(&left_sorted);
-            right_half.copy_from_slice(&right_sorted);
+            merge_sort_thread(left_args);
+            merge_sort_thread(right_args);
         }
 
+        // Merge the sorted halves
+        let mut arr = args.arr.lock().unwrap();
         merge(&mut arr, left, mid, right);
     }
-
-    arr
 }
 
 fn main() {
@@ -177,15 +163,21 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Create shared array
+    let shared_arr = Arc::new(Mutex::new(buffer));
+
     // Perform parallel merge sort
     let args = ThreadArgs {
-        arr: buffer,
+        arr: shared_arr.clone(),
         left: 0,
         right: num_integers - 1,
         depth: 0,
         max_depth,
     };
-    let buffer = merge_sort_thread(args);
+    merge_sort_thread(args);
+
+    // Get the sorted array
+    let buffer = Arc::try_unwrap(shared_arr).unwrap().into_inner().unwrap();
 
     // Write output file
     let mut output = match File::create(output_file) {
