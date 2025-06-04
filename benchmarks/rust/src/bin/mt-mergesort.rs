@@ -2,18 +2,24 @@ use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::thread;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+// Safe wrapper for raw pointer that implements Send and Sync
+#[derive(Copy, Clone)]
+struct SafePtr(*mut i32);
+unsafe impl Send for SafePtr {}
+unsafe impl Sync for SafePtr {}
 
 // Structure to pass arguments to the thread function
 struct ThreadArgs {
-    arr: Arc<Mutex<Vec<i32>>>,
+    arr: SafePtr,
     left: usize,
     right: usize,
     depth: usize,
     max_depth: usize,
 }
 
-fn merge(arr: &mut [i32], left: usize, mid: usize, right: usize) {
+fn merge(arr: SafePtr, left: usize, mid: usize, right: usize) {
     let n1 = mid - left + 1;
     let n2 = right - mid;
 
@@ -22,8 +28,10 @@ fn merge(arr: &mut [i32], left: usize, mid: usize, right: usize) {
     let mut right_arr = vec![0; n2];
 
     // Copy data to temporary arrays
-    left_arr.copy_from_slice(&arr[left..=mid]);
-    right_arr.copy_from_slice(&arr[mid + 1..=right]);
+    unsafe {
+        std::ptr::copy_nonoverlapping(arr.0.add(left), left_arr.as_mut_ptr(), n1);
+        std::ptr::copy_nonoverlapping(arr.0.add(mid + 1), right_arr.as_mut_ptr(), n2);
+    }
 
     // Merge the temporary arrays back
     let mut i = 0;
@@ -31,26 +39,32 @@ fn merge(arr: &mut [i32], left: usize, mid: usize, right: usize) {
     let mut k = left;
 
     while i < n1 && j < n2 {
-        if left_arr[i] <= right_arr[j] {
-            arr[k] = left_arr[i];
-            i += 1;
-        } else {
-            arr[k] = right_arr[j];
-            j += 1;
+        unsafe {
+            if left_arr[i] <= right_arr[j] {
+                *arr.0.add(k) = left_arr[i];
+                i += 1;
+            } else {
+                *arr.0.add(k) = right_arr[j];
+                j += 1;
+            }
         }
         k += 1;
     }
 
     // Copy remaining elements of left_arr
     while i < n1 {
-        arr[k] = left_arr[i];
+        unsafe {
+            *arr.0.add(k) = left_arr[i];
+        }
         i += 1;
         k += 1;
     }
 
     // Copy remaining elements of right_arr
     while j < n2 {
-        arr[k] = right_arr[j];
+        unsafe {
+            *arr.0.add(k) = right_arr[j];
+        }
         j += 1;
         k += 1;
     }
@@ -68,7 +82,7 @@ fn merge_sort_thread(args: ThreadArgs) {
         if depth < max_depth {
             // Create threads for left and right halves
             let left_args = ThreadArgs {
-                arr: Arc::clone(&args.arr),
+                arr: args.arr,
                 left,
                 right: mid,
                 depth: depth + 1,
@@ -76,7 +90,7 @@ fn merge_sort_thread(args: ThreadArgs) {
             };
 
             let right_args = ThreadArgs {
-                arr: Arc::clone(&args.arr),
+                arr: args.arr,
                 left: mid + 1,
                 right,
                 depth: depth + 1,
@@ -91,7 +105,7 @@ fn merge_sort_thread(args: ThreadArgs) {
         } else {
             // Sequential sorting for remaining depth
             let left_args = ThreadArgs {
-                arr: Arc::clone(&args.arr),
+                arr: args.arr,
                 left,
                 right: mid,
                 depth: depth + 1,
@@ -99,7 +113,7 @@ fn merge_sort_thread(args: ThreadArgs) {
             };
 
             let right_args = ThreadArgs {
-                arr: Arc::clone(&args.arr),
+                arr: args.arr,
                 left: mid + 1,
                 right,
                 depth: depth + 1,
@@ -111,8 +125,7 @@ fn merge_sort_thread(args: ThreadArgs) {
         }
 
         // Merge the sorted halves
-        let mut arr = args.arr.lock().unwrap();
-        merge(&mut arr, left, mid, right);
+        merge(args.arr, left, mid, right);
     }
 }
 
@@ -163,21 +176,19 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Create shared array
-    let shared_arr = Arc::new(Mutex::new(buffer));
+    // Keep the vector alive while we work with its pointer
+    let _buffer_guard = Arc::new(buffer);
+    let arr_ptr = SafePtr(_buffer_guard.as_ptr() as *mut i32);
 
     // Perform parallel merge sort
     let args = ThreadArgs {
-        arr: shared_arr.clone(),
+        arr: arr_ptr,
         left: 0,
         right: num_integers - 1,
         depth: 0,
         max_depth,
     };
     merge_sort_thread(args);
-
-    // Get the sorted array
-    let buffer = Arc::try_unwrap(shared_arr).unwrap().into_inner().unwrap();
 
     // Write output file
     let mut output = match File::create(output_file) {
@@ -190,7 +201,7 @@ fn main() {
 
     let buffer_bytes = unsafe {
         std::slice::from_raw_parts(
-            buffer.as_ptr() as *const u8,
+            _buffer_guard.as_ptr() as *const u8,
             num_integers * std::mem::size_of::<i32>()
         )
     };
