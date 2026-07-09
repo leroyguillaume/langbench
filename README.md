@@ -123,15 +123,25 @@ compile-time one — inside a Linux container a compile-time check would report
 
 ## Output
 
-`--output-dir` receives two files:
+`--output-dir` receives three files:
 
 - **`samples.ndjson`** — the source of truth. A header record with the full
   machine description and campaign parameters, then one line per measured
   invocation, flushed as it is produced. Aggregates are never stored: they are
   recomputed from here.
+- **`samples.csv`** — the same records, flat, for a spreadsheet or a dataframe.
+  Written in lockstep with the NDJSON. Missing values are **empty fields**, never
+  `n/a`: a numeric column that sometimes holds a word breaks every parser that
+  reads it. The campaign's context (machine, grid size, `-march`) has no room in
+  a flat table and lives in the NDJSON header only, so keep the two together.
 - **`report.md`** — a human-facing view, rendered from
   `templates/report.md.liquid`. It leads with any reason this host is a poor
   benchmark target.
+
+```sh
+# Median run time per mode, straight from the CSV.
+awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' results/samples.csv
+```
 
 ## Adding an implementation
 
@@ -168,11 +178,13 @@ pre-commit install   # runs the three above, plus hadolint and actionlint
 
 ## Status
 
-Early. The harness runs end to end; the benchmark kernels do not exist yet.
+Early. The harness runs end to end, and `mandelbrot/c-gcc` is the first
+implementation: it builds in all three floating-point modes, produces three
+distinct checksums, and emits no FMA instruction at all under `strict`.
 
 Next: measure the noise floor of the target machine — nothing else is
-trustworthy until that number exists — then the C/gcc, C/clang, Rust/LLVM
-triangle on Mandelbrot.
+trustworthy until that number exists — then C/clang and Rust/LLVM, to complete
+the first triangle.
 
 ## License
 

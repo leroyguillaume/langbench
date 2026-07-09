@@ -348,6 +348,38 @@ mod tests {
     }
 
     #[test]
+    fn every_column_of_the_results_table_is_documented() {
+        let samples = vec![sample(
+            "c-gcc",
+            FpMode::Strict,
+            Phase::Run,
+            false,
+            2_000_000_000,
+        )];
+        let markdown =
+            render(&build(&Machine::default(), &campaign(), &samples, Some(42))).unwrap();
+
+        let header = markdown
+            .lines()
+            .find(|line| line.starts_with("| Implementation |"))
+            .expect("the results table has a header row");
+        let columns: Vec<&str> = header
+            .split('|')
+            .map(str::trim)
+            .filter(|cell| !cell.is_empty())
+            .collect();
+
+        // Guard against a vacuous pass: an empty column list would assert nothing.
+        assert!(columns.len() > 10, "parsed {} columns", columns.len());
+        for column in columns {
+            assert!(
+                markdown.contains(&format!("**{column}**")),
+                "column `{column}` has no entry in the column reference",
+            );
+        }
+    }
+
+    #[test]
     fn the_report_surfaces_the_hosts_warnings() {
         let data = build(&Machine::default(), &campaign(), &[], None);
         let markdown = render(&data).unwrap();

@@ -39,36 +39,111 @@ magnitude, not points.
 {% for algo in algos %}
 ### {{ algo.algo }}
 
-| Implementation | Mode | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Checksum | Δ strict |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Implementation | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Checksum | Δ strict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| {{ row.implementation }} | {{ row.mode }} | {{ row.run_min_ms }} ms | {{ row.run_dispersion }} | {{ row.compute_min_ms }} ms | {{ row.startup_ms }} ms | {{ row.cpu_time_s }} s | {{ row.build_min_ms }} ms | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
+| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min_ms }} ms | {{ row.run_dispersion }} | {{ row.compute_min_ms }} ms | {{ row.startup_ms }} ms | {{ row.cpu_time_s }} s | {{ row.build_min_ms }} ms | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
-## How to read this
+## The columns
 
-- **Run min** is the minimum wall-clock over the measured rounds, not the mean.
-  Contention noise is one-sided — it can only slow a run down — so the minimum
-  is the best estimate of the machine's capability.
-- **Dispersion** is the median absolute deviation as a percentage of the median.
-  It is a verdict on the campaign, not an error bar on the result. Above roughly
-  2%, the machine was too noisy for percentage-level claims and even the minimum
-  should be distrusted. Being a median, it is robust: a single clobbered round
-  will not show up here. Isolated spikes are found in `samples.ndjson`.
-- **Compute min** is what the program timed around its own hot loop. **Startup**
-  is the gap between the two clocks: container creation plus runtime
-  initialisation. That gap is a result, not overhead to be subtracted.
-- **CPU time** is `user + system` read from the container's cgroup. Wall-clock
-  says whether it is fast; CPU time says at what price. A scheduler that
-  busy-waits burns CPU without gaining a millisecond of wall.
-- **`.text`** is the only binary size comparable across implementations. Total
-  file size measures linking policy, not codegen. `n/a` means the backend emits
-  no artifact, which is a property of the backend, not of the language.
-- **Δ strict** is the checksum's distance from the strict-mode reference. In
-  `strict` it is always `0` — a divergence aborts the campaign. In `fma` and
-  `fast` it is the precision sold for the speed gained.
+**Implementation** — the directory the image was built from, named
+`<language>-<compiler>`. The unit of comparison is the tuple *(compiler, version,
+flags, target ISA)*, not the language: two rows differing only in compiler are a
+clean experiment, two rows differing in language are not.
 
-Two things this report does not say: which language is fastest (it compares
-backends, and cross-language rows are confounded by construction), and how this
-machine compares to one of a different ISA (absolute cross-ISA timings are
-meaningless; only within-ISA ratios travel).
+**Mode** — the floating-point semantics the kernel was compiled under. Every mode
+is `-O3`; the axis is FP semantics, not optimization on or off. `strict` forbids
+FMA contraction and reassociation. `fma` allows contraction, which changes the
+last bit but *increases* accuracy — one rounding instead of two. `fast` is
+`-ffast-math`, where reassociation trades precision for speed.
+
+**Runs** — how many measured samples feed this row. Warmup rounds are recorded in
+`samples.ndjson` and flagged, never deleted, but they never enter these numbers.
+
+**Run min** — the smallest external wall-clock over those samples, measured by
+the harness around `docker run`. It includes container creation, runtime
+initialisation and the computation itself.
+
+The minimum, not the mean or the median. Contention noise is **one-sided**: a
+neighbour can only slow a run down, never speed it up. The fastest sample is the
+one that was least disturbed, so it is the best estimate of what the machine can
+actually do.
+
+**Dispersion** — the median absolute deviation of those same samples, as a
+percentage of their median.
+
+This is a **verdict on the campaign, not an error bar on the result**. Above
+roughly 2%, the machine was too noisy for percentage-level claims, and even the
+minimum should be distrusted. Being a median, it is robust by design: a single
+clobbered round does not show up here. Isolated spikes are found by reading
+`samples.ndjson`, not by reading this column. Below three samples it reads
+`n/a (n=…)`, because the lower median of `[0, d]` is `0` and a two-sample MAD
+would claim a precision the campaign never had.
+
+**Compute min** — the smallest time the program reported for its own hot loop,
+measured inside the container with a monotonic clock. It excludes everything that
+happened before `main`.
+
+**Startup** — the gap between the two clocks above: container creation plus
+runtime initialisation plus any JIT warmup. **This is a result, not overhead to
+be subtracted.** It is where a JVM or a CPython pays its tax, and comparing it
+across runtimes is one of the more interesting things this table offers.
+
+**CPU time** — `user + system`, read from the container's own cgroup
+(`/sys/fs/cgroup/cpu.stat`), median over the measured samples. It is summed across
+threads, so it legitimately exceeds the wall-clock on a parallel run.
+
+Wall-clock says whether it is fast. CPU time says at what price. A runtime whose
+scheduler busy-waits burns CPU without gaining a millisecond of wall, and the gap
+between these two columns is the only place you will see it. Divide it by
+(run time × threads) for a parallel efficiency.
+
+**Build min** — the smallest wall-clock of a timed recompile from a clean tmpfs,
+with no network. `docker build` is preparation and is never timed; this column
+comes from a `docker run` that rebuilds the source and discards the result.
+`n/a` means the backend has no build step.
+
+**Build disp.** — the same dispersion, over the build samples. Builds are slow, so
+there are fewer of them, and this column reads `n/a (n=…)` more often.
+
+**Binary** — the size of the shipped binary on disk.
+
+**Do not rank implementations with it.** It measures linking policy, not codegen:
+gcc links libc dynamically and looks tiny while the code lives in `libc.so`, Rust
+links its standard library statically, Go embeds a whole runtime and its type
+metadata.
+
+**`.text`** — the size of the `.text` section: exactly the emitted code, and the
+only size that is comparable across implementations. It is the **cost side of the
+optimization trade**, since inlining, unrolling and vectorization all inflate it
+in exchange for speed.
+
+Calibrate your expectations on small kernels: `.text` is around a kilobyte here
+and function-entry alignment padding quantises it, so a difference of a dozen
+instructions can leave it completely unchanged. When it does not move, read the
+disassembly. `n/a` means the backend emits no artifact — a property of the
+backend, not of the language, since `native-image` produces one from the same
+Java source that a JIT does not.
+
+**Checksum** — the sum of every pixel's iteration count, a 64-bit integer. It is
+the **correctness gate for the whole harness**: for a given grid size, iteration
+ceiling and viewport, every compiler, every language and both ISAs must produce
+the same value in `strict` mode, bit for bit. A divergence aborts the campaign.
+
+It is not a universal constant: change `--grid-size` or `--max-iter` and it
+changes. The invariant is agreement between implementations, not a fixed number.
+
+**Δ strict** — the checksum's distance from the strict-mode reference. Always `0`
+in `strict`, since anything else would have aborted the run. In `fma` and `fast`
+it is the precision sold for the speed gained, and it belongs beside the timing
+rather than in a footnote.
+
+## What this report does not say
+
+- **Which language is fastest.** It compares backends. Rows that differ in
+  language are confounded by construction — different source, different runtime,
+  different standard library — and are valid only for orders of magnitude.
+- **How this machine compares to one of a different ISA.** Absolute cross-ISA
+  timings are meaningless; only within-ISA ratios travel.
+- **That a small difference is real**, unless the dispersion says it can be.

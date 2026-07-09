@@ -114,33 +114,111 @@ enum Record<'a> {
     Sample(&'a Sample),
 }
 
-/// Appends and **flushes** one line per sample, so an interrupted campaign
-/// keeps every sample it completed.
+/// Columns of `samples.csv`, in the order `Sample` declares them.
+const CSV_COLUMNS: &[&str] = &[
+    "algo",
+    "implementation",
+    "language",
+    "compiler",
+    "mode",
+    "phase",
+    "round",
+    "warmup",
+    "cpu",
+    "wall_ns",
+    "elapsed_ns",
+    "user_usec",
+    "system_usec",
+    "checksum",
+    "binary_bytes",
+    "binary_stripped_bytes",
+    "text_bytes",
+];
+
+impl Sample {
+    /// A flat view of the same record `samples.ndjson` carries.
+    ///
+    /// Missing values are **empty**, never `n/a`: a numeric column that
+    /// sometimes holds a word breaks every parser that reads it.
+    fn csv_row(&self) -> String {
+        let columns = [
+            escape(&self.algo),
+            escape(&self.implementation),
+            escape(&self.language),
+            escape(&self.compiler),
+            self.mode.to_string(),
+            self.phase.as_str().to_owned(),
+            self.round.to_string(),
+            self.warmup.to_string(),
+            self.cpu.to_string(),
+            self.wall_ns.to_string(),
+            self.elapsed_ns.to_string(),
+            self.user_usec.to_string(),
+            self.system_usec.to_string(),
+            optional(self.checksum),
+            optional(self.binary_bytes),
+            optional(self.binary_stripped_bytes),
+            optional(self.text_bytes),
+        ];
+        columns.join(",")
+    }
+}
+
+fn optional(value: Option<u64>) -> String {
+    value.map(|value| value.to_string()).unwrap_or_default()
+}
+
+fn escape(value: &str) -> String {
+    if value.contains([',', '"', '\n']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_owned()
+    }
+}
+
+/// Appends and **flushes** one line per sample, so an interrupted campaign keeps
+/// every sample it completed.
+///
+/// Two renderings of the same records: `samples.ndjson` is the source of truth
+/// and carries the machine and campaign header; `samples.csv` is the flat view a
+/// spreadsheet or a dataframe can read directly. Both are written in lockstep.
 pub struct SampleWriter {
-    out: BufWriter<File>,
+    ndjson: BufWriter<File>,
+    csv: BufWriter<File>,
 }
 
 impl SampleWriter {
-    pub fn create(path: &Path) -> Result<Self> {
-        let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    pub fn create(dir: &Path) -> Result<Self> {
         Ok(Self {
-            out: BufWriter::new(file),
+            ndjson: create(&dir.join("samples.ndjson"))?,
+            csv: create(&dir.join("samples.csv"))?,
         })
     }
 
+    /// The header lands in the NDJSON only: a CSV has no room for it. The
+    /// campaign's context — machine, grid size, `-march` — lives there.
     pub fn write_header(&mut self, machine: &Machine, campaign: &Campaign) -> Result<()> {
-        self.write(&Record::Header { machine, campaign })
+        self.write_ndjson(&Record::Header { machine, campaign })?;
+        writeln!(self.csv, "{}", CSV_COLUMNS.join(",")).context("writing the CSV header")?;
+        self.csv.flush().context("flushing samples.csv")
     }
 
     pub fn write_sample(&mut self, sample: &Sample) -> Result<()> {
-        self.write(&Record::Sample(sample))
+        self.write_ndjson(&Record::Sample(sample))?;
+        writeln!(self.csv, "{}", sample.csv_row()).context("writing a CSV row")?;
+        self.csv.flush().context("flushing samples.csv")
     }
 
-    fn write(&mut self, record: &Record<'_>) -> Result<()> {
-        serde_json::to_writer(&mut self.out, record).context("serializing record")?;
-        self.out.write_all(b"\n")?;
-        self.out.flush().context("flushing samples")
+    fn write_ndjson(&mut self, record: &Record<'_>) -> Result<()> {
+        serde_json::to_writer(&mut self.ndjson, record).context("serializing record")?;
+        self.ndjson.write_all(b"\n")?;
+        self.ndjson.flush().context("flushing samples.ndjson")
     }
+}
+
+fn create(path: &Path) -> Result<BufWriter<File>> {
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    Ok(BufWriter::new(file))
 }
 
 /// Parse the single JSON object a container prints on stdout.
@@ -206,6 +284,67 @@ mod tests {
     #[test]
     fn rejects_empty_stdout() {
         assert!(parse_container_stdout("   \n").is_err());
+    }
+
+    fn sample(phase: Phase, checksum: Option<u64>) -> Sample {
+        Sample {
+            algo: "mandelbrot".to_owned(),
+            implementation: "c-gcc".to_owned(),
+            language: "c".to_owned(),
+            compiler: "gcc".to_owned(),
+            mode: FpMode::Strict,
+            phase,
+            round: 3,
+            warmup: false,
+            cpu: 8,
+            wall_ns: 313_600_000,
+            elapsed_ns: 213_300_000,
+            user_usec: 860_000,
+            system_usec: 4_000,
+            checksum,
+            binary_bytes: Some(70_984),
+            binary_stripped_bytes: Some(67_568),
+            text_bytes: Some(1_340),
+        }
+    }
+
+    #[test]
+    fn a_csv_row_has_exactly_one_field_per_declared_column() {
+        let row = sample(Phase::Run, Some(448_356_792)).csv_row();
+        assert_eq!(row.split(',').count(), CSV_COLUMNS.len());
+    }
+
+    #[test]
+    fn a_csv_row_carries_raw_values_in_column_order() {
+        let row = sample(Phase::Run, Some(448_356_792)).csv_row();
+        assert_eq!(
+            row,
+            "mandelbrot,c-gcc,c,gcc,strict,run,3,false,8,313600000,213300000,860000,4000,\
+             448356792,70984,67568,1340",
+        );
+    }
+
+    #[test]
+    fn a_missing_value_is_an_empty_field_never_the_word_not_available() {
+        // A build record has no checksum. `n/a` in a numeric column breaks every
+        // parser that reads it.
+        let row = sample(Phase::Build, None).csv_row();
+        assert!(row.contains(",,"), "empty checksum field: {row}");
+        assert!(!row.contains("n/a"));
+        assert_eq!(row.split(',').count(), CSV_COLUMNS.len());
+    }
+
+    #[test]
+    fn a_field_containing_a_separator_is_quoted() {
+        let mut awkward = sample(Phase::Run, Some(1));
+        awkward.implementation = "c-gcc,-O2".to_owned();
+        assert!(awkward.csv_row().contains("\"c-gcc,-O2\""));
+    }
+
+    #[test]
+    fn a_field_containing_a_quote_doubles_it() {
+        assert_eq!(escape("say \"hi\""), "\"say \"\"hi\"\"\"");
+        assert_eq!(escape("plain"), "plain");
     }
 
     #[test]

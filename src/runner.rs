@@ -63,7 +63,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         modes: args.mode.iter().map(FpMode::to_string).collect(),
     };
 
-    let mut writer = SampleWriter::create(&args.output_dir.join("samples.ndjson"))?;
+    let mut writer = SampleWriter::create(&args.output_dir)?;
     writer.write_header(&machine, &campaign)?;
 
     let mut runner = Runner {

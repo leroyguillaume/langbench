@@ -323,6 +323,13 @@ optimization trade**: inlining, unrolling and vectorization all inflate it in
 exchange for speed. Plotting `.text` against runtime is the point of a compiler
 benchmark, not a curiosity — it is also where `-O2` versus `-O3` shows its hand.
 
+**But calibrate your expectations.** On a kernel this small, `.text` is around a
+kilobyte and function-entry alignment padding quantises it. Measured on C/gcc,
+`fma` mode emits three fewer floating-point instructions than `strict` — twelve
+bytes — and `.text` does not move at all. The column earns its keep on larger
+kernels, or when a backend vectorizes and another does not. For anything finer,
+read the disassembly; that is what we archive it for.
+
 Interpreted and JIT backends emit no artifact: the field is `null`, not zero.
 `native-image` does produce one, so "compiled" is a property of the backend, not
 of the language.
