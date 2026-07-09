@@ -35,13 +35,13 @@ pub struct Row {
     pub language: String,
     pub compiler: String,
     pub mode: String,
-    pub run_min_ms: String,
+    pub run_min: String,
     pub run_dispersion: String,
     pub run_samples: usize,
-    pub compute_min_ms: String,
-    pub startup_ms: String,
-    pub cpu_time_s: String,
-    pub build_min_ms: String,
+    pub compute_min: String,
+    pub startup: String,
+    pub cpu_time: String,
+    pub build_min: String,
     pub build_dispersion: String,
     pub binary: String,
     pub text: String,
@@ -118,16 +118,16 @@ pub fn build(
             language: bucket.language.clone(),
             compiler: bucket.compiler.clone(),
             mode: mode.clone(),
-            run_min_ms: min_ms(summarize(&bucket.run_wall)),
+            run_min: min_ms(summarize(&bucket.run_wall)),
             run_dispersion: dispersion(summarize(&bucket.run_wall)),
             run_samples: bucket.run_wall.len(),
-            compute_min_ms: min_ms(summarize(&bucket.run_elapsed)),
-            startup_ms: min_ms(summarize(&bucket.run_startup)),
-            cpu_time_s: summarize(&bucket.run_cpu_usec).map_or_else(
+            compute_min: min_ms(summarize(&bucket.run_elapsed)),
+            startup: min_ms(summarize(&bucket.run_startup)),
+            cpu_time: summarize(&bucket.run_cpu_usec).map_or_else(
                 || "n/a".to_owned(),
-                |s| format!("{:.2}", s.median as f64 / 1e6),
+                |summary| format!("{:.2} s", summary.median as f64 / 1e6),
             ),
-            build_min_ms: min_ms(summarize(&bucket.build_wall)),
+            build_min: min_ms(summarize(&bucket.build_wall)),
             build_dispersion: dispersion(summarize(&bucket.build_wall)),
             binary: bytes(bucket.binary_bytes),
             text: bytes(bucket.text_bytes),
@@ -165,10 +165,11 @@ pub fn render(data: &ReportData) -> Result<String> {
     template.render(&globals).context("rendering the report")
 }
 
+/// The unit belongs to the value, not to the template: `n/a ms` is nonsense.
 fn min_ms(summary: Option<Summary>) -> String {
     summary.map_or_else(
         || "n/a".to_owned(),
-        |s| format!("{:.1}", s.min as f64 / 1e6),
+        |summary| format!("{:.1} ms", summary.min as f64 / 1e6),
     )
 }
 
@@ -254,7 +255,7 @@ mod tests {
         let data = build(&Machine::default(), &campaign(), &samples, Some(42));
         let row = &data.algos[0].rows[0];
         assert_eq!(row.run_samples, 1);
-        assert_eq!(row.run_min_ms, "2000.0");
+        assert_eq!(row.run_min, "2000.0 ms");
     }
 
     #[test]
@@ -265,8 +266,8 @@ mod tests {
         ];
         let data = build(&Machine::default(), &campaign(), &samples, Some(42));
         let row = &data.algos[0].rows[0];
-        assert_eq!(row.build_min_ms, "800.0");
-        assert_eq!(row.run_min_ms, "2000.0");
+        assert_eq!(row.build_min, "800.0 ms");
+        assert_eq!(row.run_min, "2000.0 ms");
     }
 
     #[test]
@@ -279,7 +280,7 @@ mod tests {
             1_000_000,
         )];
         let data = build(&Machine::default(), &campaign(), &samples, Some(42));
-        assert_eq!(data.algos[0].rows[0].build_min_ms, "n/a");
+        assert_eq!(data.algos[0].rows[0].build_min, "n/a");
     }
 
     #[test]

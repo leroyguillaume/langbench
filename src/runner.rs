@@ -4,6 +4,7 @@
 //! the measurement, so there is no async here and no `tokio`.
 
 use std::fs;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
@@ -126,7 +127,12 @@ impl<E: ContainerEngine> Runner<'_, E> {
     /// blocking by implementation turns ambient noise into bias.
     fn measure_phase(&mut self, units: &[Unit], phase: Phase, rounds: u32) -> Result<()> {
         let total = self.args.warmup_rounds + rounds;
-        info!(phase = phase.as_str(), rounds = total, "measuring");
+        info!(
+            phase = phase.as_str(),
+            rounds = total,
+            units = units.len(),
+            "measuring",
+        );
 
         for round in 0..total {
             let warmup = round < self.args.warmup_rounds;
@@ -134,6 +140,17 @@ impl<E: ContainerEngine> Runner<'_, E> {
                 let sample = self.measure(unit, phase, round, warmup)?;
                 self.verify(&sample)?;
                 self.writer.write_sample(&sample)?;
+                // One line per invocation: a campaign that prints nothing for an
+                // hour is indistinguishable from a campaign that has hung.
+                info!(
+                    phase = phase.as_str(),
+                    round = round + 1,
+                    of = total,
+                    image = %unit.image,
+                    warmup,
+                    wall_ms = sample.wall_ns / 1_000_000,
+                    "measured",
+                );
                 self.samples.push(sample);
             }
         }
@@ -145,6 +162,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
             image: unit.image.clone(),
             args: self.container_args(phase),
             tmpfs_size_mb: self.args.tmpfs_size_mb,
+            timeout: Duration::from_secs(self.args.run_timeout),
         })?;
         let record = execution.record;
         Ok(Sample {
@@ -251,6 +269,7 @@ mod tests {
             warmup_rounds: 1,
             march: "x86-64-v3".to_owned(),
             tmpfs_size_mb: 16,
+            run_timeout: 60,
         }
     }
 

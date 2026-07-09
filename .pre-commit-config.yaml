@@ -20,6 +20,16 @@ repos:
     hooks:
       - id: shellcheck
 
+  # No `pyproject.toml`: the benchmark kernels are dependency-free single files,
+  # not a Python package. Ruff's defaults are the whole configuration.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff-check
+        args:
+          - --fix
+      - id: ruff-format
+
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.7
     hooks:

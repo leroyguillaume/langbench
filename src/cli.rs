@@ -115,6 +115,14 @@ pub struct RunArgs {
     /// Size of the tmpfs mounted on the container's build directory.
     #[arg(long, env = "TMPFS_SIZE_MB", default_value_t = 2048)]
     pub tmpfs_size_mb: u64,
+
+    /// Wall-clock ceiling for a single container invocation, in seconds.
+    ///
+    /// A container that exceeds it is killed and the campaign fails. Without
+    /// this, a deadlocked run is indistinguishable from a slow one and blocks
+    /// the campaign forever.
+    #[arg(long, env = "RUN_TIMEOUT", default_value_t = 600)]
+    pub run_timeout: u64,
 }
 
 /// The machine's parallelism, used only as the *default* for `--cpu`.

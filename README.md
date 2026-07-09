@@ -77,6 +77,7 @@ Common flags — every one of them also reads an environment variable:
 | `--build-rounds` | `BUILD_ROUNDS` | `5` | Measured build rounds |
 | `--warmup-rounds` | `WARMUP_ROUNDS` | `2` | Rounds recorded but flagged |
 | `--march` | `MARCH` | per-ISA baseline | ISA baseline. `native` is rejected |
+| `--run-timeout` | `RUN_TIMEOUT` | `600` | Seconds before a container is killed |
 | `--log-filter` | `LOG_FILTER` | `info` | [`tracing` filter directive][directives] |
 
 [directives]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
@@ -86,6 +87,22 @@ Example — only the strict mode, on four threads, for one algorithm:
 ```sh
 langbench run --algo mandelbrot --mode strict --cpu 4 --output-dir results/strict-4
 ```
+
+### Sizing a campaign
+
+`--grid-size` and `--max-iter` are the same for every implementation, and they
+have to be: the strict-mode checksum is a function of both, so a campaign cannot
+give each backend its own grid without giving up the correctness gate.
+
+**Size for the slowest backend.** At the defaults (`4096` / `1000`) a C run takes
+about a second and a CPython run takes forty. Multiply by the rounds and the
+modes and you get an hour of CPython. The harness logs one line per invocation so
+you can see this happening; if nothing has moved after `--run-timeout` seconds,
+the container is killed and the campaign fails rather than hanging.
+
+Sizing for the slowest backend makes the fastest one's *wall-clock* mostly
+container startup — which is why the report also carries `Compute min`, timed
+inside the program and unaffected.
 
 ## Run in a container
 
@@ -178,13 +195,15 @@ pre-commit install   # runs the three above, plus hadolint and actionlint
 
 ## Status
 
-Early. The harness runs end to end, and `mandelbrot/c-gcc` is the first
-implementation: it builds in all three floating-point modes, produces three
-distinct checksums, and emits no FMA instruction at all under `strict`.
+Early, but the central claim is now demonstrated. Two implementations exist,
+`mandelbrot/c-gcc` and `mandelbrot/python-cpython`, and **they agree on the
+strict-mode checksum bit for bit** — a compiled C kernel and a bytecode
+interpreter, same value. The gate is not decorative: reassociating one expression
+in the Python kernel aborts the campaign.
 
 Next: measure the noise floor of the target machine — nothing else is
 trustworthy until that number exists — then C/clang and Rust/LLVM, to complete
-the first triangle.
+the first triangle of backends.
 
 ## License
 

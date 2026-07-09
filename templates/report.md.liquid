@@ -42,7 +42,7 @@ magnitude, not points.
 | Implementation | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Checksum | Δ strict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min_ms }} ms | {{ row.run_dispersion }} | {{ row.compute_min_ms }} ms | {{ row.startup_ms }} ms | {{ row.cpu_time_s }} s | {{ row.build_min_ms }} ms | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
+| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
 ## The columns

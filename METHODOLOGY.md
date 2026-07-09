@@ -110,7 +110,17 @@ across every compiler, every language and both ISAs.**
 One reference value. Twenty-four images. Any divergence is a bug — in the code,
 in the flags, or in our understanding of them. Never a rounding excuse.
 
-This invariant catches the class of error that unit tests do not.
+This invariant catches the class of error that unit tests do not. Measured: C/gcc
+and CPython agree exactly, and rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in
+the Python kernel — a reassociation that looks like a harmless tidy-up — flips
+two pixels out of twelve million and aborts the campaign.
+
+**It is a necessary condition, not a sufficient one.** The gate sees a change only
+when it flips a pixel's iteration count, so a perturbation that lands nowhere near
+a boundary is invisible: shifting `X_MIN` by one ULP changes nothing at 200×200
+with `max_iter=100`. Sensitivity grows with grid size and iteration ceiling, since
+both increase the number of pixels sitting on a boundary. A passing checksum means
+"no evidence of divergence at this resolution", not "provably identical".
 
 For `fma` and `fast` we do not gate on the checksum. We report its **delta from
 the strict reference** in a column beside the timing, so the reader sees the
