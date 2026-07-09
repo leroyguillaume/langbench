@@ -1,0 +1,472 @@
+# Methodology
+
+This document explains what `langbench` measures, what it refuses to measure,
+and why. A benchmark whose methodology is not published is worth nothing, so
+this file is a deliverable, not a footnote.
+
+If you are here to dispute a number, this is the right page. Start with
+[Claims we do not make](#claims-we-do-not-make).
+
+---
+
+## What is under test
+
+**Compiler and runtime backends, not languages.**
+
+The primary question is: *given the same source, how do different backends
+compare?* gcc versus clang on identical C. rustc-LLVM versus rustc-cranelift on
+identical Rust. CPython versus PyPy. OpenJDK versus GraalVM `native-image`.
+
+The unit of comparison is therefore not a language but a tuple:
+
+> (compiler, version, flags, target ISA)
+
+Cross-language comparison is a secondary, much weaker result. See
+[Two axes](#two-axes-two-tables-never-merged).
+
+---
+
+## The benchmark: Mandelbrot
+
+For each pixel of an `N × N` grid mapped onto the complex plane, iterate
+`z ← z² + c` until `|z| > 2` or `max_iter` is reached. The program prints the
+sum of all iteration counts — the **checksum** — and nothing else. No image is
+written: zero I/O in the measured path.
+
+Deliberate properties:
+
+- Embarrassingly parallel. No shared state, no locks.
+- No allocation in the hot loop, no data structures. This measures codegen, not
+  the quality of a standard library.
+- The load is **imbalanced**: interior pixels run to `max_iter`, exterior pixels
+  exit after a few iterations. Chunking must therefore be dynamic — at least
+  `4 × threads` chunks handed out on demand. A static contiguous split measures
+  the split, not the backend.
+- **No third-party dependencies. None.** Rust uses `std::thread` and an
+  `AtomicUsize` chunk counter, not `rayon`. Otherwise the timed build compiles
+  eight thousand lines of rayon while gcc compiles fifty lines of C, and the
+  build-time column means nothing. It also removes every question about
+  pre-building dependencies. Each implementation is a single source file.
+
+### What this benchmark actually measures
+
+The hot loop is a **divergent-exit floating-point loop**. Vectorizing it requires
+masked SIMD: process eight pixels at once, retire the lanes that have escaped.
+Some autovectorizers manage it, some give up.
+
+So between two mature optimizing backends, this benchmark largely measures
+*whether the autovectorizer handles that specific loop shape*. The result is a
+step function — vectorized (≈4×) or not (1×) — not a continuous quality metric.
+
+That is a legitimate thing to measure. It is **not** "which compiler is better".
+Broader claims would require a suite: a scalar dependency chain (n-body), a
+pointer-chasing kernel (alias analysis), a branchy kernel. We start with
+Mandelbrot alone, and we say so.
+
+### Anti-cheating contract
+
+- `N`, `max_iter` and the thread count come from `argv`. Never compile-time
+  constants — a backend may otherwise constant-fold the entire computation away.
+- The checksum is printed. Never discard it, or dead-code elimination deletes the
+  loop and the benchmark measures nothing at infinite speed.
+- The thread count is an **explicit argument**. Implementations must never call
+  `available_parallelism`, `os.cpu_count()`, `runtime.NumCPU()` or equivalent.
+  Those functions disagree about cgroup quotas across runtimes: Rust reads the
+  cgroup v2 quota, CPython does not, Go only learned to in 1.25. Auto-detection
+  would measure "does this runtime read `/sys/fs/cgroup`", not parallel speed.
+
+  (The *harness* auto-detects a default for `--cpu`. That is correct: it then
+  passes the value explicitly. The prohibition applies to the kernels.)
+
+---
+
+## Floating-point modes
+
+Three modes, built from the same source via build args. The axis is **FP
+semantics**, not "optimization on or off" — every mode is `-O3`.
+
+| Mode     | Flags                             | Meaning |
+| -------- | --------------------------------- | ------- |
+| `strict` | `-ffp-contract=off`, no fast-math | Bit-reproducible IEEE 754 |
+| `fma`    | FMA contraction allowed           | Bit-different but *more* accurate: one rounding instead of two |
+| `fast`   | `-ffast-math`                     | Reassociation allowed: precision sold for speed |
+
+Splitting `fma` out of `fast` matters. FMA contraction changes the result in the
+last bit, but in the *right direction* — it is not cheating, it is a different
+definition of the computation. Reassociation is the real relaxation. Lumping them
+together throws away the most interesting column: the cost of demanding
+bit-reproducibility.
+
+### The strict-mode invariant
+
+`strict` mode is the **correctness gate for the entire harness**.
+
+Mandelbrot uses only multiply, add, subtract and compare. All four are correctly
+rounded under IEEE 754 — the result is specified to the bit, and both x86-64 (on
+SSE2, not the old 80-bit x87) and AArch64 conform. With no FMA contraction, no
+reassociation and no denormal flushing, the checksum **must be bit-identical
+across every compiler, every language and both ISAs.**
+
+One reference value. Twenty-four images. Any divergence is a bug — in the code,
+in the flags, or in our understanding of them. Never a rounding excuse.
+
+This invariant catches the class of error that unit tests do not.
+
+For `fma` and `fast` we do not gate on the checksum. We report its **delta from
+the strict reference** in a column beside the timing, so the reader sees the
+speed gained and the precision sold in one glance.
+
+---
+
+## Compiler flags
+
+- **Never `-march=native`.** The CPU model varies between runs; the ISA baseline
+  would vary with it. Pin an explicit baseline per ISA (e.g. `x86-64-v3`) as a
+  build arg and record it in the results.
+- `x86-64-v3` and any AArch64 baseline are **not equivalent** and we never claim
+  they are. NEON is 128-bit wide — two `f64` lanes. AVX2 is 256-bit — four. A
+  factor of two on vectorized Mandelbrot comes straight out of the ISA and has
+  nothing to do with the compiler.
+- Pin and document everything that trades compile time against runtime speed:
+  Rust's `codegen-units`, `strip`, the linker (`ld` / `lld` / `mold`). Otherwise
+  we benchmark a default rather than a decision.
+
+---
+
+## Two axes, two tables, never merged
+
+1. **Same source, different backend.** The real experiment. gcc versus clang on
+   identical C; rustc-LLVM versus rustc-cranelift on identical Rust. Clean, and
+   the reason this project exists.
+2. **Same algorithm, different language.** Confounded by construction: different
+   source, different runtime, different standard library. Valid for orders of
+   magnitude ("Python is roughly 80× slower than Rust"), never for percentages.
+
+---
+
+## The ISA rule
+
+**Absolute cross-ISA timings are never published.**
+
+Changing ISA means changing silicon. Frequency, microarchitecture, cache
+hierarchy and memory bandwidth all move together with the treatment. The
+confounding variable is perfectly collinear with the one under study; no amount
+of statistics recovers the effect. If a Graviton beats a Xeon here, we cannot
+tell whether clang's AArch64 backend is better or whether it is simply a better
+chip.
+
+What survives is the **within-ISA ratio**:
+
+> clang beats gcc by 12% on x86-64, but by only 3% on aarch64.
+
+That is a statement about backend maturity per target, and it is the interesting
+one.
+
+A pleasant consequence: the "same machine" requirement applies *per ISA*. One CI
+job on x86-64 and one on aarch64, on different physical machines, is fine —
+because only intra-job ratios are ever used.
+
+**Never run a benchmark under QEMU or `binfmt` emulation.** Native builds or
+nothing.
+
+---
+
+## Repository layout
+
+Convention over configuration. There is no YAML manifest: templating Dockerfiles
+would badly reinvent the thing Dockerfiles already are, and per-implementation
+variance (cargo-chef, `CGO_ENABLED=0`, `uv sync`, `native-image`) lives exactly
+where templates are worst.
+
+```
+benchmarks/<algo>/<language>-<compiler>/Dockerfile
+```
+
+e.g. `benchmarks/mandelbrot/c-gcc/`, `c-clang/`, `rust-llvm/`, `rust-cranelift/`.
+
+The FP mode, the `-march` baseline and the toolchain version are **build args**,
+not directories — they do not change the Dockerfile's structure. Four
+Dockerfiles, not twenty-four. This is Docker's own parameterization, not a
+codegen layer of our own invention.
+
+Metadata lives in Docker **labels**, so it sits where it is true and
+`docker inspect` can read it back:
+
+```dockerfile
+LABEL langbench.language="c" \
+      langbench.compiler="gcc" \
+      langbench.version="14.2" \
+      langbench.flags="-O3 -march=x86-64-v3 -ffp-contract=off"
+```
+
+Every base image is pinned **by digest** (`FROM gcc@sha256:…`), never by tag. A
+benchmark that silently changes when upstream pushes is not a benchmark.
+
+---
+
+## Container contract
+
+Every image exposes the same `ENTRYPOINT` and takes one of two subcommands:
+
+- `build <threads>` — recompile from a clean state, discard the artifacts.
+- `run <n> <max_iter> <threads>` — execute the binary.
+
+Each invocation prints **exactly one JSON object on stdout**, and nothing else.
+Compilers and runtimes write to stderr; stdout is reserved for the record. The
+harness rejects any other shape rather than measure noise.
+
+```json
+{"phase":"run","checksum":31415926535,"elapsed_ns":4102337891,"user_usec":32418004,"system_usec":118273}
+{"phase":"build","elapsed_ns":812004221,"user_usec":2914000,"system_usec":204000,"binary_bytes":312840,"binary_stripped_bytes":248904,"text_bytes":41216}
+```
+
+Stdout rather than a bind-mounted file: it needs no volume, no per-invocation
+temporary directory, and no reasoning about append ordering. Printing the
+checksum also happens to be what stops dead-code elimination from deleting the
+hot loop.
+
+**The checksum is a JSON integer.** It is a sum of 64-bit iteration counts, and
+it is the correctness gate for the whole harness. Anything that rounds it —
+`float64` storage, a metrics system, a spreadsheet — destroys the invariant.
+
+All measurement originates inside the container. The CLI contributes exactly one
+number, the external wall-clock, which nothing inside the container can produce:
+nothing in there is alive to time its own creation.
+
+---
+
+## Measurement protocol
+
+**`docker build` prepares. `docker run` measures.** That is the core rule.
+
+### The build phase
+
+The image ships the toolchain, the sources, **and the already-compiled binary**
+(produced during `docker build`). That binary is what `run` executes. The `build`
+subcommand recompiles from scratch and throws the result away — it exists only to
+be timed. Compilers are deterministic, so timing one compilation and executing
+another of the same source with the same flags is sound.
+
+The build directory is a `--tmpfs` (with an explicit `size=`; a Rust `target/`
+reaches hundreds of megabytes). It is therefore empty on every `docker run`,
+because each container starts from the image layers with a fresh writable layer.
+No cleanup step, no `--no-cache`, no network.
+
+- **`--network=none` on every measured run.** Not "hopefully no network": a build
+  that tries to fetch **fails loudly** instead of silently adding four seconds.
+  Belt and braces with `cargo build --offline` and `GOPROXY=off`. This rule is
+  also why the container cannot push metrics anywhere.
+- **`--tmpfs` on the build directory.** Compilation writes object files;
+  overlayfs latency is a noise source we can delete for free.
+- **Warm the toolchain cache, never the project's.** Rust ships a precompiled
+  stdlib; Go recompiles its own on a cold `GOCACHE`. Without warming we would be
+  measuring "Go compiles its standard library" against "Rust does not".
+- **The Go trap.** Building the binary in the Dockerfile also populates `GOCACHE`
+  with *the project*, so the timed rebuild would be an instant no-op and Go would
+  look infinitely fast. The final stage must run `go clean -cache && go build std`:
+  hot for the stdlib, cold for our code.
+- **Pass the thread count to the compiler too** (`cargo build -jN`, `make -jN`).
+  Compilers are parallel.
+
+### The three clocks
+
+| Layer    | Source                    | Captures |
+| -------- | ------------------------- | -------- |
+| External | CLI, around `docker run`  | container create + runtime init + compute |
+| Internal | program, `elapsed_ns`     | compute only |
+| Floor    | a `/bin/true` image, 30×  | container overhead alone |
+
+**External minus internal is a metric, not noise.** It is runtime startup cost,
+and it is where the JVM and CPython pay their tax.
+
+Do **not** subtract the floor from anything — that would propagate its variance
+into every number. Characterize it once and publish it beside the table.
+
+### CPU time comes from the cgroup, never from `rusage`
+
+`wait4()` on the `docker` process returns the rusage of the Docker *client* — a
+few milliseconds of argument parsing — because the workload runs under
+`containerd-shim`, in a different process tree. You would conclude that Rust
+consumes no CPU.
+
+Read `/sys/fs/cgroup/cpu.stat` (`usage_usec`, `user_usec`, `system_usec`) from
+inside the container before the entrypoint returns. With cgroup v2 and a private
+cgroup namespace — Docker's default — the container sees its own. This is
+language-agnostic, unlike `getrusage`.
+
+Wall-clock says *is it fast*. Total CPU time says *at what price*. A runtime whose
+scheduler busy-waits burns CPU without gaining a millisecond of wall, and that is
+visible only in the gap between the two.
+
+Build time is a **headline result**, not a footnote. The canonical
+compile-versus-runtime trade-off — cranelift compiles much faster and emits
+slower code — is half the story of a compiler benchmark.
+
+### Binary size
+
+Three numbers, all cheap, recorded once per implementation in the `build` record
+since they are constant across repetitions. We measure the binary the image
+ships — the one `run` executes — not the throwaway from the timed rebuild.
+
+- `binary_bytes` — the file on disk, as shipped.
+- `binary_stripped_bytes` — after `strip`. We do not strip during the timed
+  build; that would add link-time work to a number we are timing.
+- `text_bytes` — the `.text` section, from `size(1)`.
+
+**Only `.text` is comparable across implementations.** Total file size measures
+linking policy, not codegen: gcc dynamically links libc and looks tiny while the
+code lives in `libc.so`; Rust statically links its stdlib; Go embeds a runtime
+and its type metadata. Ranking languages by file size ranks their packaging.
+
+`.text` is exactly the emitted code, and it is the **cost side of the
+optimization trade**: inlining, unrolling and vectorization all inflate it in
+exchange for speed. Plotting `.text` against runtime is the point of a compiler
+benchmark, not a curiosity — it is also where `-O2` versus `-O3` shows its hand.
+
+Interpreted and JIT backends emit no artifact: the field is `null`, not zero.
+`native-image` does produce one, so "compiled" is a property of the backend, not
+of the language.
+
+We archive `objdump -d` of the hot loop alongside the results. Three lines of
+Dockerfile. When clang comes out 3× ahead of gcc we do not speculate about the
+vectorizer — we look for the `vmulpd`.
+
+### Sampling
+
+The harness runs the loop itself. `hyperfine` is excellent, and fine for
+prototyping a single image, but it cannot capture per-run stdout — so it cannot
+join the external wall-clock to the program's self-reported `elapsed_ns`. Min,
+median and MAD are fifty lines with no dependency; the protocol is the hard part,
+not the arithmetic.
+
+- **Size `n` so that a run lasts 2–5 s.** Long enough to swamp container startup
+  and scheduler quanta, short enough that CI finishes. Builds take what they
+  take; 5–10 repetitions suffice.
+- **Interleave round-robin.** Outer loop over rounds, inner loop over
+  implementations. Never the reverse. Thirty gcc runs followed by thirty clang
+  runs lets the hourly log flush land on one of them and become a bias
+  indistinguishable from the effect under study. Blocking converts variance into
+  bias, and no number of repetitions removes bias.
+- **Keep the warmup samples, flagged.** The first run of an image faults its
+  layers into page cache. Mark them in the data rather than deleting them; the
+  day something looks wrong, you will want to see them.
+- **Verify the checksum on every run**, not once. A run with the wrong value is
+  not a slow run, it is a wrong run, and it must never enter the statistics.
+- **Store raw samples, never aggregates.** One NDJSON line per run, with the
+  machine metadata and image labels in a header record. Aggregates are recomputed
+  at report time; a discarded sample is gone forever. This is the
+  highest-return rule in the protocol, and the one most regretted later.
+
+### Why min-of-N, not the median
+
+Contention noise is **one-sided**: it can only slow you down, never speed you up.
+The median of a distribution pushed against a hard floor is not the true value.
+
+So we report the **minimum** as the estimate of the machine's capability, and we
+keep the dispersion beside it as a **quality signal for the campaign**. If the
+spread is wide, the measurement is worthless — including its minimum. The
+dispersion is not an error bar on the result; it is a verdict on the run.
+
+---
+
+## Where it runs
+
+**Measure the machine before measuring the backends.**
+
+Run the same binary thirty times and look at the median absolute deviation. This
+is a twenty-minute experiment and it decides what we are allowed to claim:
+
+- MAD under ~2% → percentage-level claims (gcc versus clang) are defensible.
+- MAD around 15% → conclusions stop at factors, not percentages. Document it.
+  That is already more honest than most published benchmarks.
+
+The noise-floor run is also the harness's first integration test: the same code
+path, with the machine as the subject.
+
+### CI (GitHub Actions)
+
+- **All implementations of an ISA run in the same job, sequentially.** A matrix
+  with one job per implementation would compare Rust on one physical machine to
+  Go on another, and the result would be meaningless.
+- One job on `ubuntu-latest`, one on `ubuntu-24.04-arm`.
+- Machine metadata is recorded on every run. When two campaigns disagree, it is
+  the first thing to check.
+- Hosted runners have two to four hyperthreaded vCPUs and noisy neighbours.
+  Scaling curves from CI are indicative only.
+
+### Dedicated hardware
+
+For percentage-level claims: a bare-metal node, `kubectl cordon`-ed out of the
+scheduling pool, driven over SSH with a plain `docker run` — **not as a pod**.
+That removes kubelet, containerd, cadvisor, the CNI daemon and the entire
+DaemonSet argument in one move. Kubernetes manages the cluster; it does not need
+to manage this.
+
+On that node:
+
+- `performance` governor, **turbo disabled**. With turbo on, repetition 1 runs at
+  5 GHz and repetition 30 at 3.4 GHz because the package heated up. That is
+  drift, not noise, and no median rescues it.
+- Optionally `isolcpus` / `nohz_full` / `rcu_nocbs`, which remove the cores from
+  the Linux scheduler entirely.
+
+If the benchmark must run *inside* Kubernetes, the mechanism is Guaranteed QoS
+plus the static CPU Manager policy (`full-pcpus-only`), reserved CPUs for the
+system, and an audit of every DaemonSet that tolerates your taint. It is more
+work than cordoning a node, for a worse result.
+
+**Verify, do not trust.** Before any campaign: check `Cpus_allowed_list` in
+`/proc/<pid>/status`; confirm `nr_throttled` is zero in the cgroup's `cpu.stat`;
+read `scaling_cur_freq` *during* the run; and interleave a fixed calibration
+sentinel at the start, the middle and the end. If the sentinel drifts, discard
+the campaign — that is the thermal throttling you did not see coming.
+
+---
+
+## Observability: the machine, not the measurement
+
+Two kinds of data, two stores. They must not be mixed.
+
+**Measurement data goes in a file.** Exact, complete, archivable. A campaign is
+an NDJSON file you commit, diff, and reread in two years. Thirty discrete
+observations, where a lost sample is a silent hole in the result.
+
+**Environment data goes in Prometheus.** Dense, sampled, disposable.
+`node-exporter` on the bench node at a one-second scrape turns the "verify, do not
+trust" list into a dashboard: CPU frequency, package temperature, throttle
+counters, plotted across the campaign. When round 22 comes in 8% slow, you look
+at the graph instead of speculating.
+
+Pin the exporter to the **reserved** cores. A monitor that perturbs what it
+monitors is a classic of the genre.
+
+### Never push benchmark metrics to Prometheus
+
+Three independent reasons, each sufficient on its own:
+
+1. **Pushing needs network**, and a network namespace cannot be added mid-run.
+   Giving the container network for its whole life destroys the `--network=none`
+   guarantee, trading a structural invariant for a convention.
+2. **Prometheus stores `float64`.** The checksum is a sum of 64-bit integers; past
+   2⁵³ it stops being exact. The bit-identical strict-mode invariant — the thing
+   that catches the bugs tests do not — would be silently lost.
+3. **A TSDB is lossy by design** (a missed scrape is fine, the next arrives in
+   fifteen seconds) and pull-based (a container that lives four seconds is never
+   scraped). Keeping all thirty repetitions would mean encoding the round number
+   in a label — using a time-series database as a key-value store. That is the
+   smell that says it is the wrong database.
+
+---
+
+## Claims we do not make
+
+For the avoidance of doubt, `langbench` does not, and will not, tell you:
+
+- **Which language is fastest.** It compares backends. Cross-language numbers are
+  confounded by construction and are valid only for orders of magnitude.
+- **Whether ARM is faster than x86.** Absolute cross-ISA timings are meaningless
+  here; only within-ISA ratios are compared across ISAs.
+- **Which compiler is better.** On Mandelbrot it tells you which one vectorizes a
+  divergent-exit loop. That is one optimizer pass, not a compiler.
+- **That a 3% difference is real**, unless the campaign's dispersion says it can
+  be. The dispersion is published next to every number for exactly this reason.

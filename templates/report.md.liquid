@@ -1,0 +1,74 @@
+# langbench report
+
+Generated on {{ campaign.timestamp }} by langbench {{ campaign.langbench_version }}.
+
+Raw samples are in `samples.ndjson`, one line per measured invocation. Every
+number below is recomputed from them, so the file is the source of truth and
+this report is a view. Read [METHODOLOGY.md](../METHODOLOGY.md) before drawing a
+conclusion from anything here.
+{% if warnings.size > 0 %}
+## This host is not a clean benchmark target
+{% for warning in warnings %}
+- {{ warning }}
+{%- endfor %}
+
+Percentage-level claims are not defensible on this machine. Compare orders of
+magnitude, not points.
+{% endif %}
+## Campaign
+
+| Parameter | Value |
+| --- | --- |
+| Threads (`--cpu`) | {{ campaign.cpu }} |
+| Grid | {{ campaign.grid_size }} x {{ campaign.grid_size }} |
+| Max iterations | {{ campaign.max_iter }} |
+| ISA baseline (`-march`) | {{ campaign.march }} |
+| FP modes | {{ campaign.modes | join: ", " }} |
+| Run rounds | {{ campaign.rounds }} (+ {{ campaign.warmup_rounds }} warmup) |
+| Build rounds | {{ campaign.build_rounds }} (+ {{ campaign.warmup_rounds }} warmup) |
+| Strict-mode checksum | `{{ strict_checksum }}` |
+
+## Machine
+
+| Property | Value |
+| --- | --- |
+{% for field in machine_fields -%}
+| {{ field.label }} | {{ field.value }} |
+{% endfor %}
+## Results
+{% for algo in algos %}
+### {{ algo.algo }}
+
+| Implementation | Mode | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Checksum | Δ strict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+{% for row in algo.rows -%}
+| {{ row.implementation }} | {{ row.mode }} | {{ row.run_min_ms }} ms | {{ row.run_dispersion }} | {{ row.compute_min_ms }} ms | {{ row.startup_ms }} ms | {{ row.cpu_time_s }} s | {{ row.build_min_ms }} ms | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
+{% endfor %}
+{%- endfor %}
+## How to read this
+
+- **Run min** is the minimum wall-clock over the measured rounds, not the mean.
+  Contention noise is one-sided — it can only slow a run down — so the minimum
+  is the best estimate of the machine's capability.
+- **Dispersion** is the median absolute deviation as a percentage of the median.
+  It is a verdict on the campaign, not an error bar on the result. Above roughly
+  2%, the machine was too noisy for percentage-level claims and even the minimum
+  should be distrusted. Being a median, it is robust: a single clobbered round
+  will not show up here. Isolated spikes are found in `samples.ndjson`.
+- **Compute min** is what the program timed around its own hot loop. **Startup**
+  is the gap between the two clocks: container creation plus runtime
+  initialisation. That gap is a result, not overhead to be subtracted.
+- **CPU time** is `user + system` read from the container's cgroup. Wall-clock
+  says whether it is fast; CPU time says at what price. A scheduler that
+  busy-waits burns CPU without gaining a millisecond of wall.
+- **`.text`** is the only binary size comparable across implementations. Total
+  file size measures linking policy, not codegen. `n/a` means the backend emits
+  no artifact, which is a property of the backend, not of the language.
+- **Δ strict** is the checksum's distance from the strict-mode reference. In
+  `strict` it is always `0` — a divergence aborts the campaign. In `fma` and
+  `fast` it is the precision sold for the speed gained.
+
+Two things this report does not say: which language is fastest (it compares
+backends, and cross-language rows are confounded by construction), and how this
+machine compares to one of a different ISA (absolute cross-ISA timings are
+meaningless; only within-ISA ratios travel).

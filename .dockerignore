@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.pre-commit-config.yaml
+.dockerignore
+Dockerfile
+*.md
+target
+results
+benchmarks
