@@ -1,4 +1,4 @@
+*.local.ndjson
+*.local.csv
+*.local.md
 /target
-/samples.local.ndjson
-/samples.local.csv
-/report.local.md
