@@ -14,6 +14,17 @@ identical Rust, CPython versus PyPy, OpenJDK versus GraalVM `native-image`.
 > produces.** It documents what is measured, what is deliberately not measured,
 > and why a benchmark that skips those questions produces confident nonsense.
 
+**The results live in two directories**, one campaign per ISA:
+
+- **[`samples/`](samples/)** — `samples/<arch>.ndjson`, the raw samples. The only
+  artifact a campaign produces that cannot be recomputed, and the source of
+  everything below.
+- **[`reports/`](reports/)** — `reports/<arch>.md`, each rendered from the samples
+  beside it. [What is in there](reports/README.md).
+
+They are kept apart by architecture and never merged: **an absolute timing does
+not cross an ISA** ([why](METHODOLOGY.md#the-isa-rule)).
+
 ## Requirements
 
 - Rust 1.94+ (edition 2024)
@@ -331,10 +342,10 @@ awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
-benchmark target. **One per ISA, at the repo root** —
-[`report-aarch64.md`](report-aarch64.md), and `report-x86_64.md` once the
-[`bench`](.github/workflows/bench.yaml) workflow has run — each rewritten beside
-the samples it was rendered from. It renders
+benchmark target. **One per ISA, in [`reports/`](reports/)** —
+[`reports/aarch64.md`](reports/aarch64.md), and `reports/x86_64.md` once the
+[`bench`](.github/workflows/bench.yaml) workflow has run — each rendered from the
+campaign of the same name in [`samples/`](samples/). It renders
 `templates/report.md.liquid`, embedded in the binary; `--template` swaps in your
 own [Liquid][liquid] template, which receives exactly the same variables:
 
@@ -378,15 +389,14 @@ it keys on is the one the machine recorded in the campaign header, never the one
 in the filename: a filename is a label somebody typed.
 
 The data it publishes is each campaign's samples, byte for byte — no export
-format, no intermediate file. They live at the repo root, one per ISA:
+format, no intermediate file. They live in [`samples/`](samples/), one per ISA:
 
 ```sh
-langbench run --output samples-x86_64.ndjson
-langbench md samples-x86_64.ndjson --output report-x86_64.md
+langbench run --output samples/x86_64.ndjson
+langbench md samples/x86_64.ndjson --output reports/x86_64.md
 ```
 
-Anything matching `samples-*.ndjson` at the root is picked up and published.
-Locally:
+Every `samples/*.ndjson` is picked up and published. Locally:
 
 ```sh
 cd site
@@ -418,8 +428,8 @@ the half of it that talks to Docker.
 
 **[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
-which measures the emulator). It commits every `samples-<arch>.ndjson` **and** its
-`report-<arch>.md` back to `main`, then builds the site from those very samples
+which measures the emulator). It commits every `samples/<arch>.ndjson` **and** its
+`reports/<arch>.md` back to `main`, then builds the site from those very samples
 and deploys it to GitHub Pages. Both files, never one without the other: the
 samples are the only artefact that cannot be recomputed, and committing a report
 without its evidence publishes a conclusion nobody can check.
@@ -435,7 +445,7 @@ reaches the page only when a campaign is next dispatched.
 runner is shared, virtualised and frequency-scaled — the worst benchmark target
 money can rent. It says so itself: the report and the page both lead with every
 reason the host was a poor target. For a number worth trusting, run a campaign on
-a real machine and commit its `samples-<arch>.ndjson`; the report and the site are
+a real machine and commit its `samples/<arch>.ndjson`; the report and the site are
 pure functions of that file and will render it unchanged.
 
 ## Adding an implementation
@@ -655,7 +665,7 @@ compare a *different program*, which is precisely what
 forgotten.
 
 Next: measure the noise floor of the target machine — nothing else is trustworthy
-until that number exists — and then publish the first campaign.
+until that number exists.
 
 ## License
 

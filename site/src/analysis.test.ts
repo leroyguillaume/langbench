@@ -105,10 +105,10 @@ describe("the WebAssembly boundary", () => {
       const analysis = analysisSchema.parse(analyze(raw, { include_warmup: false }));
 
       expect(analysis.arch).not.toBe("");
-      // The suffix is a convenience for a human reading `ls`. If it and the header
+      // The name is a convenience for a human reading `ls`. If it and the header
       // ever disagree, the header is right -- but they should not disagree, and a
       // campaign filed under the wrong ISA is worth catching here.
-      expect(file).toBe(`samples-${analysis.arch}.ndjson`);
+      expect(file).toBe(`${analysis.arch}.ndjson`);
     }
   });
 });

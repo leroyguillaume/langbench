@@ -3,8 +3,8 @@ name: bench
 # Runs a campaign per ISA, commits what each recorded, and publishes them.
 #
 # Two architectures, two runners, **never QEMU**: emulation measures the emulator.
-# Each campaign stays whole and separate -- `samples-x86_64.ndjson` and
-# `samples-aarch64.ndjson`, side by side, never merged. An absolute timing does
+# Each campaign stays whole and separate -- `samples/x86_64.ndjson` and
+# `samples/aarch64.ndjson`, side by side, never merged. An absolute timing does
 # not cross an ISA, and the site enforces that by showing one campaign at a time.
 # See `METHODOLOGY.md#the-isa-rule`.
 #
@@ -13,7 +13,7 @@ name: bench
 # are *indicative*, and they say so themselves: `langbench` records the host in
 # the campaign header, and both the report and the website lead with every reason
 # it was a poor target. For a number worth publishing, run a campaign on a real
-# machine and commit its `samples-<arch>.ndjson` -- the report and the site are
+# machine and commit its `samples/<arch>.ndjson` -- the report and the site are
 # pure functions of that file and will render it unchanged.
 #
 # `workflow_dispatch` only. A campaign is a deliberate act, not a side effect of a
@@ -76,7 +76,7 @@ jobs:
       # human reading `ls`: the architecture of record is the one the machine
       # reported into the campaign header, and that is what the site keys on.
       - name: run the campaign
-        run: ./target/release/langbench run --output "samples-${{ matrix.arch }}.ndjson"
+        run: ./target/release/langbench run --output "samples/${{ matrix.arch }}.ndjson"
         env:
           GRID_SIZE: ${{ inputs.grid_size }}
           MAX_ITER: ${{ inputs.max_iter }}
@@ -86,16 +86,16 @@ jobs:
       # the file above.
       - name: render the report
         run: |
-          ./target/release/langbench md "samples-${{ matrix.arch }}.ndjson" \
-            --output "report-${{ matrix.arch }}.md"
+          ./target/release/langbench md "samples/${{ matrix.arch }}.ndjson" \
+            --output "reports/${{ matrix.arch }}.md"
 
       - name: upload the campaign
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: campaign-${{ matrix.arch }}
           path: |
-            samples-${{ matrix.arch }}.ndjson
-            report-${{ matrix.arch }}.md
+            samples/${{ matrix.arch }}.ndjson
+            reports/${{ matrix.arch }}.md
           if-no-files-found: error
 
   # One job, one push. Two matrix jobs committing to `main` would race, and the
@@ -123,7 +123,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add samples-*.ndjson report-*.md
+          git add samples reports
           if git diff --cached --quiet; then
             echo 'the campaigns reproduced the committed ones, byte for byte; nothing to commit'
             exit 0

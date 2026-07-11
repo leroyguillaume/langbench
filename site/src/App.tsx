@@ -68,8 +68,7 @@ export function App() {
         <div className="warnings">
           <h2>This build publishes no campaign</h2>
           <p>
-            No <code>samples-&lt;arch&gt;.ndjson</code> was found at the repository root when the
-            site was built.
+            No <code>samples/&lt;arch&gt;.ndjson</code> was found when the site was built.
           </p>
         </div>
       </main>
@@ -306,8 +305,8 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
 
       <footer className="footer">
         Read METHODOLOGY.md before trusting any number here. The samples this page is built from are{" "}
-        <a href={`${DATA_URL}samples-${analysis.arch}.ndjson`}>samples-{analysis.arch}.ndjson</a> —
-        this campaign's only artefact.
+        <a href={`${DATA_URL}${analysis.arch}.ndjson`}>samples/{analysis.arch}.ndjson</a> — this
+        campaign's only artefact.
       </footer>
     </main>
   );
