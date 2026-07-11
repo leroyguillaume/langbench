@@ -36,6 +36,11 @@ pub struct AlgoReport {
 
 #[derive(Debug, Serialize)]
 pub struct Row {
+    /// The value `run_min` was formatted from, kept to sort rows fastest-first.
+    /// Not rendered: the template has the formatted string. `None` — a row with
+    /// no measured run — sorts last, having no speed to be ranked on.
+    #[serde(skip)]
+    pub run_min_ns: Option<u64>,
     pub implementation: String,
     pub language: String,
     pub compiler: String,
@@ -117,6 +122,7 @@ pub fn build(recording: &Recording) -> ReportData {
         let bucket = &buckets[key];
         let reference = references.get(algo).copied();
         let row = Row {
+            run_min_ns: summarize(&bucket.run_wall).map(|summary| summary.min),
             implementation: implementation.clone(),
             language: bucket.language.clone(),
             compiler: bucket.compiler.clone(),
@@ -146,6 +152,16 @@ pub fn build(recording: &Recording) -> ReportData {
                 rows: vec![row],
             }),
         }
+    }
+
+    // Fastest first, on the same statistic the table headlines: the minimum wall
+    // clock. `sort_by_key` is stable, so rows the campaign could not measure keep
+    // their schedule order at the bottom instead of being shuffled among
+    // themselves.
+    for report in &mut algos {
+        report
+            .rows
+            .sort_by_key(|row| (row.run_min_ns.is_none(), row.run_min_ns));
     }
 
     ReportData {
@@ -231,6 +247,14 @@ fn delta(checksum: Option<u64>, reference: Option<u64>) -> String {
 mod tests {
     use super::*;
     use crate::machine::Machine;
+
+    fn implementations(data: &ReportData) -> Vec<&str> {
+        data.algos[0]
+            .rows
+            .iter()
+            .map(|row| row.implementation.as_str())
+            .collect()
+    }
 
     fn recording(samples: Vec<Sample>) -> Recording {
         Recording {
@@ -405,20 +429,62 @@ mod tests {
         assert_eq!(data.algos[0].rows[0].checksum_delta, "0");
     }
 
+    /// The sort is stable, so the schedule order survives as the tiebreak.
     #[test]
-    fn rows_keep_the_schedule_order() {
+    fn rows_of_equal_speed_keep_the_schedule_order() {
         let samples = vec![
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
             sample("rust-llvm", FpMode::Strict, Phase::Run, false, 1_000_000),
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
         ];
         let data = build(&recording(samples));
-        let names: Vec<_> = data.algos[0]
-            .rows
-            .iter()
-            .map(|row| row.implementation.as_str())
-            .collect();
-        assert_eq!(names, ["c-gcc", "rust-llvm"]);
+        assert_eq!(implementations(&data), ["c-gcc", "rust-llvm"]);
+    }
+
+    #[test]
+    fn rows_are_sorted_fastest_first() {
+        let samples = vec![
+            sample("c-gcc", FpMode::Strict, Phase::Run, false, 3_000_000),
+            sample(
+                "python-cpython",
+                FpMode::Strict,
+                Phase::Run,
+                false,
+                9_000_000,
+            ),
+            sample("rust-llvm", FpMode::Strict, Phase::Run, false, 1_000_000),
+        ];
+        let data = build(&recording(samples));
+        assert_eq!(
+            implementations(&data),
+            ["rust-llvm", "c-gcc", "python-cpython"],
+        );
+    }
+
+    /// The ranking is on the minimum, the statistic the table headlines — not on
+    /// the order the samples happened to arrive in.
+    #[test]
+    fn the_ranking_is_on_the_minimum_not_the_first_sample() {
+        let samples = vec![
+            sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
+            sample("c-gcc", FpMode::Strict, Phase::Run, false, 9_000_000),
+            sample("rust-llvm", FpMode::Strict, Phase::Run, false, 2_000_000),
+            sample("rust-llvm", FpMode::Strict, Phase::Run, false, 2_000_000),
+        ];
+        let data = build(&recording(samples));
+        assert_eq!(implementations(&data), ["c-gcc", "rust-llvm"]);
+    }
+
+    /// A build-only row has no run to be ranked on. It sorts last rather than
+    /// ahead of every measured row, which a `None`-is-zero sort would do.
+    #[test]
+    fn a_row_without_a_measured_run_sorts_last() {
+        let samples = vec![
+            sample("c-gcc", FpMode::Strict, Phase::Build, false, 1_000_000),
+            sample("rust-llvm", FpMode::Strict, Phase::Run, false, 5_000_000),
+        ];
+        let data = build(&recording(samples));
+        assert_eq!(implementations(&data), ["rust-llvm", "c-gcc"]);
     }
 
     #[test]
@@ -462,8 +528,8 @@ mod tests {
         assert!(columns.len() > 10, "parsed {} columns", columns.len());
         for column in columns {
             assert!(
-                markdown.contains(&format!("**{column}**")),
-                "column `{column}` has no entry in the column reference",
+                markdown.contains(&format!("### {column}\n")),
+                "column `{column}` has no section in the column reference",
             );
         }
     }
