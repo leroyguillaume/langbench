@@ -1,0 +1,19 @@
+algo: mandelbrot
+language: ts
+# Nothing is compiled ahead of the run: Bun's transpiler strips the types on load
+# and hands the JavaScript to JavaScriptCore. No tsc, no emit, no type check.
+compiler: ~
+interpreter: bun
+# One floating-point semantics, and no flag to change it: ECMAScript specifies the
+# result of every arithmetic operator, whichever engine runs it.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.mts as ts-nodejs and ts-deno, byte for byte, executed by Bun
+  on JavaScriptCore. The only TypeScript row not running on V8, which makes it the
+  only one where a gap in compute time is about the engine.
+comments: >-
+  Read it against js-bun to price the types (nothing, at run time) and against
+  ts-nodejs and ts-deno to price the engine. The Build column is `bun build`, a
+  transpile and bundle: not the parse Node reports, and not the type check Deno
+  reports.

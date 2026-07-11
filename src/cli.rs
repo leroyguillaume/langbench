@@ -47,6 +47,63 @@ impl fmt::Display for FpMode {
     }
 }
 
+/// A CPU architecture a backend can be built and measured on.
+///
+/// The two this project supports, because they are the two the ISA rule is
+/// written for. See `METHODOLOGY.md#the-isa-rule`.
+///
+/// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
+/// publishes no `linux-aarch64` host compiler, so a backend using it cannot be
+/// built on an AArch64 bench machine at all — not slowly, not under emulation
+/// (which this project forbids outright): it simply does not exist there. That is
+/// a fact about the backend, so the backend declares it, and a campaign on the
+/// other architecture skips the row and says why. The alternative is a `docker
+/// build` that fails halfway through a campaign with a 404.
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize, ValueEnum,
+)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename_all = "snake_case")]
+pub enum Arch {
+    /// 64-bit x86. `-march=x86-64-v3` and friends.
+    X86_64,
+    /// 64-bit ARM. `-march=armv8.2-a` and friends.
+    Aarch64,
+}
+
+impl Arch {
+    pub const ALL: [Self; 2] = [Self::X86_64, Self::Aarch64];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::X86_64 => "x86_64",
+            Self::Aarch64 => "aarch64",
+        }
+    }
+
+    /// Parse an architecture as a `bench.yaml` spells it.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|arch| arch.as_str() == value)
+    }
+
+    /// The architecture the harness is running on — which is the architecture the
+    /// containers will run on, since the harness never builds for another one.
+    /// Cross-building would mean measuring under emulation, and this project does
+    /// not do that.
+    ///
+    /// `None` on anything else: the ISA rule only knows these two, and a campaign
+    /// on a third has no baseline to pin.
+    pub fn current() -> Option<Self> {
+        Self::parse(std::env::consts::ARCH)
+    }
+}
+
+impl fmt::Display for Arch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "langbench", version, about, long_about = None)]
 pub struct Cli {

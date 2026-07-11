@@ -1,0 +1,16 @@
+algo: mandelbrot
+language: cpp
+compiler: gcc
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# Same compiler as c-gcc, same three code generators over the same source.
+modes: all
+description: >-
+  The C kernel written the way a C++ programmer would write it -- std::thread,
+  std::atomic, std::vector, a lambda for the worker -- and compiled by the same
+  GCC at -O3 on the same base image. The arithmetic is identical; the abstractions
+  are not.
+comments: >-
+  `cpp` and not `c++`: the identity becomes an image tag, and a Docker tag admits
+  no `+`. Read this row against c-gcc to price the abstractions, and against
+  cpp-clang to price the code generator.

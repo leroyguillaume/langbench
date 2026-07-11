@@ -1,0 +1,29 @@
+algo: mandelbrot
+language: java
+# native-image, and no interpreter at all: this is the row where the JVM disappears.
+# Graal runs ahead of the program rather than inside it -- whole-program analysis,
+# then codegen -- and what ships is an ELF with a garbage collector linked into it.
+# javac still runs first, but it is a step in this compiler's pipeline, exactly as
+# gcc is a step in Cython's.
+compiler: native-image
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# One floating-point semantics. The JLS binds the code generator whether it runs
+# before the program or during it, so Graal-ahead-of-time may no more contract a
+# multiply-add than C2-on-the-fly. Its checksum is HotSpot's, and it is C's.
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.java as java-javac-openjdk, byte for byte, compiled ahead of
+  time by GraalVM native-image into a standalone ELF. No JVM at run time, no JIT, no
+  class loading -- the program starts like a C binary because it is one.
+comments: >-
+  Read it against java-javac-openjdk, and read the Compute column, not Startup: an
+  AOT binary arrives already compiled, while a JIT is still warming up inside the
+  measured region, and that is where the gap lives. Startup barely moves, because
+  container creation dominates that column for every fast backend alike. What AOT
+  costs instead is the Build column -- tens of seconds of whole-program analysis. It
+  is not free, it is prepaid. It is also the only JVM row with a true -march, though
+  on AArch64 native-image offers no armv8.2-a, so it takes armv8.1-a: one level
+  BELOW the campaign's baseline, never above. Binary is large because the runtime is
+  linked in rather than installed; compare `.text`.

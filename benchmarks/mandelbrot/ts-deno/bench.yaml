@@ -1,0 +1,21 @@
+algo: mandelbrot
+language: ts
+# Nothing is compiled ahead of the run: `deno run` strips the types and executes.
+# Deno *can* type-check -- and the build phase makes it, with `deno check` -- but
+# that is a check, not a code generator. Nothing emits JavaScript to disk, and no
+# compiler stands between this source and V8.
+compiler: ~
+interpreter: deno
+# One floating-point semantics, and no flag to change it: ECMAScript specifies the
+# result of every arithmetic operator.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.mts as ts-nodejs, byte for byte, executed by Deno -- the
+  runtime that has run TypeScript natively since its first release, on the same V8
+  Node uses. If the head start shows up anywhere, it shows up here.
+comments: >-
+  The Build column is `deno check`, a real type check, where ts-nodejs reports a
+  parse that erases the types without reading them. That is the honest difference
+  between the two: Deno is doing strictly more work, and only Deno's number can
+  tell you what type-checking this kernel costs.

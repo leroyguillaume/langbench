@@ -1,0 +1,22 @@
+algo: mandelbrot
+language: python
+# Nothing is compiled ahead of the run. PyPy's tracing JIT emits machine code --
+# that is the entire reason the row exists -- but it does so *during* the run, once
+# the loop is hot, and the result never lands in a file. A JIT is not a compiler in
+# this table's sense: nothing is compiled before the program starts.
+compiler: ~
+interpreter: pypy
+# One floating-point semantics, and no flag to change it: the JIT is not licensed
+# to contract a multiply-add or reassociate while it traces. That is why this row's
+# checksum is bit-identical to CPython's, and to C's.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.py as python-cpython, byte for byte, executed by PyPy. The
+  source is unchanged, the multiprocessing pool is unchanged; the difference is a
+  tracing JIT that turns the hot loop into machine code while it runs.
+comments: >-
+  The JIT's compile time is inside the measured run, because that is where it
+  happens -- there is no warm-up phase to hide it in, and hiding it would be a
+  different benchmark. Read this row against python-cpython (same source, no JIT)
+  and python-cython (same source, compiled ahead of time, and slower than both).

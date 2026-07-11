@@ -20,7 +20,7 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use crate::cli::FpMode;
+use crate::cli::{Arch, FpMode};
 use crate::sample::backend_slug;
 
 /// The file that declares an implementation. Its presence is the discovery
@@ -54,6 +54,17 @@ struct Manifest {
     interpreter: Option<String>,
     /// The FP modes this backend distinguishes: `all`, or an explicit list.
     modes: Modes,
+    /// The architectures this backend can be built on: `all`, or an explicit
+    /// list. Defaults to `all`, which is the ordinary case — a toolchain that
+    /// exists everywhere needs to say nothing.
+    ///
+    /// It is not a preference, it is a fact: Kotlin/Native ships no
+    /// `linux-aarch64` host compiler, so that backend cannot be built on an
+    /// AArch64 machine at all, and emulating one is forbidden. A campaign on the
+    /// other architecture skips the row loudly instead of failing at `docker
+    /// build`.
+    #[serde(default)]
+    arch: Arches,
     /// What this backend is, in one paragraph. It is printed beside its rows.
     description: String,
     /// Free-form caveats: what a reader needs to know before quoting this row.
@@ -90,6 +101,29 @@ enum Modes {
     List(#[schemars(with = "Vec<FpMode>")] Vec<String>),
 }
 
+/// `arch: all`, or `arch: [x86_64]`.
+///
+/// The same shape as `Modes`, and for the same reason: the list holds *strings*
+/// so that a typo can be reported as the typo it is, while the schema is told the
+/// list really holds `Arch`es, so an editor completes them.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum Arches {
+    /// Every architecture the harness knows. The default, and the ordinary case.
+    #[schemars(extend("enum" = [ALL_MODES]))]
+    Keyword(String),
+    /// The architectures this backend can actually be built on, e.g. `[x86_64]`.
+    List(#[schemars(with = "Vec<Arch>")] Vec<String>),
+}
+
+impl Default for Arches {
+    /// A manifest that says nothing about architecture is claiming to build
+    /// anywhere — which is true of every toolchain here but one.
+    fn default() -> Self {
+        Self::Keyword(ALL_MODES.to_owned())
+    }
+}
+
 /// One benchmark implementation, as its manifest declares it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Implementation {
@@ -106,6 +140,9 @@ pub struct Implementation {
     /// compiled backend distinguishes all three; an interpreter has one FP
     /// semantics, so the other two would be the same run under another name.
     pub fp_modes: Vec<FpMode>,
+    /// The architectures this implementation can be built on. Almost always both;
+    /// a backend whose toolchain does not exist for an ISA says so here.
+    pub arches: Vec<Arch>,
 }
 
 impl Implementation {
@@ -122,6 +159,15 @@ impl Implementation {
     /// Dockerfile is shared — only the tag differs.
     pub fn image(&self, mode: FpMode) -> String {
         format!("langbench/{}-{}:{mode}", self.algo, self.slug())
+    }
+
+    /// Can this implementation be built on this machine at all?
+    ///
+    /// A `None` host is an architecture the harness does not know, and nothing can
+    /// be claimed about it — not even by a manifest that says `all`, because `all`
+    /// means "both of the two", not "whatever you happen to be running".
+    pub fn supports(&self, host: Option<Arch>) -> bool {
+        host.is_some_and(|host| self.arches.contains(&host))
     }
 
     /// The requested modes this implementation actually distinguishes, in the
@@ -164,6 +210,9 @@ impl Implementation {
         let fp_modes = fp_modes(&manifest.modes)
             .with_context(|| format!("reading `modes` from {}", path.display()))?;
 
+        let arches = arches(&manifest.arch)
+            .with_context(|| format!("reading `arch` from {}", path.display()))?;
+
         if !dir.join("Dockerfile").is_file() {
             bail!(
                 "{} declares an implementation, but {} holds no Dockerfile to build it from",
@@ -181,6 +230,7 @@ impl Implementation {
             comments: manifest.comments,
             context: dir.to_path_buf(),
             fp_modes,
+            arches,
         })
     }
 }
@@ -213,6 +263,38 @@ fn fp_modes(modes: &Modes) -> Result<Vec<FpMode>> {
     ensure!(
         !parsed.is_empty(),
         "no mode declared; write `{ALL_MODES}` or a list such as [strict, fma]",
+    );
+    Ok(parsed)
+}
+
+/// `all`, or an explicit list. Anything else is an error, for the same reason a
+/// misspelled mode is: a typo here silently drops a backend out of every campaign
+/// on one architecture, and a missing row is exactly the kind of absence nobody
+/// notices in a table.
+fn arches(arches: &Arches) -> Result<Vec<Arch>> {
+    let declared = match arches {
+        Arches::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
+            return Ok(Arch::ALL.to_vec());
+        }
+        Arches::Keyword(keyword) => bail!(
+            "`{keyword}` is not an architecture list; write `{ALL_MODES}` or a list such as \
+             [x86_64]",
+        ),
+        Arches::List(declared) => declared,
+    };
+
+    let mut parsed: Vec<Arch> = Vec::new();
+    for token in declared {
+        let arch = Arch::parse(token.trim()).with_context(|| {
+            format!("`{token}` is not a known architecture; expected one of x86_64, aarch64")
+        })?;
+        if !parsed.contains(&arch) {
+            parsed.push(arch);
+        }
+    }
+    ensure!(
+        !parsed.is_empty(),
+        "no architecture declared; write `{ALL_MODES}` or a list such as [x86_64]",
     );
     Ok(parsed)
 }
@@ -430,6 +512,54 @@ mod tests {
         assert_eq!(both[0].slug(), "python-cython-cpython");
     }
 
+    /// The ordinary case, and the reason the field has a default: a toolchain that
+    /// exists everywhere says nothing at all.
+    #[test]
+    fn a_manifest_that_says_nothing_about_arch_builds_on_both() {
+        let found = one(C_GCC).unwrap();
+        assert_eq!(found[0].arches, Arch::ALL);
+        assert!(found[0].supports(Some(Arch::X86_64)));
+        assert!(found[0].supports(Some(Arch::Aarch64)));
+    }
+
+    /// Kotlin/Native publishes no `linux-aarch64` host compiler. That is not a
+    /// preference to be overridden, it is a toolchain that does not exist — so the
+    /// backend declares where it can be built, and an AArch64 campaign skips it.
+    #[test]
+    fn a_backend_may_declare_it_only_builds_on_one_architecture() {
+        let found = one("algo: mandelbrot\n\
+                         language: kotlin\n\
+                         compiler: kotlin-native\n\
+                         modes: [strict]\n\
+                         arch: [x86_64]\n\
+                         description: No linux-aarch64 host compiler exists.\n")
+        .unwrap();
+
+        assert_eq!(found[0].arches, [Arch::X86_64]);
+        assert!(found[0].supports(Some(Arch::X86_64)));
+        assert!(!found[0].supports(Some(Arch::Aarch64)));
+    }
+
+    /// `all` means "both of the two the harness knows", never "whatever this host
+    /// happens to be": a third architecture has no ISA baseline to pin, so nothing
+    /// can be claimed about it.
+    #[test]
+    fn an_unknown_host_architecture_supports_nothing() {
+        assert!(!one(C_GCC).unwrap()[0].supports(None));
+    }
+
+    #[test]
+    fn a_misspelled_architecture_fails_the_campaign() {
+        let error = one("algo: mandelbrot\n\
+                         language: c\n\
+                         compiler: gcc\n\
+                         modes: all\n\
+                         arch: [x86-64]\n\
+                         description: An ISA spelled the -march way, not the uname way.\n")
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("x86-64"), "{error:#}");
+    }
+
     #[test]
     fn a_directory_without_a_manifest_is_not_an_implementation() {
         let root = tree(&[("benchmarks/c-gcc", C_GCC)]);
@@ -644,5 +774,9 @@ mod tests {
         }
         // A misspelled key must fail the campaign, and the schema must say so.
         assert!(schema.contains("\"additionalProperties\": false"));
+        // The two architectures are offered as constants too, for the same reason.
+        for arch in Arch::ALL {
+            assert!(schema.contains(&format!("\"const\": \"{arch}\"")), "{arch}");
+        }
     }
 }

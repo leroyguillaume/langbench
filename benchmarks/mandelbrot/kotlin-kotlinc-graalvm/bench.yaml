@@ -1,0 +1,15 @@
+algo: mandelbrot
+language: kotlin
+compiler: kotlinc
+interpreter: graalvm
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.kt as kotlin-kotlinc-openjdk, byte for byte, compiled by the
+  same kotlinc -- with Graal replacing C2 as the JIT. One cell of the (language x
+  JVM) grid.
+comments: >-
+  Exists to test an assumption rather than to break one: by the time a JIT sees
+  this kernel it is the same loop whoever emitted the bytecode, so Kotlin-on-Graal
+  should differ from Java-on-Graal by nothing at all. If it does, the two axes are
+  not orthogonal and the whole grid needs rereading. That is worth one image.

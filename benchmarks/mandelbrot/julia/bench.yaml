@@ -1,0 +1,25 @@
+algo: mandelbrot
+language: julia
+# Julia compiles -- the hot loop goes through LLVM and comes out as native code,
+# the same journey the C kernel makes -- but it compiles on first call, during the
+# run. Nothing is compiled ahead of it, and nothing is shipped but source. So the
+# compiler column is empty and the interpreter column names the runtime that does
+# the compiling: the field says *when*, not *whether*.
+compiler: ~
+interpreter: julia
+# One floating-point semantics. Julia never fuses a multiply-add unless the source
+# writes `muladd`, and never reassociates. `--math-mode=fast` was deprecated as
+# unsound and does nothing in 1.11, so `fma` and `fast` would be this same run
+# under another tag.
+modes:
+  - strict
+description: >-
+  The reference kernel in Julia, JIT-compiled through LLVM on first call, with
+  Threads.@spawn tasks pulling rows off an atomic cursor. The ISA baseline is
+  passed explicitly, because Julia's default is to compile for the host CPU -- the
+  one thing this project never allows.
+comments: >-
+  The JIT's compile time sits inside the measured run, because that is where it
+  happens: a script's native code is cached nowhere, so every run pays for it
+  again. Julia is the only backend whose Build and Run columns measure overlapping
+  work, and that is the honest shape of a JIT, not a flaw in the protocol.

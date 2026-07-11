@@ -1,0 +1,31 @@
+algo: mandelbrot
+language: java
+# The same javac as java-javac-openjdk -- identical bytecode, from an identical
+# source.
+compiler: javac
+# A different JVM. Not a different build of HotSpot: OpenJ9 is another virtual
+# machine, with its own JIT (Testarossa), its own GC and its own object layout.
+# HotSpot is not "the JVM"; it is *a* JVM, and this row is what makes that visible.
+interpreter: openj9
+# One floating-point semantics: the JLS binds any JVM that claims the name, so
+# Testarossa may no more contract a multiply-add than C2 may.
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.java as java-javac-openjdk, byte for byte, compiled by the
+  same javac and executed by Eclipse OpenJ9 instead of HotSpot. A different JIT and
+  a different GC underneath identical bytecode: whatever separates the two rows is
+  the virtual machine.
+comments: >-
+  OpenJ9 is reputed to start faster than HotSpot, and on this workload it does not:
+  measured here it starts slower. Reputations are why the harness exists -- but note
+  this benchmark boots a JVM to run one long loop, which is the case OpenJ9's
+  startup work is least aimed at, and the container floor is large. Take it as a
+  measurement of this workload, not a verdict on the VM. This row also has NO ISA
+  baseline, and the gap is published rather than papered over.
+  OpenJ9 silently ignores unknown -XX: options -- `-XX:CompleteNonsenseFlag=42`
+  starts it happily, where HotSpot refuses to boot -- so passing the HotSpot vector
+  caps would have pinned nothing while claiming to. Its JIT may therefore use wider
+  vectors than the compiled rows were allowed. No -Xquickstart, no -Xshareclasses:
+  OpenJ9's startup knobs would flatter exactly the column this row is here to
+  report.

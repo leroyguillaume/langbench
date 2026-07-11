@@ -1,0 +1,21 @@
+algo: mandelbrot
+language: js
+# Nothing is compiled ahead of the run. JavaScriptCore compiles during it, through
+# four tiers, and the hot loop ends up as machine code -- but never as a file, and
+# never before the run starts.
+compiler: ~
+interpreter: bun
+# One floating-point semantics, and no flag to change it: ECMAScript specifies the
+# result of every arithmetic operator, so no engine may contract a multiply-add or
+# reassociate. That is why this row's checksum is bit-identical to the V8 rows'.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.mjs as js-nodejs and js-deno, byte for byte, executed by Bun
+  on JavaScriptCore. Node and Deno share V8; this is the only JavaScript row with
+  a different engine underneath, which makes it the only one where a gap is about
+  the compiler rather than the runtime around it.
+comments: >-
+  The Build column is `bun build` -- a transpile and bundle -- where Node reports a
+  parse and Deno a type check. Three runtimes, three different notions of "before
+  the run": read each Build number against its own runtime, never across the rows.

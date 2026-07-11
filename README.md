@@ -327,6 +327,7 @@ compiler: cython      # omit if nothing is compiled ahead of the run
 interpreter: cpython  # omit if the binary runs on the bare CPU
 modes:
   - strict            # or `modes: all`
+arch: all             # the default; omit it unless the toolchain does not exist somewhere
 description: >-
   The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
   a C extension module instead of interpreted.
@@ -346,6 +347,14 @@ and nothing compiles ahead of the run, Cython does both. That last case is why
 there is no single "compiler" field — `python-cython` and `python-cpython` share
 a language *and an interpreter*, and differ only in the compiler. That is the
 clean experiment, and a directory name could not have expressed it.
+
+`arch` is `all` unless the backend's **toolchain does not exist** for an
+architecture — and that is a fact, not a preference. Kotlin/Native, for instance,
+publishes no `linux-aarch64` host compiler, so `arch: [x86_64]` is simply the
+truth about it; the only ways to run it on an ARM machine would be emulation
+(which this project forbids) or cross-building (which would time a build that
+never happened here). A campaign on the other architecture **skips the row and
+says so**, instead of failing halfway through with a `docker build` error.
 
 `modes: all` — the normal case for a compiled backend — or the list of modes the
 backend actually distinguishes. An interpreter has one floating-point semantics,
@@ -413,24 +422,118 @@ pre-commit install   # the three above, plus hadolint, actionlint, and the two
                      # moves, and bench.schema.json is checked for drift
 ```
 
-## Status
+## What ships
 
-Early, but the central claims are demonstrated. Three implementations exist —
-`c-gcc`, `python-cpython` and `python-cython` — and **all three agree on the
-strict-mode checksum bit for bit**. The gate is not decorative: reassociating one
-expression in the Python kernel aborts the campaign.
+Thirty implementations of Mandelbrot across thirteen languages, and **every one of
+them agrees on the strict-mode checksum, bit for bit** — from `gcc -O3` to a
+JIT-compiled Julia script to JavaScript running in a Bun worker.
 
-The two Python rows compile a byte-identical source (a test enforces it), so they
-are the clean "same source, different backend" experiment. The first result is
-counter-intuitive and worth the whole harness: **Cython is 1.3× slower than the
-CPython interpreter it compiles.** Without type annotations the generated C
-manipulates `PyFloat` objects through the C-API — its hot loop holds 142 call
-instructions and one `fadd`, where the C kernel has none and fourteen — while
-CPython 3.13's specializing interpreter takes a fast path for `float * float`.
+| Language   | Backends                    | Modes  | What the group buys                                        |
+| ---------- | --------------------------- | ------ | ---------------------------------------------------------- |
+| C          | `gcc`, `clang`              | all    | Two code generators; same source, distro, libc and linker  |
+| C++        | `gcc`, `clang`              | all    | The same, plus what `std::thread`/`std::atomic` cost over C |
+| Rust       | `rustc`                     | strict | Scoped threads, no `rayon`, no `-ffast-math` to reach for  |
+| Zig        | `zig`                       | strict | A static, libc-free binary; threads are raw `clone` calls  |
+| Go         | `gc`                        | strict | Goroutines — and the fused-multiply-add trap below         |
+| Julia      | *(JIT, no AOT compiler)*    | strict | Compiles through LLVM, but *during* the run                |
+| Python     | `cpython`, `pypy`, `cython` | strict | One source: an interpreter, a JIT, and an AOT compiler     |
+| JavaScript | `nodejs`, `deno`, `bun`     | strict | One `.mjs`: V8 twice, JavaScriptCore once                  |
+| TypeScript | `nodejs`, `deno`, `bun`     | strict | One `.mts`: the types are erased, so what moves is startup |
+| Java       | `javac` × `openjdk`, `graalvm`, `openj9`; `native-image` | strict | One source: two JITs, an interpreter, and an AOT compiler |
+| Kotlin     | `kotlinc` × `openjdk`, `graalvm`, `openj9`; `native-image` | strict | The same four backends, one language over                |
+| Scala      | `scalac` × `openjdk`, `graalvm`, `openj9`; `native-image`; **`scala-native`** | strict | And one that leaves the JVM entirely, via LLVM |
 
-Next: measure the noise floor of the target machine — nothing else is
-trustworthy until that number exists — then C/clang and Rust/LLVM, to complete
-the first triangle of compiled backends.
+Backends of the same language compile a **byte-identical kernel** — a test
+enforces it — so each group is a clean "same source, different backend"
+experiment rather than a comparison of three different programs.
+
+The JVM rows are the table's clearest case of a backend that both compiles *and*
+interprets: `javac`/`kotlinc`/`scalac` emit bytecode ahead of the run, then a JVM
+interprets it and JIT-compiles the hot loop *during* the run. The four Java rows
+run **one identical `Mandelbrot.java` through four different backends** — HotSpot's
+C2, GraalVM's Graal JIT, Eclipse OpenJ9's Testarossa, and GraalVM `native-image`
+compiling ahead of time to a standalone ELF with no JVM at all. That is the same
+interpreter/JIT/AOT triangle Python has, and it is the point of the group.
+
+**The AOT rows land where C does.** `native-image` computes in ~13 ms against C's
+~13 ms and Rust's ~14 ms, while every JIT row sits near ~30 ms — because a JIT is
+still *warming up inside the region we are timing*, and an AOT binary arrives
+already compiled. Scala Native, going through LLVM instead, lands there too
+(~14 ms). What AOT costs instead is the **Build** column: 15–19 s of whole-program
+analysis for `native-image`. It is not free, it is prepaid.
+
+**The (language × JVM) grid is filled in, and the two axes are orthogonal.** Kotlin
+and Java compute within a whisker of each other on *every* JVM (27.4 vs 27.5 ms on
+OpenJDK, 27.5 vs 26.7 on Graal) — by the time a JIT sees this kernel it is the same
+loop, whoever emitted the bytecode. So the grid is now evidence rather than an
+assumption, which is the only reason to have built it. Where the languages *do*
+separate is **Build**: kotlinc is several times javac on one file, and AOT-compiling
+a language runtime costs more the heavier that runtime is (Scala's is the heaviest
+here).
+
+One caveat, in the kernel where it cannot be missed: Scala has no `break`, so its
+inner loop carries an escape flag that C, Java and Kotlin do not pay for. The Scala
+JVM rows compute ~30% slower for that reason alone. **That gap is the flag, not the
+language** — read the Scala rows against each other, which is the axis this
+benchmark actually measures.
+
+One caveat, published rather than hidden: **HotSpot has no `-march`** and JITs for
+whatever CPU it finds, so the JIT rows get a baseline the compiled rows were
+denied — the entrypoints cap vector width, which is as close as a JVM gets, and
+OpenJ9 cannot even do that. `native-image` is the only JVM backend with a real ISA
+baseline. See
+[METHODOLOGY.md](METHODOLOGY.md#the-jvm-cannot-honour-this-rule-and-says-so).
+
+`strict` alone is not a shortcut. Where a backend declares only that mode,
+relaxing the floating-point semantics would mean *editing the kernel* rather than
+passing a flag (Go's `float64()` rounding points, Zig's `@setFloatMode`), or the
+language offers no relaxation at all — rustc has no `-ffast-math`, and ECMAScript
+forbids every JavaScript engine from contracting or reassociating. Each absence is
+a published fact, not a gap.
+
+### Two results worth the whole harness
+
+**Cython is 1.3× slower than the CPython interpreter it compiles.** Without type
+annotations the generated C manipulates `PyFloat` objects through the C-API — its
+hot loop holds 142 call instructions and one `fadd`, where the C kernel has none
+and fourteen — while CPython 3.13's specializing interpreter takes a fast path for
+`float * float`.
+
+**Go quietly computes something else.** Written the natural way, the Go kernel
+returns `33209560` where every other language returns `33209574`: the spec permits
+fusing multiply-adds across statements, and on arm64 `gc` takes the offer. It is
+not slower and it is not buggy — it is computing a different thing, and nothing
+but the checksum would have told us. The `float64(...)` conversions in
+`mandelbrot.go` are rounding points rather than casts, and deleting one fails the
+campaign. See
+[METHODOLOGY.md](METHODOLOGY.md#the-languages-that-fuse-behind-your-back).
+
+### Backends we tried, and left out
+
+Both of these were probed, not guessed. Neither is a "todo".
+
+**gccrs** (the GCC Rust frontend, Debian's `gccrs-14`). It refuses to compile any
+Rust at all without a flag literally named
+`-frust-incomplete-and-experimental-compiler-do-not-use`, and warns that "the
+binaries produced might not behave accordingly". Forced past that, it does not know
+`println!` — and printing the checksum is the anti-dead-code-elimination rule, not
+decoration. A backend that will not vouch for the behaviour of its own output
+cannot be measured against a bit-exact correctness gate. The day it compiles
+`println!` and `std::thread`, it is a twenty-minute addition and the checksum will
+tell us immediately whether to trust it.
+
+**Kotlin/Native.** Two blockers. JetBrains ships no `linux-aarch64` host compiler
+(that one is survivable — it is exactly what `arch: [x86_64]` is for). The real one
+is that its kernel *cannot be byte-identical* to the JVM Kotlin kernel: there is no
+common threading API in the Kotlin stdlib — `kotlin.concurrent.thread` is JVM-only,
+`Worker` is obsolete, and the official multiplatform answer is `kotlinx.coroutines`,
+a third-party dependency this project forbids. A Kotlin/Native row would therefore
+compare a *different program*, which is precisely what
+`tests/shared_kernel_source.rs` exists to prevent. Left out deliberately, not
+forgotten.
+
+Next: measure the noise floor of the target machine — nothing else is trustworthy
+until that number exists — and then publish the first campaign.
 
 ## License
 

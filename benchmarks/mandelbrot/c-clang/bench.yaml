@@ -1,0 +1,18 @@
+# What this backend is. The harness reads this file and nothing else: not the
+# directory name, not the image labels. See METHODOLOGY.md#repository-layout.
+algo: mandelbrot
+language: c
+compiler: clang
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# clang distinguishes all three, and spells them exactly as gcc does:
+# `-ffp-contract=off`, `-ffp-contract=fast` and `-ffast-math`.
+modes: all
+description: >-
+  The same mandelbrot.c as c-gcc, byte for byte, compiled by clang at -O3 against
+  the same ISA baseline, on the same Debian, with the same flags. One source, two
+  code generators: whatever separates these two rows is LLVM against GCC.
+comments: >-
+  Read this row only against c-gcc, and read the difference as codegen -- the
+  distribution, the libc and the linker are held constant precisely so that it
+  can be. Like gcc it links libc dynamically, so compare `.text`, never Binary.

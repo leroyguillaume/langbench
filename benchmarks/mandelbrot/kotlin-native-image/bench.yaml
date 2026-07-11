@@ -1,0 +1,17 @@
+algo: mandelbrot
+language: kotlin
+compiler: native-image
+interpreter: ~
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.kt as every other Kotlin row, compiled ahead of time by
+  GraalVM native-image into a standalone ELF -- with the Kotlin standard library
+  swallowed whole and linked in. kotlinc runs first, as a step in this compiler's
+  pipeline, exactly as javac does for java-native-image.
+comments: >-
+  This is where AOT stops being a rerun: compute ties with java-native-image,
+  because it is the same loop, but Build and Binary do not -- native-image has to
+  analyse and link the Kotlin runtime, and what that costs is a fact no JIT row can
+  report. On AArch64 it takes armv8.1-a: one level BELOW the campaign baseline,
+  never above.

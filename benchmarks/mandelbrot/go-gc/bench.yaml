@@ -1,0 +1,26 @@
+algo: mandelbrot
+language: go
+# `gc`, the compiler Go ships with -- not "go", which is the toolchain driver, and
+# not gccgo, which would be a second row and a second code generator.
+compiler: gc
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# One mode, and this is the language where that costs something to say. The Go
+# spec *permits* fusing a multiply-add across statements, and on arm64 gc takes the
+# offer -- so the kernel forbids it in the source, with explicit float64() rounding
+# points, because the strict checksum is not negotiable. A fused build is therefore
+# a different program rather than a different flag, and `fma` cannot be a build arg
+# over this source the way it is for C.
+modes:
+  - strict
+description: >-
+  The reference kernel in Go, compiled by gc against a pinned ISA baseline, with
+  goroutines and an atomic row cursor. GOMAXPROCS is set from argv, never from the
+  machine: Go 1.25 reads the cgroup quota by itself, and this benchmark refuses to
+  ask that question.
+comments: >-
+  Written the natural way, this kernel returns 33209560 where the rest of the table
+  returns 33209574 -- gc fuses the multiply-adds, and the arithmetic quietly stops
+  being everyone else's. The float64() conversions in the source are rounding
+  points, not casts, and they are load-bearing. Go also links a GC and a scheduler
+  into every binary, which inflates Binary: compare `.text`.

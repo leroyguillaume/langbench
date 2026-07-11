@@ -1,0 +1,24 @@
+algo: mandelbrot
+language: kotlin
+# Both, as for every JVM row: kotlinc compiles the source to bytecode ahead of the
+# run, and HotSpot executes it -- interpreting first, then JIT-compiling the hot
+# loop while it runs.
+compiler: kotlinc
+interpreter: openjdk
+# One floating-point semantics, inherited from the JVM: a Double is an IEEE 754
+# double, and neither kotlinc nor the JIT may contract a multiply-add.
+modes:
+  - strict
+description: >-
+  The kernel in Kotlin, compiled by kotlinc to JVM bytecode and run on the same
+  HotSpot as java-javac-openjdk. Same platform threads, same AtomicInteger queue,
+  same arithmetic -- the language in front of the JIT is the only thing that
+  changes.
+comments: >-
+  Read the Run column against java-javac-openjdk and expect them to land close
+  together: the two compile to bytecode that the same JIT turns into the same
+  machine code.
+  The Build column is where they part, and hard -- kotlinc is the slowest compiler
+  in this table, several times javac on the same one-file kernel -- while the
+  Startup column carries the Kotlin stdlib the JVM must load. That is the honest
+  cost of Kotlin here: compile time and startup, not compute.

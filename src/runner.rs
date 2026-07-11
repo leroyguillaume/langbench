@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use tracing::{info, warn};
 
-use crate::cli::{FpMode, RunArgs};
+use crate::cli::{Arch, FpMode, RunArgs};
 use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
@@ -37,11 +37,21 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         args.benchmarks_dir.display(),
     );
 
-    let units = schedule(&implementations, &args.mode);
+    let host = Arch::current();
+    let units = schedule(&implementations, &args.mode, host);
     ensure!(
         !units.is_empty(),
-        "no implementation supports any of the requested modes ({}). Every discovered \
-         implementation declares a narrower `modes` list in its `bench.yaml`.",
+        // Two ways to schedule nothing, and they call for different fixes: a mode
+        // nobody declares is a flag to change, an architecture nobody builds on is
+        // a machine to change. Blaming `modes` for what the ISA did would send the
+        // reader looking in the wrong file.
+        "no implementation is buildable on {} in any of the requested modes ({}). Every \
+         discovered implementation either declares a narrower `modes` list, or declares an \
+         `arch` list that does not include this machine.",
+        host.map_or_else(
+            || format!("this machine ({})", std::env::consts::ARCH),
+            |host| host.to_string(),
+        ),
         args.mode
             .iter()
             .map(FpMode::to_string)
@@ -95,15 +105,43 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
 }
 
 /// The requested modes, restricted to what each implementation actually
-/// distinguishes.
+/// distinguishes — and to the implementations this machine can build at all.
 ///
 /// An interpreter has one floating-point semantics: building it three times
 /// would measure the same image under three names, and the report would show
 /// three rows whose only difference is noise. The skip is loud — a row missing
 /// from a report with no explanation is worse than a redundant one.
-fn schedule(implementations: &[Implementation], requested: &[FpMode]) -> Vec<Unit> {
+///
+/// The architecture skip is the same idea about a harsher fact. Some toolchains
+/// are simply not published for an ISA — Kotlin/Native has no `linux-aarch64`
+/// host compiler — and the only ways to run one anyway are emulation, which this
+/// project forbids, or cross-building, which would measure a build that never
+/// happened here. So the manifest declares where it can be built, and a campaign
+/// elsewhere drops the row *before* spending a `docker build` on discovering it.
+fn schedule(
+    implementations: &[Implementation],
+    requested: &[FpMode],
+    host: Option<Arch>,
+) -> Vec<Unit> {
     let mut units = Vec::new();
     for implementation in implementations {
+        if !implementation.supports(host) {
+            warn!(
+                algo = %implementation.algo,
+                language = %implementation.language,
+                compiler = none_if_absent(implementation.compiler.as_deref()),
+                interpreter = none_if_absent(implementation.interpreter.as_deref()),
+                host = host.map_or("unknown", Arch::as_str),
+                declares = %implementation
+                    .arches
+                    .iter()
+                    .map(Arch::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                "skipping: this backend's toolchain does not exist for this architecture",
+            );
+            continue;
+        }
         let selected = implementation.selected_modes(requested);
         for &mode in requested {
             if selected.contains(&mode) {
@@ -480,10 +518,15 @@ mod tests {
 
         let engine = MockContainerEngine::new();
         let err = execute(args(root.path(), out.path(), vec![FpMode::Fast]), &engine).unwrap_err();
+        // The message must name both ways a campaign can end up empty — a mode
+        // nobody declares, or an architecture nobody builds on — because the two
+        // call for different fixes and the reader has to know which one this was.
         assert!(
-            err.to_string().contains("no implementation supports"),
+            err.to_string().contains("no implementation is buildable"),
             "{err}"
         );
+        assert!(err.to_string().contains("modes"), "{err}");
+        assert!(err.to_string().contains("arch"), "{err}");
     }
 
     #[test]
@@ -597,5 +640,39 @@ mod tests {
         args.build_rounds = 0;
         args.rounds = 1;
         execute(args, &engine).unwrap();
+    }
+
+    /// A backend whose toolchain does not exist for this ISA is dropped from the
+    /// schedule *before* a `docker build` discovers it the hard way — and the drop
+    /// is loud, because a row that silently vanishes from a report is worse than a
+    /// row that failed.
+    #[test]
+    fn an_implementation_is_skipped_on_an_architecture_it_cannot_build_on() {
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join("mandelbrot").join("kotlin-kotlin-native");
+        create_dir_all(&dir).unwrap();
+        File::create(dir.join("Dockerfile")).unwrap();
+        std::fs::write(
+            dir.join(crate::discovery::MANIFEST),
+            "algo: mandelbrot\n\
+             language: kotlin\n\
+             compiler: kotlin-native\n\
+             modes: [strict]\n\
+             arch: [x86_64]\n\
+             description: No linux-aarch64 host compiler exists.\n",
+        )
+        .unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let implementations = discover(root.path(), &[]).unwrap();
+        assert_eq!(implementations.len(), 2);
+
+        // On x86-64 both are scheduled; on AArch64 only the C one survives.
+        let on_x86 = schedule(&implementations, &[FpMode::Strict], Some(Arch::X86_64));
+        assert_eq!(on_x86.len(), 2);
+
+        let on_arm = schedule(&implementations, &[FpMode::Strict], Some(Arch::Aarch64));
+        assert_eq!(on_arm.len(), 1);
+        assert_eq!(on_arm[0].implementation.language, "c");
     }
 }

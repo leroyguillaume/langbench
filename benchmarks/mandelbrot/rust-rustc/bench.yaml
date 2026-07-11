@@ -1,0 +1,20 @@
+algo: mandelbrot
+language: rust
+compiler: rustc
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# One mode, and it is not a shortcut. rustc has no `-ffast-math`, and LLVM may not
+# contract `a * b + c` into an FMA unless the source asked for `mul_add`. So `fma`
+# and `fast` would be the same image under another tag -- an absence that is a
+# published fact about the language, not a gap in the campaign.
+modes:
+  - strict
+description: >-
+  The reference kernel in Rust, compiled by rustc at -O3 against a pinned ISA
+  baseline, with std::thread scoped threads and an AtomicU32 work queue. No cargo,
+  no rayon, no dependency: one file, one rustc invocation.
+comments: >-
+  rustc only *warns* when it does not recognise an ISA baseline, then hands back a
+  generic binary -- so the entrypoint translates the harness's gcc-spelled -march
+  into LLVM's spelling and fails outright on anything it does not know. It also
+  links std statically, which inflates Binary against the C rows: compare `.text`.

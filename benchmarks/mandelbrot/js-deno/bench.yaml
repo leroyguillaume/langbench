@@ -1,0 +1,21 @@
+algo: mandelbrot
+language: js
+# Nothing is compiled ahead of the run. V8 compiles during it, exactly as under
+# js-nodejs: same engine, different runtime around it. That is the experiment.
+compiler: ~
+interpreter: deno
+# One floating-point semantics, and no flag to change it: ECMAScript specifies the
+# result of every arithmetic operator, so no engine may contract a multiply-add or
+# reassociate.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.mjs as js-nodejs, byte for byte, executed by Deno -- which
+  runs the same V8. Any gap between these two rows is the runtime around the
+  engine: module resolution, the permission checks, and how quickly it can boot a
+  worker isolate.
+comments: >-
+  The Build column here is `deno check`, a full type check, where js-nodejs
+  reports `node --check`, a parse. Strictly more work, and not a like-for-like
+  comparison -- read the Build column against Deno itself. DENO_DIR ships warm
+  with the node typings, because a measured run has no network to fetch them from.

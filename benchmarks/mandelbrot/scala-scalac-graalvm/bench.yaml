@@ -1,0 +1,15 @@
+algo: mandelbrot
+language: scala
+compiler: scalac
+interpreter: graalvm
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.scala as scala-scalac-openjdk, byte for byte, compiled by the
+  same scalac -- with Graal replacing C2 as the JIT. One cell of the (language x
+  JVM) grid.
+comments: >-
+  Read it against java-javac-graalvm and scala-scalac-openjdk: if the language and
+  the JIT are orthogonal, as the identical bytecode suggests they must be, this row
+  is predictable from those two and confirms it. A row that confirms is cheaper than
+  an assumption that is never checked.

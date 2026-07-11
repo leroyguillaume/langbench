@@ -1,0 +1,21 @@
+algo: mandelbrot
+language: ts
+# Nothing is compiled ahead of the run, and this is the subtle one: Node does not
+# *compile* TypeScript, it erases it. The types are stripped syntactically and the
+# JavaScript underneath is handed to V8 -- no tsc, no emit, no type check. There
+# is no compiler in this pipeline, only a runtime that ignores the annotations.
+compiler: ~
+interpreter: nodejs
+# One floating-point semantics, and no flag to change it: the types are gone before
+# V8 ever sees the program, and ECMAScript specifies the result of every operator.
+modes:
+  - strict
+description: >-
+  The kernel in TypeScript, executed by Node 24, which strips the types and runs
+  the JavaScript underneath. Same worker_threads, same SharedArrayBuffer row queue,
+  same arithmetic as js-nodejs -- the annotations are the only difference.
+comments: >-
+  Read this row against js-nodejs and expect the compute time to be identical: type
+  erasure costs nothing at run time, by construction. What it can cost is startup,
+  because the types must be stripped before the first line executes -- and every
+  worker isolate strips them again.

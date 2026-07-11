@@ -1,0 +1,23 @@
+algo: mandelbrot
+language: js
+# Nothing is compiled ahead of the run. V8 compiles -- it is a JIT, and the hot
+# loop ends up as machine code -- but it does so *during* the run, which is why
+# that cost lands in the run column and there is no compiler to declare here.
+compiler: ~
+interpreter: nodejs
+# One floating-point semantics, and no flag to change it: ECMAScript specifies the
+# result of every arithmetic operator, so no engine may contract a multiply-add or
+# reassociate. An `fma` image would be the same run under another tag.
+modes:
+  - strict
+description: >-
+  The kernel as written, executed by Node.js on V8. Parallelism comes from
+  node:worker_threads -- one isolate per worker -- with the row queue in a
+  SharedArrayBuffer and Atomics.add handing rows out, which is as close to the C
+  kernel's atomic cursor as the language gets.
+comments: >-
+  The same mandelbrot.mjs runs under js-deno and js-bun, byte for byte, so those
+  three rows measure runtimes rather than programs. The Build column is `node
+  --check` -- parse and compile, no execution -- and it is not the same operation
+  as Deno's type check or Bun's bundle: read each against its own runtime, never
+  across the three.

@@ -1,0 +1,12 @@
+algo: mandelbrot
+language: scala
+compiler: scalac
+interpreter: openj9
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.scala as scala-scalac-openjdk, byte for byte, compiled by the
+  same scalac and executed by Eclipse OpenJ9 instead of HotSpot.
+comments: >-
+  Like every OpenJ9 row, it has NO ISA baseline: OpenJ9 silently ignores unknown
+  -XX: options. The gap is published rather than papered over.

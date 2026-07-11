@@ -1,0 +1,25 @@
+algo: mandelbrot
+language: scala
+# Scala Native: a compiler, not a JVM backend. It never emits bytecode -- Scala goes
+# to its own IR, then to LLVM, then to an ELF linked against a reimplemented subset
+# of the JDK. Nothing interprets the result.
+compiler: scala-native
+interpreter: ~
+# One mode. The code generator underneath is clang, which would understand `fma` and
+# `fast` perfectly well -- but Scala the language says nothing about fusing, so a
+# relaxed build here would be a claim about clang's flags rather than about this
+# backend. It speaks for the one mode it can honestly speak for.
+modes:
+  - strict
+description: >-
+  The same Mandelbrot.scala as scala-scalac-openjdk, byte for byte, compiled by
+  Scala Native through LLVM into a standalone ELF. No JVM, no bytecode, no JIT --
+  and no edit to the kernel, because Scala Native's javalib supplies the very
+  java.lang.Thread and AtomicInteger the JVM rows use.
+comments: >-
+  The cleanest compiler swap in the table: one source, and the choice is a JVM or
+  LLVM. It is also the only Scala row that can honour the ISA rule exactly -- clang
+  takes the harness's -march verbatim, where every JVM row can only approximate it.
+  Do not confuse it with scala-native-image, which is GraalVM AOT-compiling JVM
+  bytecode: a different compiler, a different runtime, and a confusingly similar
+  name.
