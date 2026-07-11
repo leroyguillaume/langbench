@@ -1,7 +1,6 @@
 name: test
 
-# The test suite, on its own runner. Never path-filtered: a gate that skips itself
-# on the change that happened to look harmless is not a gate.
+# The test suite, on its own runner.
 #
 # Two jobs, because they are two suites and neither waits on the other. `cargo
 # test` covers discovery, the manifests, the statistics and the command lines the
@@ -10,11 +9,43 @@ name: test
 # raw samples byte for byte. Nothing here measures anything: a shared, virtualised,
 # frequency-scaled runner is the worst benchmark target money can rent, and the
 # campaign that fixture came from is evidence, not a measurement being taken now.
+#
+# The filter below is the union of what the two suites *read*, and every entry is
+# there because a test would go quiet without it -- not because the file looked
+# related. `benchmarks/**` is the one nobody expects: `tests/shared_kernel_source`
+# asserts that two backends of one language compile a byte-identical kernel, so it
+# reads the kernels themselves. `templates/**` is embedded by `include_str!`. And
+# the site's suite runs the crate compiled to WebAssembly, so `src/**` is its input
+# as much as `site/**` is.
+#
+# The list is written twice because GitHub Actions does not support YAML anchors.
 on:
   push:
     branches:
       - main
+    paths:
+      - .cargo/**
+      - .github/workflows/test.yaml
+      - benchmarks/**
+      - build.rs
+      - Cargo.lock
+      - Cargo.toml
+      - site/**
+      - src/**
+      - templates/**
+      - tests/**
   pull_request:
+    paths:
+      - .cargo/**
+      - .github/workflows/test.yaml
+      - benchmarks/**
+      - build.rs
+      - Cargo.lock
+      - Cargo.toml
+      - site/**
+      - src/**
+      - templates/**
+      - tests/**
 
 permissions:
   contents: read

@@ -4,14 +4,36 @@ name: build
 # WebAssembly the site calls, and the bundle the site ships. Nothing here is
 # published -- `bench` is what deploys, and it is `workflow_dispatch` only.
 #
-# Never path-filtered, like `quality` and `test`. The three of them are one gate
-# split across three runners, and a gate that skips itself on the change that
-# happened to look harmless is not a gate.
+# What the compilers read, and nothing else. Narrower than `test`'s filter by two
+# entries, and both absences are deliberate: `benchmarks/**` and `tests/**` are
+# read by the *suite*, never by a compiler -- a kernel is source the harness ships
+# a Dockerfile for, not source it links. The site's bundle embeds the crate
+# compiled to WebAssembly, so `src/**` is one of its inputs as much as `site/**` is.
+#
+# The list is written twice because GitHub Actions does not support YAML anchors.
 on:
   push:
     branches:
       - main
+    paths:
+      - .cargo/**
+      - .github/workflows/build.yaml
+      - build.rs
+      - Cargo.lock
+      - Cargo.toml
+      - site/**
+      - src/**
+      - templates/**
   pull_request:
+    paths:
+      - .cargo/**
+      - .github/workflows/build.yaml
+      - build.rs
+      - Cargo.lock
+      - Cargo.toml
+      - site/**
+      - src/**
+      - templates/**
 
 permissions:
   contents: read

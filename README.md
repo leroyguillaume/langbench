@@ -468,18 +468,20 @@ each campaign's ISA out of its own machine record, never out of a path.
 ## Continuous integration
 
 Four workflows. Three of them are one gate — every push to `main`, every pull
-request, **no path filter on any of them**: a gate that skips itself on the change
-that happened to look harmless is not a gate. The fourth measures, and it is the
-only one you have to ask for.
+request. The fourth measures, and it is the only one you have to ask for.
 
 **[`quality`](.github/workflows/quality.yaml)** — `pre-commit run --all-files`:
 `cargo fmt`, `clippy`, `hadolint`, `actionlint`, `biome`, `tsc`, the generated
 `bench.schema.json`, every `bench.yaml`. What is cheap to check and expensive to
-get wrong.
+get wrong. **No path filter** — it is the universal gate and runs on everything,
+whatever changed.
 
 **[`test`](.github/workflows/test.yaml)** — `cargo test` and the site's `vitest`,
 one job each. The kernels are not among them: they are verified by the strict-mode
-checksum invariant, which only a campaign can check.
+checksum invariant, which only a campaign can check. Its path filter is the union
+of what the two suites *read*, which includes `benchmarks/**` — `tests/shared_kernel_source`
+asserts that two backends of one language compile a byte-identical kernel, so a
+kernel is one of its inputs.
 
 **[`build`](.github/workflows/build.yaml)** — that everything still compiles:
 `cargo build --release --locked`, and the site's `npm run build`, which is
@@ -489,7 +491,9 @@ talks to Docker, and a `std::process::Command` that creeps into `analysis.rs`
 breaks the website and nothing else would say so. It builds over the committed
 fixture rather than `samples/`: `main` may legitimately publish no campaign, and
 the question this workflow asks is whether the bundle compiles — which needs *a*
-campaign, not *the* campaign. It publishes nothing.
+campaign, not *the* campaign. It publishes nothing. Its filter is `test`'s minus
+`benchmarks/**` and `tests/**`: a kernel is source the harness ships a Dockerfile
+for, never source it links.
 
 **[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
