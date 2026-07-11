@@ -6,34 +6,43 @@
 // TypeScript believes the zod schema, and the zod schema is the thing that is
 // now wrong. Running the real WASM over the real file is the only way to find out.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { z } from "zod";
 import { analysisSchema } from "./analysis";
 import init, { analyze } from "./wasm/langbench.js";
 
 // Resolved from the project root, not from `import.meta.url`: under jsdom the
 // module URL is an `http://` one, and there is no file behind it.
-const DATA = resolve(process.cwd(), "public/data");
 const WASM = resolve(process.cwd(), "src/wasm/langbench_bg.wasm");
 
-/** The campaigns this build publishes, exactly as the site discovers them. */
-const published = (): string[] =>
-  z.array(z.string()).parse(JSON.parse(readFileSync(resolve(DATA, "campaigns.json"), "utf8")));
+// Real campaigns, committed: `langbench run` output, headers and failures and all.
+//
+// Not `public/data`. What the repository *publishes* is a question of which
+// machine last produced numbers worth publishing, and the answer is legitimately
+// "none yet" — `samples/` can be empty, and `samples.local/` is never committed.
+// This test asks a different question, and it has to be able to ask it on a
+// checkout that publishes nothing.
+//
+// Raw samples, byte for byte, because that is the only input this boundary has
+// ever been given. A hand-written or trimmed fixture would agree with the schema
+// by construction, and agreeing with the schema is the one thing this test must
+// not assume.
+const FIXTURES = resolve(process.cwd(), "src/__fixtures__");
+const campaigns = (): string[] => readdirSync(FIXTURES).filter((f) => f.endsWith(".ndjson"));
 
 let ndjson: string;
 
 beforeAll(async () => {
   // The browser fetches the module over HTTP; here we hand it the bytes. Same
-  // module, same code — `npm run build` produced both.
+  // module, same code — `npm run wasm` produced both.
   await init({ module_or_path: readFileSync(WASM) });
 
-  const [first] = published();
+  const [first] = campaigns();
   if (first === undefined) {
-    throw new Error("this build publishes no campaign");
+    throw new Error(`no campaign fixture in ${FIXTURES}`);
   }
-  ndjson = readFileSync(resolve(DATA, first), "utf8");
+  ndjson = readFileSync(resolve(FIXTURES, first), "utf8");
 });
 
 describe("the WebAssembly boundary", () => {
@@ -99,9 +108,9 @@ describe("the WebAssembly boundary", () => {
   /// The ISA comes out of the machine record the campaign wrote, never out of the
   /// filename. An absolute timing never crosses an ISA, and the site keeps two
   /// campaigns apart on this field — so it had better be the machine's own word.
-  it("reports the ISA of every published campaign, from inside the file", () => {
-    for (const file of published()) {
-      const raw = readFileSync(resolve(DATA, file), "utf8");
+  it("reports the ISA of every campaign, from inside the file", () => {
+    for (const file of campaigns()) {
+      const raw = readFileSync(resolve(FIXTURES, file), "utf8");
       const analysis = analysisSchema.parse(analyze(raw, { include_warmup: false }));
 
       expect(analysis.arch).not.toBe("");
