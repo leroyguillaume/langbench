@@ -59,7 +59,8 @@ langbench run
 ```
 
 By default that discovers everything under `benchmarks/`, builds each
-implementation in all three floating-point modes, and measures with the machine's
+implementation in every floating-point mode it declares it distinguishes (all
+three unless its Dockerfile says otherwise), and measures with the machine's
 thread count. It writes `samples.ndjson` and nothing else; `langbench csv` and
 `langbench md` turn that file into a table or a report, whenever you like.
 
@@ -217,6 +218,18 @@ The image must expose an `ENTRYPOINT` taking either `build <threads>` or
 
 The floating-point mode, the `-march` baseline and the job count arrive as build
 args (`FP_MODE`, `MARCH`, `JOBS`), so one Dockerfile covers every mode.
+
+An implementation that does not *distinguish* every mode says so with a label:
+
+```dockerfile
+LABEL langbench.fp_modes="strict"
+```
+
+An interpreter has one floating-point semantics, so `fma` and `fast` would be
+the same image under another tag. The harness reads the label before it builds
+anything, measures only the declared modes, and warns about each one it skips.
+Leave the label out — the normal case for a compiled backend — and you get all
+three.
 
 Read [METHODOLOGY.md#container-contract](METHODOLOGY.md#container-contract) for
 the full contract, including why the checksum must be an integer and why the

@@ -49,7 +49,10 @@ subject is **compiler and runtime backends**, not languages.
 - `benchmarks/<algo>/<language>-<compiler>/Dockerfile`. No YAML manifest, no
   Dockerfile templating.
 - Metadata in Docker `LABEL`s (`langbench.language`, `.compiler`, `.version`,
-  `.flags`), read back with `docker inspect`.
+  `.flags`), read back with `docker inspect`. One exception: `.fp_modes` decides
+  *which images to build*, so discovery reads it from the Dockerfile source —
+  there is no image to inspect yet. It is a constant in the file, never a build
+  arg. Absent means every mode; an interpreter declares `strict` alone.
 - Base images pinned by digest, never by tag.
 - Non-root `USER` in every benchmark Dockerfile.
 

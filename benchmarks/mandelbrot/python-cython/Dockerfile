@@ -32,9 +32,10 @@ RUN pip install --no-cache-dir \
       "cython==${CYTHON_VERSION}" \
       "setuptools==${SETUPTOOLS_VERSION}"
 
-# `fp_modes` records that only `strict` is meaningful: the generated C goes
+# `fp_modes` declares that only `strict` is meaningful: the generated C goes
 # through the `PyFloat` C-API, so there is no raw double for gcc to contract or
-# reassociate. The harness does not read this label yet.
+# reassociate. The harness reads it out of this file (not from `docker inspect`:
+# it decides what to build) and skips the other two modes, loudly.
 LABEL langbench.language="python" \
       langbench.compiler="cython" \
       langbench.version="3.2.8" \

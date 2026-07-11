@@ -17,9 +17,10 @@ ARG FP_MODE=strict
 ARG MARCH
 ARG JOBS
 
-# `fp_modes` records that only `strict` is meaningful: the interpreter has one
+# `fp_modes` declares that only `strict` is meaningful: the interpreter has one
 # floating-point semantics, so `fma` and `fast` are the same run under another
-# name. The harness does not read this label yet.
+# name. The harness reads it out of this file (not from `docker inspect`: it
+# decides what to build) and skips the other two modes, loudly.
 LABEL langbench.language="python" \
       langbench.compiler="cpython" \
       langbench.version="3.13" \

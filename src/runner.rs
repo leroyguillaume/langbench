@@ -37,16 +37,17 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         args.benchmarks_dir.display(),
     );
 
-    let units: Vec<Unit> = implementations
-        .into_iter()
-        .flat_map(|implementation| {
-            args.mode.iter().map(move |&mode| Unit {
-                image: implementation.image(mode),
-                implementation: implementation.clone(),
-                mode,
-            })
-        })
-        .collect();
+    let units = schedule(&implementations, &args.mode);
+    ensure!(
+        !units.is_empty(),
+        "no implementation supports any of the requested modes ({}). Every discovered \
+         implementation declares a narrower `langbench.fp_modes` label.",
+        args.mode
+            .iter()
+            .map(FpMode::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
 
     // The campaign is about to spend an hour measuring; find out *now* that its
     // destination directory does not exist, not when the first sample is due.
@@ -91,6 +92,42 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         "campaign complete; render it with `langbench csv` or `langbench md`",
     );
     Ok(())
+}
+
+/// The requested modes, restricted to what each implementation actually
+/// distinguishes.
+///
+/// An interpreter has one floating-point semantics: building it three times
+/// would measure the same image under three names, and the report would show
+/// three rows whose only difference is noise. The skip is loud — a row missing
+/// from a report with no explanation is worse than a redundant one.
+fn schedule(implementations: &[Implementation], requested: &[FpMode]) -> Vec<Unit> {
+    let mut units = Vec::new();
+    for implementation in implementations {
+        let selected = implementation.selected_modes(requested);
+        for &mode in requested {
+            if selected.contains(&mode) {
+                units.push(Unit {
+                    image: implementation.image(mode),
+                    implementation: implementation.clone(),
+                    mode,
+                });
+            } else {
+                warn!(
+                    implementation = %implementation.name,
+                    %mode,
+                    declares = %implementation
+                        .fp_modes
+                        .iter()
+                        .map(FpMode::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    "skipping: the implementation declares it does not distinguish this mode",
+                );
+            }
+        }
+    }
+    units
 }
 
 struct Runner<'a, E: ContainerEngine> {
@@ -265,6 +302,17 @@ mod tests {
         }
     }
 
+    /// An implementation whose Dockerfile declares a narrower `langbench.fp_modes`.
+    fn benchmark_declaring(root: &Path, name: &str, modes: &str) {
+        let dir = root.join("mandelbrot").join(name);
+        create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Dockerfile"),
+            format!("LABEL langbench.fp_modes=\"{modes}\"\n"),
+        )
+        .unwrap();
+    }
+
     fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
         RunArgs {
             algo: vec![],
@@ -345,6 +393,61 @@ mod tests {
         execute(args, &engine).unwrap();
 
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn an_implementation_is_never_built_under_a_mode_it_does_not_distinguish() {
+        // CPython has one FP semantics: `fma` and `fast` would be the same image
+        // under another tag, and three identical rows in the report.
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+        benchmark_declaring(root.path(), "python-cpython", "strict");
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&seen);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(move |spec| {
+            recorded.lock().unwrap().push(spec.image.clone());
+            Ok(())
+        });
+        engine.expect_run().returning(|_| {
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        execute(args(root.path(), out.path(), FpMode::ALL.to_vec()), &engine).unwrap();
+
+        // Three images for gcc, one for CPython — not six.
+        let images = seen.lock().unwrap().clone();
+        assert_eq!(
+            images,
+            [
+                "langbench/mandelbrot-c-gcc:strict",
+                "langbench/mandelbrot-c-gcc:fma",
+                "langbench/mandelbrot-c-gcc:fast",
+                "langbench/mandelbrot-python-cpython:strict",
+            ],
+        );
+    }
+
+    #[test]
+    fn requesting_only_modes_nobody_distinguishes_is_an_error() {
+        // An empty campaign must fail here, not produce a samples file with a
+        // header and no samples.
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmark_declaring(root.path(), "python-cpython", "strict");
+
+        let engine = MockContainerEngine::new();
+        let err = execute(args(root.path(), out.path(), vec![FpMode::Fast]), &engine).unwrap_err();
+        assert!(
+            err.to_string().contains("no implementation supports"),
+            "{err}"
+        );
     }
 
     #[test]

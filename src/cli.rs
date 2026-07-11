@@ -30,6 +30,11 @@ impl FpMode {
             Self::Fast => "fast",
         }
     }
+
+    /// Parse a mode as it is spelled in a `langbench.fp_modes` label.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.as_str() == value)
+    }
 }
 
 impl fmt::Display for FpMode {

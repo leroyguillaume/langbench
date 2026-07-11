@@ -209,6 +209,26 @@ LABEL langbench.language="c" \
       langbench.flags="-O3 -march=x86-64-v3 -ffp-contract=off"
 ```
 
+One label is the exception to `docker inspect`, and deliberately so:
+
+```dockerfile
+LABEL langbench.fp_modes="strict"
+```
+
+`langbench.fp_modes` names the FP modes an implementation actually
+distinguishes. Absent — the normal case, for any compiled backend — it means all
+three. An interpreter declares `strict` alone: CPython has one floating-point
+semantics, with no `-ffp-contract` to turn off and no `-ffast-math` to turn on,
+so `fma` and `fast` would be the *same image under another tag*. Building them
+would put three rows in the report whose only difference is noise, and someone
+would eventually read that noise as an effect of the FP mode.
+
+Because this label decides *which images to build*, the harness reads it from
+the Dockerfile source rather than from `docker inspect`: there is no image to
+inspect yet. That is why it is a constant in the file and never a build arg. A
+mode that is requested but not declared is skipped with a warning — a row
+missing from a report with no explanation is worse than a redundant one.
+
 Every base image is pinned **by digest** (`FROM gcc@sha256:…`), never by tag. A
 benchmark that silently changes when upstream pushes is not a benchmark.
 
