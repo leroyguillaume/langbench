@@ -1,5 +1,7 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+// `defineConfig` from `vitest/config`, not from `vite`: the `test` key below is
+// Vitest's, and Vite's own overload does not know it.
+import { defineConfig } from "vitest/config";
 
 // GitHub Pages serves a project site under `/<repo>/`, never at the root. The
 // base is a build-time input rather than a hardcoded string, so the same source
