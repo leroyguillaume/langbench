@@ -36,9 +36,15 @@ RUN cargo install cargo-chef --locked
 WORKDIR /usr/local/src/langbench
 
 # ----------------------------------------------------------------- planner ----
+# Only the crate's own inputs, never `COPY . .`: the benchmark tree ships in the
+# runtime image, and copying it here would make editing a kernel recompile the
+# harness that measures it.
 FROM chef AS planner
 
-COPY . .
+COPY .cargo .cargo
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src src
+COPY templates templates
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ----------------------------------------------------------------- builder ----
@@ -47,7 +53,10 @@ FROM chef AS builder
 COPY --from=planner /usr/local/src/langbench/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
-COPY . .
+COPY .cargo .cargo
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src src
+COPY templates templates
 RUN cargo build --release --locked
 
 # ----------------------------------------------------------------- runtime ----
@@ -62,11 +71,22 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=builder --chown=langbench:langbench \
      /usr/local/src/langbench/target/release/langbench /usr/local/bin/langbench
 
-# Campaign inputs and outputs. Mount the benchmark tree read-only and the result
-# directory read-write; both default here so the container needs no flags.
-# `OUTPUT` is the samples file itself: `run` writes it, `csv` and `md` read it.
-ENV BENCHMARKS_DIR=/var/lib/langbench/benchmarks \
-    OUTPUT=/var/lib/langbench/samples.ndjson
+# The benchmark tree ships with the harness, so `docker run langbench` measures
+# something out of the box. It is read-only, architecture-independent data, and
+# it lives well away from the workdir on purpose: a caller mounts a directory
+# over /var/lib/langbench to collect the samples, and anything nested under that
+# path would be shadowed by the mount.
+COPY --chown=langbench:langbench benchmarks /usr/local/share/langbench/benchmarks
+
+# Inputs are baked in, outputs go to the workdir — mount it to keep them.
+#
+# `SAMPLES_OUTPUT` names the samples file on both sides — `run` writes it, `csv`
+# and `md` default to reading the same one. The name matters: the harness reads
+# `SAMPLES_OUTPUT`, so a plain `OUTPUT` here would be dead config.
+ENV BENCHMARKS_DIR=/usr/local/share/langbench/benchmarks \
+    SAMPLES_OUTPUT=/var/lib/langbench/samples.ndjson \
+    CSV_OUTPUT=/var/lib/langbench/samples.csv \
+    MD_OUTPUT=/var/lib/langbench/report.md
 
 USER langbench
 WORKDIR /var/lib/langbench

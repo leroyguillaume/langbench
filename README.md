@@ -123,32 +123,136 @@ inside the program and unaffected.
 
 ## Run in a container
 
-An image is provided, mostly for CI. `langbench` orchestrates containers rather
-than running the workload itself, so the benchmark containers are **siblings** on
-the host daemon, not children — the image sits outside the measured path.
+An image is provided, mostly for CI. Running the harness in Docker means it has
+to start Docker containers of its own, and there are two ways to do that. This
+image uses the one that does not corrupt the measurement.
 
-It therefore needs the host's Docker socket:
+### Sibling containers, not nested ones
+
+`langbench` orchestrates containers; it never runs the workload itself. So the
+image ships a Docker **client** and talks to the **host's** daemon through its
+socket. The benchmark containers it starts are therefore **siblings** of the
+harness container — both are children of the host daemon — and the harness sits
+entirely outside the measured path.
+
+```
+            host daemon
+            ├── langbench          (the client — orchestrates, measures nothing)
+            ├── mandelbrot-c-gcc   (measured)
+            └── mandelbrot-cpython (measured)
+```
+
+This is often called *Docker-out-of-Docker*. The alternative — true
+Docker-in-Docker, `--privileged` with a second daemon nested inside the harness
+container — would put the benchmark containers **inside** langbench:
+
+```
+            host daemon
+            └── langbench (--privileged)
+                └── nested daemon
+                    └── mandelbrot-c-gcc   (measured — through two runtimes)
+```
+
+**Do not do that here.** Every measured run would execute under a nested
+storage driver and a second layer of cgroup and namespace indirection, and the
+CPU time the harness reads from `cpu.stat` would come from a cgroup nested
+inside another container's cgroup. That is a benchmark of your container
+runtime's overhead, wearing the costume of a benchmark of gcc. The whole point
+of the sibling model is that the harness contributes nothing to the numbers.
+
+### Doing it
+
+The benchmark tree ships **inside** the image, so a campaign needs only the
+host's socket and somewhere to put the samples. The two differ in exactly one
+flag — `--group-add`, the group that owns the socket — and getting it wrong
+fails with `permission denied while trying to connect to the docker API`.
 
 ```sh
 docker build --tag langbench .
+mkdir -p results
+```
 
+**Linux.** The socket is owned by the host's `docker` group, so hand the
+container that gid. Look it up rather than hardcoding `999`; it varies by
+distribution:
+
+```sh
 docker run --rm \
   --hostname "$(hostname)" \
   --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   --volume /var/run/docker.sock:/var/run/docker.sock \
-  --volume "$PWD/benchmarks:/var/lib/langbench/benchmarks:ro" \
-  --volume "$PWD/results:/var/lib/langbench/results" \
+  --volume "$PWD/results:/var/lib/langbench" \
   langbench run --mode strict
 ```
 
-Three things to know:
+**macOS** (Docker Desktop, OrbStack, Colima). The daemon lives in a Linux VM,
+and the socket a container actually sees there is `root:root`, mode `660`,
+whatever the Mac says about the file. So the gid is `0`:
 
-- **Mounting the socket grants root-equivalent access to the host.** Do not do
-  this on a machine you do not own.
+```sh
+docker run --rm \
+  --hostname "$(hostname)" \
+  --group-add 0 \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  --volume "$PWD/results:/var/lib/langbench" \
+  langbench run --mode strict
+```
+
+Do not port the Linux line across by swapping `stat -c` for BSD's `stat -f '%g'`:
+it *runs*, and it reports gid `1`, which grants nothing. Treat a macOS run as a
+smoke test regardless — the whole workload sits in a hypervisor, and the harness
+says so at the top of the report.
+
+`/var/lib/langbench` is the working directory, and everything a campaign writes
+lands directly in it — `samples.ndjson`, and later `samples.csv` and `report.md`.
+That single mount is what carries the results back out.
+
+Renderings work the same way on either platform, against the samples the campaign
+left behind. They need neither the socket nor the benchmark tree — `csv` and `md`
+are pure functions of the samples file, so no `--group-add` either:
+
+```sh
+docker run --rm \
+  --volume "$PWD/results:/var/lib/langbench" \
+  langbench md          # samples.ndjson -> report.md, both in results/
+```
+
+### Benchmarking your own tree
+
+The bundled benchmarks are a default, not a constraint. Mount your own tree over
+the image's, read-only — the harness never writes to it. That is one extra
+`--volume` on the campaign command above, whichever platform's `--group-add` you
+took from it:
+
+```sh
+docker run --rm \
+  --hostname "$(hostname)" \
+  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  --volume "$PWD/results:/var/lib/langbench" \
+  --volume "$PWD/benchmarks:/usr/local/share/langbench/benchmarks:ro" \
+  langbench run
+```
+
+`/usr/local/share/langbench/benchmarks` is where the image keeps them, and
+`BENCHMARKS_DIR` points there. It sits outside `/var/lib/langbench` deliberately:
+inputs are read-only data, outputs are the mount, and a benchmark tree nested
+under the output directory would vanish the moment you mounted one over it.
+
+Four things to know:
+
+- **Mounting the socket grants root-equivalent access to the host.** Anything
+  that can talk to that socket can start a privileged container and own the
+  machine. Do not do this on a host you do not own, and do not expose it to
+  anything you would not trust with root.
+- **Mount `/var/lib/langbench` itself.** With `--rm` and nothing mounted there,
+  the samples die with the container — and the samples are the one artifact that
+  cannot be recomputed.
 - **Pass `--hostname`.** Otherwise the harness records the container's ID as the
   machine's hostname, and the campaign is harder to attribute later.
 - **`--group-add` is needed because the image runs as a non-root user** (UID
-  1000). Never work around this by running as root.
+  1000), which is not in the host's `docker` group. Never work around this by
+  running the harness as root.
 
 The harness detects that it is containerized and says so in the report, along
 with any hypervisor it can find. That detection is a runtime check, not a
