@@ -427,9 +427,13 @@ npm run build      # into site/dist/
 npm test           # runs the real WASM module over the real campaign
 ```
 
-`npm run dev` and `npm run build` both invoke `wasm-pack`, so a change to
-`src/analysis.rs` reaches the page without a second step. Requirements beyond the
-harness's own: Node 22+, and
+Every script that reads the module -- `dev`, `build`, `typecheck`, `test` --
+invokes `wasm-pack` first, so a change to `src/analysis.rs` reaches the page, the
+types and the tests without a second step. `site/src/wasm/` is that artefact and
+is never committed: a script that skipped the build would check a fresh clone
+against a module that does not exist, and a working copy against a stale one.
+
+Requirements beyond the harness's own: Node 22+, and
 
 ```sh
 rustup target add wasm32-unknown-unknown

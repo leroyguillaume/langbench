@@ -104,6 +104,13 @@ repos:
       # against, and a field renamed in `src/analysis.rs` is caught by the site's
       # tests -- which run the real module over the real campaign -- long before a
       # reader sees an empty chart.
+      #
+      # Both scripts build the WASM first, and that is not belt-and-braces:
+      # `site/src/wasm/` is a `wasm-pack` artefact, gitignored, and absent from
+      # every fresh clone. A `tsc` that does not build it type-checks against a
+      # module that is not there -- which is an error on a runner and, on a
+      # machine that happened to run `npm test` last week, silently against a
+      # stale one.
       - id: site-typecheck
         name: tsc --noEmit
         entry: npm --prefix site run typecheck
