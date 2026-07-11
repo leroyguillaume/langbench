@@ -121,6 +121,32 @@ Sizing for the slowest backend makes the fastest one's *wall-clock* mostly
 container startup — which is why the report also carries `Compute min`, timed
 inside the program and unaffected.
 
+### Stopping a campaign
+
+Ctrl-C, or `SIGTERM` from whatever is supervising it. The harness kills the
+container in flight, stops, and **exits 0** — the samples it already wrote are
+untouched and still render:
+
+```sh
+langbench md    # a campaign you interrupted after ten minutes is still a report
+```
+
+The run it was in the middle of is discarded rather than recorded: a killed
+container has no honest timing to give, and a wrong run never enters the
+statistics. So an interrupted campaign is a *shorter* campaign, never a
+corrupted one — you lose resolution, and the dispersion beside each estimate
+tells you how much.
+
+Killing the container matters more than it sounds. The workload does not run in
+the `langbench` process; it runs on the Docker daemon, in another process tree,
+and `docker run` is only a client attached to it. A harness that simply died on
+`SIGTERM` would leave the benchmark running — on this machine, that orphan was
+happily holding ten cores with nobody left to watch it, which is a bias in
+whatever you measure next, not merely an untidy `docker ps`.
+
+Signal a second time and it exits immediately, at the cost of that orphan; the
+log tells you so, and the container to `docker kill` is named `langbench-*`.
+
 ## Run in a container
 
 An image is provided, mostly for CI. Running the harness in Docker means it has

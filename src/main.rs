@@ -6,6 +6,7 @@ mod output;
 mod report;
 mod runner;
 mod sample;
+mod shutdown;
 mod stats;
 
 use anyhow::Result;
@@ -24,6 +25,11 @@ fn main() -> Result<()> {
         .with_env_filter(EnvFilter::new(&cli.log_filter))
         .with_writer(std::io::stderr)
         .init();
+
+    // Armed before the first container exists. `run` is the command that starts
+    // them, but the others are cheap and a handler that is always on cannot be
+    // the one that was forgotten.
+    shutdown::install()?;
 
     match cli.command {
         Command::Run(args) => runner::execute(args, &DockerEngine),

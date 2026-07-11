@@ -14,6 +14,7 @@ use anyhow::{Context, Result, bail};
 use tracing::debug;
 
 use crate::sample::{ContainerRecord, parse_container_stdout};
+use crate::shutdown;
 
 /// Where the container compiles. A tmpfs, so codegen output never touches
 /// overlayfs, and so the tree is empty on every run without a cleanup step.
@@ -63,18 +64,42 @@ impl ContainerEngine for DockerEngine {
     fn build(&self, spec: &BuildSpec) -> Result<()> {
         let args = build_args(spec);
         debug!(image = %spec.image, ?args, "docker build");
-        let output = Command::new("docker")
+        let mut child = Command::new("docker")
             .args(&args)
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .context("spawning `docker build`")?;
-        if !output.status.success() {
-            bail!(
-                "`docker build` failed for {}:\n{}",
-                spec.image,
-                String::from_utf8_lossy(&output.stderr),
-            );
+
+        // Piped, so drained: a compiler's stderr can outgrow the pipe buffer, and
+        // a full pipe would deadlock the child against our wait.
+        let stderr = drain(child.stderr.take().expect("stderr is piped"));
+        let stdout = drain(child.stdout.take().expect("stdout is piped"));
+
+        // Polled rather than waited on, for the same reason as a measured run: a
+        // build is minutes long, and a signal that is only noticed when it ends
+        // is a signal Docker has already escalated to `SIGKILL`.
+        loop {
+            if let Some(status) = child.try_wait().context("waiting on `docker build`")? {
+                let stderr = stderr.join().unwrap_or_default();
+                let _ = stdout.join();
+                if !status.success() {
+                    bail!("`docker build` failed for {}:\n{stderr}", spec.image);
+                }
+                return Ok(());
+            }
+            if shutdown::requested() {
+                // Only the client is ours to kill. Unlike a run, a build has no
+                // name to reach it by — BuildKit cancels the build when the
+                // client disconnects, and the legacy builder finishes the step it
+                // is on. Neither is measured, and both are bounded.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(anyhow::Error::from(shutdown::Interrupted)
+                    .context(format!("building {}", spec.image)));
+            }
+            thread::sleep(shutdown::TICK);
         }
-        Ok(())
     }
 
     fn run(&self, spec: &RunSpec) -> Result<Execution> {
@@ -142,38 +167,65 @@ fn wait_or_kill(
         let _ = sender.send((status, elapsed));
     });
 
-    match receiver.recv_timeout(timeout) {
-        Ok((status, elapsed)) => {
-            let _ = waiter.join();
-            let status = status.context("waiting on `docker run`")?;
-            Ok((
-                status,
-                u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-            ))
+    // Tick rather than block for the whole timeout: a signal has to be noticed
+    // while the container is still running, and a `--run-timeout` of ten minutes
+    // is ten minutes of not looking. The wall-clock is stamped in the waiter the
+    // instant `wait` returns, so how often we look here never reaches the
+    // measurement.
+    let deadline = started + timeout;
+    loop {
+        match receiver.recv_timeout(shutdown::TICK) {
+            Ok((status, elapsed)) => {
+                let _ = waiter.join();
+                let status = status.context("waiting on `docker run`")?;
+                return Ok((
+                    status,
+                    u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                ));
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                // The signal is the caller's, but the container is ours: nobody
+                // else knows its name, so nobody else can stop it.
+                if shutdown::requested() {
+                    let killed = kill_container(name);
+                    let _ = waiter.join();
+                    return Err(anyhow::Error::from(shutdown::Interrupted).context(format!(
+                        "container `{name}` killed on the way out ({killed})",
+                    )));
+                }
+                if Instant::now() >= deadline {
+                    let killed = kill_container(name);
+                    // The client exits once the daemon reaps the container.
+                    let _ = waiter.join();
+                    bail!(
+                        "`docker run` exceeded the {} s timeout and container `{name}` was \
+                         killed ({killed}). A hung run is not a slow run: raise --run-timeout \
+                         if the workload is genuinely this slow, or look for a deadlock.",
+                        timeout.as_secs(),
+                    )
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                let _ = waiter.join();
+                bail!("the thread waiting on `docker run` died")
+            }
         }
-        Err(RecvTimeoutError::Timeout) => {
-            let killed = Command::new("docker").args(["kill", name]).output();
-            // The client exits once the daemon reaps the container.
-            let _ = waiter.join();
-            bail!(
-                "`docker run` exceeded the {} s timeout and container `{name}` was killed \
-                 ({}). A hung run is not a slow run: raise --run-timeout if the workload is \
-                 genuinely this slow, or look for a deadlock.",
-                timeout.as_secs(),
-                match killed {
-                    Ok(output) if output.status.success() => "kill succeeded".to_owned(),
-                    Ok(output) => format!(
-                        "kill failed: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    ),
-                    Err(error) => format!("kill could not run: {error}"),
-                },
-            )
-        }
-        Err(RecvTimeoutError::Disconnected) => {
-            let _ = waiter.join();
-            bail!("the thread waiting on `docker run` died")
-        }
+    }
+}
+
+/// Stop the container itself, by name — never merely its client.
+///
+/// The workload runs on the daemon, in another process tree. Killing the
+/// `docker` client would leave it running with nobody watching, which is the
+/// whole reason the container is named.
+fn kill_container(name: &str) -> String {
+    match Command::new("docker").args(["kill", name]).output() {
+        Ok(output) if output.status.success() => "kill succeeded".to_owned(),
+        Ok(output) => format!(
+            "kill failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+        Err(error) => format!("kill could not run: {error}"),
     }
 }
 

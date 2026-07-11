@@ -16,6 +16,7 @@ use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
 use crate::sample::{Campaign, Phase, Sample, SampleWriter};
+use crate::shutdown;
 
 /// One (implementation, FP mode) pair: the atom of the schedule.
 struct Unit {
@@ -89,18 +90,33 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         strict_checksums: HashMap::new(),
     };
 
-    runner.prepare(&units)?;
-    runner.measure_phase(&units, Phase::Build, args.build_rounds)?;
-    runner.measure_phase(&units, Phase::Run, args.rounds)?;
+    let campaign = (|| -> Result<()> {
+        runner.prepare(&units)?;
+        runner.measure_phase(&units, Phase::Build, args.build_rounds)?;
+        runner.measure_phase(&units, Phase::Run, args.rounds)
+    })();
 
     // The campaign produces the samples and stops there. The CSV and the report
     // are renderings, recomputed on demand from this file — including from a
     // campaign that was interrupted, which is exactly when you want them.
-    info!(
-        samples = runner.written,
-        path = %args.output.display(),
-        "campaign complete; render it with `langbench csv` or `langbench md`",
-    );
+    match campaign {
+        Ok(()) => info!(
+            samples = runner.written,
+            path = %args.output.display(),
+            "campaign complete; render it with `langbench csv` or `langbench md`",
+        ),
+        // A signal is an answer, not a failure: exit 0, because the samples on
+        // disk are as valid as they were a moment ago and the file renders. The
+        // partial campaign is the user's to keep or discard — a non-zero exit
+        // would say the harness broke, and it did not.
+        Err(error) if shutdown::was_interrupted(&error) => warn!(
+            samples = runner.written,
+            path = %args.output.display(),
+            "campaign interrupted; the samples written so far are intact and \
+             render with `langbench csv` or `langbench md`",
+        ),
+        Err(error) => return Err(error),
+    }
     Ok(())
 }
 
@@ -195,6 +211,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
     /// Build every image. Never measured: this is where the network lives.
     fn prepare(&self, units: &[Unit]) -> Result<()> {
         for unit in units {
+            shutdown::checkpoint()?;
             info!(image = %unit.image, "preparing image");
             let mut build_args = vec![
                 ("FP_MODE".to_owned(), unit.mode.to_string()),
@@ -226,6 +243,10 @@ impl<E: ContainerEngine> Runner<'_, E> {
         for round in 0..total {
             let warmup = round < self.args.warmup_rounds;
             for unit in units {
+                // Between invocations, never inside one. A sample is written only
+                // once it has been verified, so an interruption costs the run in
+                // flight and nothing that came before it.
+                shutdown::checkpoint()?;
                 let sample = self.measure(unit, phase, round, warmup)?;
                 self.verify(&sample)?;
                 self.writer.write_sample(&sample)?;
@@ -674,5 +695,66 @@ mod tests {
         let on_arm = schedule(&implementations, &[FpMode::Strict], Some(Arch::Aarch64));
         assert_eq!(on_arm.len(), 1);
         assert_eq!(on_arm[0].implementation.language, "c");
+    }
+
+    /// The point of the whole shutdown path: a signal costs the run in flight,
+    /// and nothing that came before it.
+    #[test]
+    fn an_interrupted_campaign_succeeds_and_keeps_every_sample_it_wrote() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        // Two runs land, the third is the one the signal caught.
+        let remaining = Arc::new(Mutex::new(2_u32));
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(move |_| {
+            let mut remaining = remaining.lock().unwrap();
+            if *remaining == 0 {
+                return Err(anyhow::Error::from(crate::shutdown::Interrupted)
+                    .context("container `langbench-1-2` killed on the way out"));
+            }
+            *remaining -= 1;
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 4;
+        let output = args.output.clone();
+
+        // Exit 0: the harness did not break, it was asked to stop.
+        execute(args, &engine).unwrap();
+
+        // The header, plus exactly the two samples that completed. The killed run
+        // contributes nothing — a wrong run never enters the statistics.
+        let written = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(written.lines().count(), 3, "header + 2 samples");
+    }
+
+    /// The interruption path must not become a way for real failures to exit 0.
+    #[test]
+    fn an_ordinary_failure_still_fails_the_campaign() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine
+            .expect_run()
+            .returning(|_| bail!("`docker run` failed for langbench/mandelbrot-c-gcc:strict"));
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 1;
+        let error = execute(args, &engine).unwrap_err();
+        assert!(error.to_string().contains("`docker run` failed"));
     }
 }

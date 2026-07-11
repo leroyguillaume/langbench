@@ -115,8 +115,20 @@ subject is **compiler and runtime backends**, not languages.
   benchmarks concurrently would destroy the measurement. The global rule mandates
   `tokio` *when async is needed*; here it is not.
 - Samples are appended and flushed one at a time, so an interrupted campaign
-  keeps every completed sample. That is the graceful-shutdown requirement,
-  satisfied by durability rather than by a signal handler.
+  keeps every completed sample. That is durability, and it is only half of
+  shutdown: it protects the data, not the machine.
+- **Handle `SIGTERM` and `SIGINT`, and kill the container in flight.** The
+  workload does not run in this process — it runs on the daemon, in another
+  process tree, and `docker run` is only a client attached to it. Killing the
+  harness leaves the benchmark running, holding every core it was given, with
+  nobody watching. On a bench machine that orphan is not a leak, it is a bias in
+  whatever gets measured next. The container is named so it can be reached.
+- The interrupted run is **not** a sample. A killed container has no valid record
+  to give, and a wrong run never enters the statistics. Stopping means refusing
+  the next unit, never writing down what the current one half-said.
+- An interrupted campaign **exits 0**. The samples on disk are as valid as they
+  were a moment before, and the file still renders; a non-zero exit would claim
+  the harness broke, and it did not.
 - The default report template is `templates/report.md.liquid`, embedded with
   `include_str!` so the binary stays self-contained. `langbench md --template`
   overrides it; the built-in one is always the fallback, never a required file.
