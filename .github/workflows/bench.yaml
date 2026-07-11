@@ -1,0 +1,161 @@
+name: bench
+
+# Runs a campaign, commits what it recorded, and publishes it.
+#
+# A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
+# the worst benchmark target money can rent. The numbers this workflow produces
+# are *indicative*, and they say so themselves: `langbench` records the host in
+# the campaign header, and both the report and the website lead with every reason
+# it was a poor target. For a number worth publishing, run a campaign on a real
+# machine and commit its `samples.ndjson` -- the site is a pure function
+# of that file and will render it unchanged. See `METHODOLOGY.md#where-it-runs`.
+#
+# `workflow_dispatch` only. A campaign is a deliberate act, not a side effect of a
+# push: it costs minutes of runner time, it rewrites the two files this repository
+# publishes, and the moment it fires on every commit those files churn for reasons
+# that have nothing to do with the backends being measured.
+on:
+  workflow_dispatch:
+    inputs:
+      grid_size:
+        description: side of the N x N grid
+        type: string
+        default: "2048"
+      max_iter:
+        description: iteration ceiling before a pixel is declared inside the set
+        type: string
+        default: "1000"
+      rounds:
+        description: measured rounds of the run phase
+        type: string
+        default: "10"
+
+permissions:
+  contents: read
+
+# Never cancel a campaign in flight, and never publish two at once: a half-written
+# report is worse than a stale one.
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: build the harness
+        run: cargo build --release
+
+      # `docker build` prepares, `docker run` measures. The campaign writes
+      # `samples.ndjson` at the repo root -- its default -- and nothing else.
+      - name: run the campaign
+        run: ./target/release/langbench run
+        env:
+          GRID_SIZE: ${{ inputs.grid_size || '2048' }}
+          MAX_ITER: ${{ inputs.max_iter || '1000' }}
+          ROUNDS: ${{ inputs.rounds || '10' }}
+
+      # Rendering is not part of measuring: a separate command, a pure function of
+      # the file above.
+      - name: render the report
+        run: ./target/release/langbench md
+
+      # Both files, not just the report. `samples.ndjson` is the only artefact a
+      # campaign produces that cannot be recomputed -- the report and the website
+      # are both derived from it, and committing one without the other would
+      # publish a conclusion whose evidence is gone.
+      - name: commit the samples and the report
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add report.md samples.ndjson
+          if git diff --cached --quiet; then
+            echo 'the campaign reproduced the committed one, byte for byte; nothing to commit'
+            exit 0
+          fi
+          git commit -m 'bench: campaign of ${{ github.sha }}'
+          git push origin HEAD:main
+
+      - name: upload the campaign
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: campaign
+          path: samples.ndjson
+          if-no-files-found: error
+
+  site:
+    needs: bench
+    runs-on: ubuntu-24.04
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The campaign the job above just recorded -- not the one that happened to
+      # be committed when this run started.
+      - name: download the campaign
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: campaign
+
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: set up wasm-pack
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+        with:
+          version: v0.13.1
+
+      - name: set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: install the site's dependencies
+        run: npm ci
+        working-directory: site
+
+      # Compiles `src/analysis.rs` to WebAssembly, copies the campaign in, and
+      # bundles the page. The site computes no statistic of its own: it calls the
+      # harness. BASE_PATH is what Pages serves a project site under.
+      - name: build the site
+        run: npm run build
+        working-directory: site
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: upload the page
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    needs: site
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

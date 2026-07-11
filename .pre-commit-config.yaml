@@ -7,6 +7,8 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        # A committed lockfile is legitimately large and must stay versioned.
+        exclude: ^site/package-lock\.json$
       - id: check-merge-conflict
       - id: detect-private-key
 
@@ -85,4 +87,33 @@ repos:
         entry: cargo run --quiet -- validate
         language: system
         files: (^|/)bench\.yaml$
+        pass_filenames: false
+
+      # Biome -- formatter and linter, in place of ESLint and Prettier. Run from
+      # `site/`, where its config is, rather than through the upstream hook: that
+      # one runs from the repo root and reads a nested `biome.json` twice.
+      - id: site-biome
+        name: biome check
+        entry: npm --prefix site run check
+        language: system
+        files: ^site/
+        pass_filenames: false
+
+      # The site's other gates. `tsc` is not a formality here: the zod schema in
+      # `site/src/analysis.ts` is what the WebAssembly's output is validated
+      # against, and a field renamed in `src/analysis.rs` is caught by the site's
+      # tests -- which run the real module over the real campaign -- long before a
+      # reader sees an empty chart.
+      - id: site-typecheck
+        name: tsc --noEmit
+        entry: npm --prefix site run typecheck
+        language: system
+        files: ^site/(src/|.*\.json$|.*\.ts$)
+        pass_filenames: false
+
+      - id: site-test
+        name: vitest
+        entry: npm --prefix site test
+        language: system
+        files: ^(site/src/|src/)
         pass_filenames: false

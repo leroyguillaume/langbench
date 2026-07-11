@@ -1,21 +1,14 @@
-mod cli;
-mod discovery;
-mod engine;
-mod machine;
-mod output;
-mod report;
-mod runner;
-mod sample;
-mod shutdown;
-mod stats;
+//! The binary. Every module it drives lives behind the `cli` feature of the
+//! library beside it — see `src/lib.rs` for why the crate is split at all.
 
 use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use crate::cli::{Cli, Command};
-use crate::engine::DockerEngine;
-use crate::machine::Machine;
+use langbench::cli::{Cli, Command};
+use langbench::engine::DockerEngine;
+use langbench::machine::Machine;
+use langbench::{discovery, output, runner, shutdown};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

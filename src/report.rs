@@ -1,17 +1,20 @@
 //! Human-facing Markdown report, rendered from `templates/report.md.liquid`.
 //!
+//! Formatting, and nothing else. The arithmetic lives in [`crate::analysis`],
+//! which the WebAssembly build calls too — so the table in `report.md` and the
+//! table on the website are two renderings of one computation rather than two
+//! computations that happen to agree today.
+//!
 //! Everything here is derived from the raw samples and can be recomputed from
 //! `samples.ndjson`. Aggregates never replace the samples.
-
-use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::cli::FpMode;
+use crate::analysis::{Aggregate, Analysis, Options, analyze};
 use crate::machine::Field;
-use crate::sample::{Campaign, Phase, Recording, Sample};
-use crate::stats::{Summary, summarize};
+use crate::sample::{Campaign, Recording};
+use crate::stats::Summary;
 
 /// Embedded, so the binary renders a report without a working directory. A
 /// campaign can override it with `--template`.
@@ -44,8 +47,8 @@ pub struct AlgoReport {
 #[derive(Debug, Serialize)]
 pub struct Backend {
     /// `mandelbrot-python-cython-cpython`: the heading of this backend's section,
-    /// and therefore the anchor every row of the tables links to. Computed here
-    /// rather than in the template, so the link and its target cannot disagree.
+    /// and therefore the anchor every row of the tables links to. Computed in
+    /// `analysis`, so the link and its target cannot disagree.
     pub id: String,
     pub algo: String,
     pub backend: String,
@@ -57,22 +60,8 @@ pub struct Backend {
     pub comments: String,
 }
 
-/// The anchor of a backend's section, and the heading it is generated from.
-///
-/// Markdown renderers derive an anchor from the heading text, and they do not all
-/// derive it the same way. So the heading *is* the anchor: lowercase, no spaces,
-/// no punctuation — nothing for a renderer to reinterpret.
-fn backend_id(algo: &str, backend: &str) -> String {
-    format!("{algo}-{backend}")
-}
-
 #[derive(Debug, Serialize)]
 pub struct Row {
-    /// The value `run_min` was formatted from, kept to sort rows fastest-first.
-    /// Not rendered: the template has the formatted string. `None` — a row with
-    /// no measured run — sorts last, having no speed to be ranked on.
-    #[serde(skip)]
-    pub run_min_ns: Option<u64>,
     /// The (language, compiler, interpreter) triple as one token. Not a column:
     /// the table spells the three out.
     pub backend: String,
@@ -99,173 +88,70 @@ pub struct Row {
     pub checksum_delta: String,
 }
 
-/// Samples grouped by (algorithm, backend, FP mode).
-#[derive(Default)]
-struct Bucket {
-    language: String,
-    compiler: Option<String>,
-    interpreter: Option<String>,
-    description: String,
-    comments: Option<String>,
-    run_wall: Vec<u64>,
-    run_elapsed: Vec<u64>,
-    run_startup: Vec<u64>,
-    run_cpu_usec: Vec<u64>,
-    /// The compiler's own elapsed time, reported by the entrypoint from inside
-    /// the container — never the `docker run` wall-clock. Container creation
-    /// costs ~110 ms here, which is several times a `gcc` invocation on a
-    /// single kernel: timing the wall would rank Docker, not the compilers.
-    /// The run row keeps its wall-clock because a runtime's startup is a result;
-    /// a container's is an artefact of how we chose to isolate the build.
-    build_elapsed: Vec<u64>,
-    checksum: Option<u64>,
-    binary_bytes: Option<u64>,
-    text_bytes: Option<u64>,
-}
-
+/// The report is the default analysis, formatted. It has no options of its own:
+/// `report.md` is the campaign as the methodology defines it — min-of-N, warmup
+/// rounds recorded but never aggregated.
 pub fn build(recording: &Recording) -> ReportData {
-    let samples = &recording.samples;
-    let references = strict_references(samples);
+    let analysis = analyze(recording, Options::default());
+    format(analysis)
+}
 
-    // Insertion order comes from the first round, which is the schedule order.
-    let mut order: Vec<(String, String, String)> = Vec::new();
-    let mut buckets: HashMap<(String, String, String), Bucket> = HashMap::new();
-
-    for sample in samples {
-        let key = (
-            sample.algo.clone(),
-            sample.backend(),
-            sample.mode.to_string(),
-        );
-        let bucket = buckets.entry(key.clone()).or_insert_with(|| {
-            order.push(key);
-            Bucket {
-                language: sample.language.clone(),
-                compiler: sample.compiler.clone(),
-                interpreter: sample.interpreter.clone(),
-                description: sample.description.clone(),
-                comments: sample.comments.clone(),
-                ..Bucket::default()
-            }
-        });
-
-        // Constants of the image: take them wherever they first appear.
-        bucket.checksum = bucket.checksum.or(sample.checksum);
-        bucket.binary_bytes = bucket.binary_bytes.or(sample.binary_bytes);
-        bucket.text_bytes = bucket.text_bytes.or(sample.text_bytes);
-
-        // Warmup samples are recorded, never aggregated.
-        if sample.warmup {
-            continue;
-        }
-        match sample.phase {
-            Phase::Build => bucket.build_elapsed.push(sample.elapsed_ns),
-            Phase::Run => {
-                bucket.run_wall.push(sample.wall_ns);
-                bucket.run_elapsed.push(sample.elapsed_ns);
-                bucket.run_startup.push(sample.startup_ns());
-                bucket.run_cpu_usec.push(sample.cpu_usec());
-            }
-        }
-    }
-
-    let mut algos: Vec<AlgoReport> = Vec::new();
-    let mut backends: Vec<Backend> = Vec::new();
-    for key in &order {
-        let (algo, backend, mode) = key;
-        let bucket = &buckets[key];
-        let reference = references.get(algo).copied();
-        let row = Row {
-            run_min_ns: summarize(&bucket.run_wall).map(|summary| summary.min),
-            backend: backend.clone(),
-            backend_id: backend_id(algo, backend),
-            language: bucket.language.clone(),
-            compiler: opt(bucket.compiler.as_deref()),
-            interpreter: opt(bucket.interpreter.as_deref()),
-            mode: mode.clone(),
-            run_min: min_ms(summarize(&bucket.run_wall)),
-            run_dispersion: dispersion(summarize(&bucket.run_wall)),
-            run_samples: bucket.run_wall.len(),
-            compute_min: min_ms(summarize(&bucket.run_elapsed)),
-            startup: min_ms(summarize(&bucket.run_startup)),
-            cpu_time: summarize(&bucket.run_cpu_usec).map_or_else(
-                || "n/a".to_owned(),
-                |summary| format!("{:.2} s", summary.median as f64 / 1e6),
-            ),
-            build_min: min_ms(summarize(&bucket.build_elapsed)),
-            build_dispersion: dispersion(summarize(&bucket.build_elapsed)),
-            binary: bytes(bucket.binary_bytes),
-            text: bytes(bucket.text_bytes),
-            checksum_delta: delta(bucket.checksum, reference),
-        };
-
-        // One card per backend, not one per (backend, mode): the three modes are
-        // three experiments on the same thing, and the thing is what a card
-        // describes.
-        let id = backend_id(algo, backend);
-        if !backends.iter().any(|known: &Backend| known.id == id) {
-            backends.push(Backend {
-                id,
-                algo: algo.clone(),
-                backend: backend.clone(),
-                language: bucket.language.clone(),
-                compiler: opt(bucket.compiler.as_deref()),
-                interpreter: opt(bucket.interpreter.as_deref()),
-                description: bucket.description.clone(),
-                comments: bucket.comments.clone().unwrap_or_default(),
-            });
-        }
-
-        match algos.iter_mut().find(|report| &report.algo == algo) {
-            Some(report) => report.rows.push(row),
-            None => algos.push(AlgoReport {
-                algo: algo.clone(),
-                strict_checksum: reference
-                    .map_or_else(|| "n/a".to_owned(), |checksum| checksum.to_string()),
-                rows: vec![row],
-            }),
-        }
-    }
-
-    // Fastest first, on the same statistic the table headlines: the minimum wall
-    // clock. `sort_by_key` is stable, so rows the campaign could not measure keep
-    // their schedule order at the bottom instead of being shuffled among
-    // themselves.
-    for report in &mut algos {
-        report
-            .rows
-            .sort_by_key(|row| (row.run_min_ns.is_none(), row.run_min_ns));
-    }
-
+fn format(analysis: Analysis) -> ReportData {
     ReportData {
-        campaign: recording.campaign.clone(),
-        machine_fields: recording.machine.fields(),
-        warnings: recording.machine.warnings(),
-        algos,
-        backends,
+        campaign: analysis.campaign,
+        machine_fields: analysis.machine_fields,
+        warnings: analysis.warnings,
+        algos: analysis
+            .algos
+            .into_iter()
+            .map(|algo| AlgoReport {
+                algo: algo.algo,
+                strict_checksum: algo
+                    .strict_checksum
+                    .map_or_else(|| "n/a".to_owned(), |checksum| checksum.to_string()),
+                rows: algo.aggregates.iter().map(row).collect(),
+            })
+            .collect(),
+        backends: analysis
+            .backends
+            .into_iter()
+            .map(|backend| Backend {
+                id: backend.id,
+                algo: backend.algo,
+                backend: backend.backend,
+                language: backend.language,
+                compiler: opt(backend.compiler.as_deref()),
+                interpreter: opt(backend.interpreter.as_deref()),
+                description: backend.description,
+                comments: backend.comments.unwrap_or_default(),
+            })
+            .collect(),
     }
 }
 
-/// The value every strict-mode run of a given algorithm agreed on, keyed by
-/// algorithm.
-///
-/// The campaign already refused to record a divergent one — `Runner::verify`
-/// aborts on the spot — so any strict sample of an algorithm carries its
-/// reference and the first one is as good as the last. The reference is per
-/// algorithm because the checksum is a property of `(algo, grid size,
-/// max_iter)`: measuring one algorithm's delta against another's would be
-/// meaningless. See `METHODOLOGY.md#the-strict-mode-invariant`.
-fn strict_references(samples: &[Sample]) -> HashMap<String, u64> {
-    let mut references = HashMap::new();
-    for sample in samples {
-        if sample.mode != FpMode::Strict {
-            continue;
-        }
-        if let Some(checksum) = sample.checksum {
-            references.entry(sample.algo.clone()).or_insert(checksum);
-        }
+fn row(aggregate: &Aggregate) -> Row {
+    Row {
+        backend: aggregate.backend.clone(),
+        backend_id: aggregate.backend_id.clone(),
+        language: aggregate.language.clone(),
+        compiler: opt(aggregate.compiler.as_deref()),
+        interpreter: opt(aggregate.interpreter.as_deref()),
+        mode: aggregate.mode.to_string(),
+        run_min: min_ms(aggregate.run_wall),
+        run_dispersion: dispersion(aggregate.run_wall),
+        run_samples: aggregate.run_wall.map_or(0, |summary| summary.n),
+        compute_min: min_ms(aggregate.run_elapsed),
+        startup: min_ms(aggregate.run_startup),
+        cpu_time: aggregate.run_cpu_usec.map_or_else(
+            || "n/a".to_owned(),
+            |summary| format!("{:.2} s", summary.median as f64 / 1e6),
+        ),
+        build_min: min_ms(aggregate.build_elapsed),
+        build_dispersion: dispersion(aggregate.build_elapsed),
+        binary: bytes(aggregate.binary_bytes),
+        text: bytes(aggregate.text_bytes),
+        checksum_delta: delta(aggregate.checksum_delta),
     }
-    references
 }
 
 pub fn render(data: &ReportData, template: &str) -> Result<String> {
@@ -314,13 +200,11 @@ fn bytes(value: Option<u64>) -> String {
 
 /// A relaxed mode's distance from the strict reference: the precision sold for
 /// the speed gained.
-fn delta(checksum: Option<u64>, reference: Option<u64>) -> String {
-    match (checksum, reference) {
-        (Some(checksum), Some(reference)) => match i128::from(checksum) - i128::from(reference) {
-            0 => "0".to_owned(),
-            delta => format!("{delta:+}"),
-        },
-        _ => "n/a".to_owned(),
+fn delta(delta: Option<i128>) -> String {
+    match delta {
+        None => "n/a".to_owned(),
+        Some(0) => "0".to_owned(),
+        Some(delta) => format!("{delta:+}"),
     }
 }
 
@@ -328,6 +212,8 @@ fn delta(checksum: Option<u64>, reference: Option<u64>) -> String {
 mod tests {
     use super::*;
     use crate::machine::Machine;
+    use crate::mode::FpMode;
+    use crate::sample::{Phase, Sample};
 
     fn implementations(data: &ReportData) -> Vec<&str> {
         data.algos[0]

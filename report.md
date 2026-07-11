@@ -1,0 +1,414 @@
+# langbench report
+
+Generated on 2026-07-11T14:29:35.131328+00:00 by langbench 0.1.0.
+
+## What you are looking at
+
+langbench compiles the *same* algorithm — the same maths, written once per
+language — with several compilers, then runs each build many times under the same
+conditions and records how long each run took. This report is the summary.
+
+**The thing being compared is the compiler, not the language.** Two rows that use
+the same source and differ only in which compiler built it are a clean experiment.
+Two rows written in different languages are not: the source is different, the
+standard library is different, the runtime is different. You can read "one is ten
+times slower" from those; you cannot read "C is 4% faster than Rust".
+
+Raw measurements live in `samples.ndjson` — one JSON line per run, written as the
+run finishes. Every number below is recomputed from that file, so the file is the
+truth and this report is just a view of it. If a number here looks odd, go read the
+lines it came from.
+
+New to this? Read the column reference at the bottom before the tables. It defines
+every term, in order, and the tables are not much use without it.
+[METHODOLOGY.md](../METHODOLOGY.md) explains *why* the protocol is what it is.
+
+## Careful: this host is not a clean benchmark target
+
+The harness inspected the machine before measuring and found this:
+
+- No Linux `/proc` is visible. Containers run inside a VM, so timings measure the hypervisor as much as the backend. Development only.
+
+In plain terms: something else on this machine can steal CPU from a run and make it
+look slower than it is. Small differences here are noise, not results. Compare
+orders of magnitude ("this one is 20x slower"), never percentages ("this one is 3%
+faster").
+
+## Campaign
+
+The knobs this run was launched with. Change any of them and the numbers below
+change with them — including the reference checksum.
+
+| Parameter | Value | What it is |
+| --- | --- | --- |
+| Threads (`--cpu`) | 10 | How many worker threads each kernel was told to use. The harness passes this explicitly; kernels never guess. |
+| Grid | 2048 x 2048 | Size of the image computed, in pixels. This is the problem size. |
+| Max iterations | 1000 | Work ceiling per pixel. Higher means more maths per pixel. |
+| ISA baseline (`-march`) | armv8.2-a | The CPU instruction set every compiler was allowed to target. Pinned, so no compiler gets a private head start. |
+| FP modes | strict, fma, fast | The floating-point rule sets used. See **Mode** below. |
+| Run rounds | 10 (+ 1 warmup) | How many times each build was measured. Warmup runs are recorded but excluded. |
+| Build rounds | 3 (+ 1 warmup) | Same, for the timed recompiles. |
+
+## Machine
+
+Where it ran. Timings only mean something *relative to this machine*.
+
+| Property | Value |
+| --- | --- |
+| Hostname | n/a |
+| Architecture | aarch64 |
+| OS | n/a |
+| Kernel | n/a |
+| Virtualization | unknown (the probes need Linux; see the warning above) |
+| Harness containerized | false |
+| CPU model | n/a |
+| CPU vendor | n/a |
+| Logical CPUs | n/a |
+| Physical cores | n/a |
+| available_parallelism | 10 |
+| SMT active | n/a |
+| NUMA nodes | n/a |
+| ISA extensions | n/a |
+| Scaling governor | n/a |
+| Frequency min | n/a |
+| Frequency max | n/a |
+| Frequency at start | n/a |
+| Turbo disabled | n/a |
+| Isolated CPUs | n/a |
+| Memory | n/a |
+| Load average at start | n/a |
+| cgroup version | n/a |
+| Docker version | 29.4.0 |
+| Docker storage driver | overlay2 |
+
+## Results
+
+### mandelbrot
+
+Reference checksum in `strict` mode: `1038538536`.
+
+The checksum is a single 64-bit integer summarising the whole computed image. Every
+`strict` row below produced exactly this number, bit for bit, whatever the compiler
+or the language. That is the correctness gate: if one build had disagreed, the
+campaign would have stopped instead of publishing a timing for it.
+
+Rows are sorted **fastest first**, on **Run min**. Mind two things before reading the
+order as a leaderboard: the sort mixes the FP modes together, and two rows in
+different modes are different experiments (see **Mode**); and a gap smaller than
+**Dispersion** is not a gap at all, it is noise that happened to land in that order.
+
+| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Δ strict |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | fast | 10 | 358.7 ms | 2.26% | 242.7 ms | 111.4 ms | 2.44 s | 31.2 ms | 12.22% | 70.7 KiB | 1.3 KiB | +1756 |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | fma | 10 | 366.5 ms | 1.77% | 252.9 ms | 107.5 ms | 2.57 s | 28.5 ms | 0.07% | 69.3 KiB | 1.3 KiB | -3574 |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | strict | 10 | 379.4 ms | 1.09% | 270.1 ms | 109.3 ms | 2.73 s | 30.1 ms | 1.81% | 69.3 KiB | 1.3 KiB | 0 |
+| [python](#mandelbrot-python-cpython) | n/a | cpython | strict | 10 | 10329.0 ms | 1.16% | 10129.9 ms | 175.9 ms | 100.79 s | 13.3 ms | 6.01% | n/a | n/a | 0 |
+| [python](#mandelbrot-python-cython-cpython) | cython | cpython | strict | 10 | 14539.3 ms | 0.38% | 14407.4 ms | 131.9 ms | 142.48 s | 919.8 ms | 0.72% | 147.4 KiB | 50.5 KiB | 0 |
+
+## How to read a row in thirty seconds
+
+1. Look at **Dispersion** first. If it is above roughly 2%, the machine was noisy
+   and you may not compare rows by a few percent. Nothing else on the row can be
+   more trustworthy than this column.
+2. Compare **Run min** between two rows *in the same mode*. That is the headline
+   number: how long the whole thing took, container startup included.
+3. If two rows have similar **Run min** but very different **Startup**, you have
+   found a runtime that pays a fixed tax before your code even begins — a JVM
+   booting, a Python interpreter loading. That tax does not shrink when the problem
+   gets bigger.
+4. **Δ strict** must be `0` on every `strict` row. It always is, by construction —
+   see the column reference.
+
+## The columns
+
+### Language
+
+The language the kernel is written in — and the *least* interesting third of a
+row's identity. Two rows in the same language can differ by an order of magnitude,
+and the reason is never the language.
+
+Keep that in mind before quoting a row as "language X vs language Y": what a row
+actually identifies is the tuple *(compiler, interpreter, compiler version, flags,
+target CPU)*. The language is along for the ride.
+
+The cell is a **link to the backend** it belongs to, at the bottom of this report:
+that is where the thing being measured describes itself, in its own words.
+
+### Compiler
+
+What turns the source into instructions ahead of the run — `gcc`, `cython`,
+`gc` — and the axis this project exists to compare.
+
+`n/a` means nothing is compiled ahead of time. That is a property of the backend,
+not a hole in the data.
+
+### Interpreter
+
+What executes the result — `cpython`, a JVM, nothing at all.
+
+A backend can have **both** a compiler and an interpreter, and that is not a
+curiosity: `python` / `cython` / `cpython` compiles the kernel to a native
+extension module that CPython then loads and calls. Its row and the pure-CPython
+row share a language and an interpreter, and differ only in the compiler. That is
+the clean experiment — the one place in this table where a single column changes.
+
+`n/a` means the backend ships machine code and runs it directly.
+
+### Mode
+
+Which floating-point rules the compiler was allowed to play by. **Every mode is
+compiled with `-O3`** — the axis here is FP semantics, never "optimized vs not
+optimized".
+
+Background, if `-ffast-math` has never bitten you yet: floating-point arithmetic is
+not associative. `(a + b) + c` and `a + (b + c)` can give different results, because
+each operation rounds. So a compiler that reorders your arithmetic is *changing the
+answer*, slightly. The three modes are three answers to "may it?".
+
+- **`strict`** — no. No reordering, no fusing (for gcc, literally
+  `-ffp-contract=off`). Every operation rounds exactly where the source says it
+  does.
+- **`fma`** — fusing allowed. `a*b + c` becomes one *fused multiply-add*
+  instruction, which rounds **once** instead of twice. Note the direction: this is
+  usually **more** accurate than `strict`, not less. It is not a sloppy mode, it is
+  a *less reproducible* one.
+- **`fast`** — `-ffast-math`. Fusing plus reordering plus a pile of assumptions
+  (no NaNs, no infinities, …). This is the mode where precision is genuinely traded
+  for speed.
+
+**Read `strict` first, and treat `fma` / `fast` as different experiments, not as
+faster versions of the same one.**
+
+Here is why `strict` carries the whole report. Our kernel only ever multiplies,
+adds, subtracts and compares. The IEEE 754 standard specifies all four operations
+down to the last bit, and both x86-64 (on SSE2 — not the ancient 80-bit x87 unit)
+and AArch64 implement them faithfully. So once no compiler is allowed to fuse or
+reorder, every compiler, every language and both CPU families are *obliged* to
+produce the identical sequence of doubles, hence the identical iteration count for
+every pixel, hence the identical checksum.
+
+That obligation is what makes the timings comparable at all. A build that
+reassociated the inner loop and a build that did not are no longer computing the
+same thing, and there is no honest way to compare their run times. Tying every
+compiler's hands the same way is the precondition for the whole table.
+
+It is also why some backends only ever appear in `strict`: an interpreter has one
+floating-point behaviour and no flag to change it, so an `fma` row would be the
+exact same run under a different name.
+
+### Runs
+
+How many measured samples went into this row. Warmup rounds are written to
+`samples.ndjson` and flagged there — never deleted — but they never reach these
+numbers.
+
+### Run min
+
+The shortest wall-clock time across those samples. *Wall-clock* means the time a
+stopwatch would show: the harness starts it before `docker run` and stops it after.
+It therefore includes container creation, runtime startup and the computation.
+
+**Why the minimum and not the average?** Because benchmark noise only goes one way.
+A neighbouring process can steal CPU and make a run slower; nothing can make a run
+faster than the machine is capable of. So the fastest sample is the one that was
+least disturbed, and it is your best estimate of the machine's real capability. An
+average would just be "the true value plus however much interference we happened to
+collect".
+
+### Dispersion
+
+How much the samples of this row disagreed with each other, as a percentage.
+Technically: the median absolute deviation, divided by the median. Robust by
+construction — a single clobbered round does not move it.
+
+**This is a verdict on the campaign, not an error bar on the result.** It does not
+say "the true time is 8.1 ms ± 3%". It says "this machine was calm enough / too
+noisy to be believed". Above roughly 2%, distrust even the minimum, and stop making
+percentage-level claims.
+
+It will not point you at an isolated spike either — being a median, it is designed
+to ignore one. For spikes, read `samples.ndjson`.
+
+Below three samples it prints `n/a (n=…)`: with two points the maths would return a
+number, and that number would claim a precision the campaign never had.
+
+### Compute min
+
+The shortest time the *program itself* reported for its hot loop, measured inside
+the container with a monotonic clock. It excludes everything that happened before
+`main` started.
+
+### Startup
+
+Everything that happened before the real work began: container creation, runtime
+initialisation, JIT warmup, interpreter boot.
+
+It is the smallest `wall − compute` gap *within a single run*, not **Run min**
+minus **Compute min**. Those two minima usually come from different rounds, so
+subtracting them would describe a run that never took place — and the arithmetic
+would not even close: on a noisy host the difference of the minima can exceed
+every gap actually observed.
+
+**This is a result, not overhead to subtract away.** It is where a JVM or a CPython
+pays its entry fee, and it is a real cost in any program that does not run for an
+hour. Comparing this column across runtimes is one of the more interesting things
+this table offers.
+
+### CPU time
+
+`user + system` time, read from the container's own accounting file
+(`/sys/fs/cgroup/cpu.stat` — the kernel's per-container bookkeeping), median over
+the measured samples. It is summed over all threads, so on a parallel run it
+legitimately exceeds the wall-clock: 4 threads busy for 1 second is 4 seconds of CPU
+time.
+
+Wall-clock tells you whether it was fast. CPU time tells you what it cost. A runtime
+whose scheduler busy-waits (spinning in a loop while waiting instead of sleeping)
+burns CPU without finishing a millisecond sooner — and the gap between these two
+columns is the only place you will ever see it.
+
+Rule of thumb: `CPU time / (Compute min × threads)` gives you a parallel
+efficiency. Close to 1 means the threads were genuinely working; well below means
+they were waiting on each other.
+
+Use **Compute min** here, never **Run min**. The threads do not exist during
+container creation and interpreter boot, but the stopwatch behind **Run min** is
+already running — divide by it and a perfectly parallel backend reports an
+efficiency well under 1, for no reason other than that Docker took its time.
+
+### Build min
+
+The shortest **compile time** of a timed recompile, from a clean tmpfs (an
+in-memory filesystem, so no disk cache advantage) and with no network access.
+
+This is the compiler's own elapsed time, reported from *inside* the container —
+the `docker run` wall-clock around it is discarded. Docker is here so that six
+toolchains need not be installed on the host; the less it shows up in a number,
+the better. Container creation costs on the order of a hundred milliseconds,
+which is *several times* what gcc spends on a single-file kernel. Timing the wall
+would charge every compiler the same large constant, flattering the slow ones and
+compressing the very ratios this column exists to show.
+
+There is no **Startup** analogue for this column, and that asymmetry is
+deliberate: a *runtime's* startup is a property of the backend and therefore a
+result, while a *container's* startup is an artefact of how we chose to isolate
+the build.
+
+Note the other subtlety: `docker build` is *preparation* and is never timed —
+timing it would mostly measure Docker's layer cache. This column comes from a
+`docker run` that recompiles the source inside the container and throws the
+result away.
+
+`n/a` means the backend has no build step at all.
+
+### Build disp.
+
+Same dispersion metric, over the build samples. Builds are slow, so we do fewer of
+them, so this column reads `n/a (n=…)` more often.
+
+### Binary
+
+The size of the shipped executable on disk.
+
+**Do not rank implementations with this column.** It measures linking policy, not
+code quality. gcc links libc dynamically and so looks tiny — but the code is still
+there, in `libc.so`, just outside the file we measured. Rust links its standard
+library statically. Go embeds an entire runtime plus type metadata. These are three
+different packaging decisions, not three levels of compiler skill.
+
+### `.text`
+
+The size of the `.text` section — the machine code itself, and nothing else. This
+*is* comparable across implementations.
+
+Read it as the **price of the optimization**: inlining, loop unrolling and
+vectorization all make the code bigger in exchange for making it faster. This column
+is the bigger; **Run min** is the faster.
+
+Calibrate your expectations: on a small kernel like this, `.text` is around a
+kilobyte, and the linker pads function entry points to alignment boundaries. A
+difference of a dozen instructions can therefore leave the number completely
+unchanged. When it does not move, the answer is in the disassembly, not here.
+
+`n/a` means the backend emits no artifact to measure. That is a property of the
+backend, not of the language — `native-image` produces a binary from the very same
+Java source that a JIT-only run does not.
+
+### Δ strict
+
+This run's checksum, minus the `strict` reference printed above the table.
+
+On a `strict` row it is always `0`. That looks like a tautology, and it is not.
+As the **Mode** section explains, strict semantics leave the compilers no room to
+disagree — so the checksum stops being a numerical property of the computation and
+becomes an **equality test between implementations**. It is the correctness gate for
+the entire harness. A divergence aborts the campaign on the spot, and is never
+waved through as "just rounding": it means two kernels are not computing the same
+thing. Something was mistyped, a condition was flipped, a compiler flag leaked in.
+
+A real example from this repo: rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in the
+Python kernel — a reordering that looks like a harmless tidy-up — flips two pixels
+out of twelve million and stops the run. That is precisely the class of bug that
+unit tests do not catch, and it is why the gate exists.
+
+It is a **necessary condition, not a sufficient one.** The gate can only notice a
+perturbation big enough to push some pixel across an iteration boundary. So a
+passing checksum means "no evidence of divergence at this resolution" — never
+"provably identical". Sensitivity grows with `--grid-size` and `--max-iter`, because
+both increase the number of pixels sitting right on a boundary.
+
+And the reference is not a universal constant. It is a property of *(algorithm, grid
+size, iteration ceiling, viewport)*, which is why each algorithm has its own, and why
+the value moves when you change the campaign's parameters. The invariant is
+*agreement between implementations*, never a particular number.
+
+In `fma` and `fast` we do not gate — those modes are *allowed* to diverge, that is
+their whole definition — so we report the delta instead. It is the precision you sold
+for the speed you gained, sitting right next to the timing instead of buried in a
+footnote. Read the two columns together, and mind the sign of the trade: an `fma` row
+is typically *more* accurate than the strict reference it differs from. We do not
+print the raw checksum of a relaxed row, because on its own it tells you nothing —
+the distance is the whole story.
+
+## What this report does not say
+
+- **Which language is fastest.** It compares compilers and runtimes. Rows that
+  differ in language are confounded by construction — different source, different
+  runtime, different standard library — and are only meaningful for orders of
+  magnitude.
+- **How this machine compares to a machine with a different CPU family.** Absolute
+  timings do not travel across instruction sets; only within-ISA ratios do.
+- **That a small difference is real**, unless **Dispersion** says it can be. When in
+  doubt, run more rounds.
+
+## Backends
+
+What each row of the tables above *is*, in the words of its own `bench.yaml` — the
+same file the harness read to build it. Every **Language** cell links here.
+
+A backend appears once, however many rows it has: the FP modes are three
+experiments on the same thing, and what follows describes the thing.
+
+### mandelbrot-c-gcc
+
+*mandelbrot* — language `c`, compiler `gcc`, interpreter `n/a`.
+
+The reference kernel. Hand-written C, compiled by gcc at -O3 against a pinned ISA baseline, with std threads and an atomic work queue. Every other row in this table is read against this one.
+
+> gcc links libc dynamically, so the Binary column looks small: the code is still there, in libc.so, outside the file we measured. Compare `.text`, never Binary.
+
+### mandelbrot-python-cpython
+
+*mandelbrot* — language `python`, compiler `n/a`, interpreter `cpython`.
+
+The kernel as written, executed by the CPython interpreter. Parallelism comes from multiprocessing with the fork start method, because the GIL serialises CPU-bound bytecode -- threading here would measure the GIL, not the machine.
+
+> Forking the pool is inside the timer on purpose: what a parallel runtime costs to start is part of what that runtime costs.
+
+### mandelbrot-python-cython-cpython
+
+*mandelbrot* — language `python`, compiler `cython`, interpreter `cpython`.
+
+The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to a C extension module instead of interpreted. Cython is the compiler here, exactly as gcc is for the C kernel -- not a library the kernel imports.
+
+> It is slower than the interpreter it compiles, and that is a result, not a bug. Without type annotations the generated C manipulates PyFloat objects through the C-API -- its hot loop holds 142 call instructions -- while CPython's specializing interpreter takes a fast path for float arithmetic.

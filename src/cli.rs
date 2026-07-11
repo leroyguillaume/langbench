@@ -6,46 +6,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Floating-point semantics the kernels are compiled under.
-///
-/// The axis is FP semantics, not "optimization on/off": every mode is `-O3`.
-/// See `METHODOLOGY.md#floating-point-modes`.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize, ValueEnum,
-)]
-#[serde(rename_all = "lowercase")]
-#[schemars(rename_all = "lowercase")]
-pub enum FpMode {
-    /// `-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.
-    Strict,
-    /// FMA contraction allowed: bit-different, but more accurate.
-    Fma,
-    /// `-ffast-math`: reassociation allowed, precision sold for speed.
-    Fast,
-}
-
-impl FpMode {
-    pub const ALL: [Self; 3] = [Self::Strict, Self::Fma, Self::Fast];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Strict => "strict",
-            Self::Fma => "fma",
-            Self::Fast => "fast",
-        }
-    }
-
-    /// Parse a mode as a `bench.yaml` spells it.
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.as_str() == value)
-    }
-}
-
-impl fmt::Display for FpMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+use crate::mode::FpMode;
 
 /// A CPU architecture a backend can be built and measured on.
 ///
@@ -345,13 +306,5 @@ mod tests {
     #[test]
     fn parse_march_accepts_a_pinned_baseline() {
         assert_eq!(parse_march("x86-64-v3").unwrap(), "x86-64-v3");
-    }
-
-    #[test]
-    fn fp_mode_display_matches_serialization() {
-        for mode in FpMode::ALL {
-            let json = serde_json::to_string(&mode).unwrap();
-            assert_eq!(json, format!("\"{mode}\""));
-        }
     }
 }

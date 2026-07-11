@@ -11,10 +11,11 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use tracing::{info, warn};
 
-use crate::cli::{Arch, FpMode, RunArgs};
+use crate::cli::{Arch, RunArgs};
 use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
+use crate::mode::FpMode;
 use crate::sample::{Campaign, Phase, Sample, SampleWriter};
 use crate::shutdown;
 

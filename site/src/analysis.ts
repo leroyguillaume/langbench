@@ -1,0 +1,160 @@
+// The boundary between the harness and the browser.
+//
+// Two rules govern this file, and both are load-bearing:
+//
+// The field names are `snake_case` throughout, because they are the harness's
+// own — `samples.ndjson` spells them that way, and so does the Rust struct this
+// object is deserialized from. One vocabulary, no translation table.
+//
+// 1. **The site never computes a statistic.** Min-of-N, the buckets, the
+//    definition of startup — all of it comes out of `src/analysis.rs`, compiled
+//    to WebAssembly. A TypeScript re-implementation would be a second definition
+//    of what `langbench` measures, and the two would drift the first time one of
+//    them was "fixed". What is left here is formatting, sorting and drawing.
+//
+// 2. **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
+//    integer and a JavaScript number is a double: `JSON.parse` rounds every
+//    integer past 2^53 without a word. So `samples.ndjson` is fetched as *text*
+//    and handed straight to the WASM, which parses it with `serde_json` and hands
+//    back checksums as strings. The site displays them and compares them; it
+//    never does arithmetic on them.
+
+import { z } from "zod";
+import { logger } from "./logger";
+import init, { analyze as analyzeWasm } from "./wasm/langbench.js";
+
+/** Min-of-N and its dispersion, as `src/stats.rs` defines them. */
+export const summarySchema = z.object({
+  n: z.number().int(),
+  min: z.number(),
+  median: z.number(),
+  /** Median absolute deviation, in the samples' own unit. */
+  mad: z.number(),
+  /** MAD as a percentage of the median. Past ~2%, percentage-level claims die. */
+  mad_pct: z.number(),
+});
+
+export const fpModeSchema = z.enum(["strict", "fma", "fast"]);
+
+/**
+ * A checksum, as it crosses the wire: a string, always. See the header.
+ */
+const checksumSchema = z.string().nullable();
+
+export const aggregateSchema = z.object({
+  algo: z.string(),
+  backend: z.string(),
+  backend_id: z.string(),
+  language: z.string(),
+  /** `null` for a backend that compiles nothing ahead of the run — a published fact. */
+  compiler: z.string().nullable(),
+  /** `null` for a backend that ships machine code and no runtime. */
+  interpreter: z.string().nullable(),
+  mode: fpModeSchema,
+  run_wall: summarySchema.nullable(),
+  run_elapsed: summarySchema.nullable(),
+  run_startup: summarySchema.nullable(),
+  run_cpu_usec: summarySchema.nullable(),
+  build_elapsed: summarySchema.nullable(),
+  binary_bytes: z.number().nullable(),
+  binary_stripped_bytes: z.number().nullable(),
+  text_bytes: z.number().nullable(),
+  checksum: checksumSchema,
+  checksum_delta: checksumSchema,
+});
+
+export const backendSchema = z.object({
+  id: z.string(),
+  algo: z.string(),
+  backend: z.string(),
+  language: z.string(),
+  compiler: z.string().nullable(),
+  interpreter: z.string().nullable(),
+  description: z.string(),
+  comments: z.string().nullable(),
+});
+
+export const campaignSchema = z.object({
+  langbench_version: z.string(),
+  timestamp: z.string(),
+  cpu: z.number().int(),
+  grid_size: z.number().int(),
+  max_iter: z.number().int(),
+  rounds: z.number().int(),
+  build_rounds: z.number().int(),
+  warmup_rounds: z.number().int(),
+  march: z.string(),
+  modes: z.array(z.string()),
+});
+
+export const analysisSchema = z.object({
+  campaign: campaignSchema,
+  options: z.object({ include_warmup: z.boolean() }),
+  machine_fields: z.array(z.object({ label: z.string(), value: z.string() })),
+  /** Every reason the host was a poor benchmark target. It travels with the numbers. */
+  warnings: z.array(z.string()),
+  algos: z.array(
+    z.object({
+      algo: z.string(),
+      strict_checksum: checksumSchema,
+      aggregates: z.array(aggregateSchema),
+    }),
+  ),
+  backends: z.array(backendSchema),
+});
+
+export type Summary = z.infer<typeof summarySchema>;
+export type FpMode = z.infer<typeof fpModeSchema>;
+export type Aggregate = z.infer<typeof aggregateSchema>;
+export type Backend = z.infer<typeof backendSchema>;
+export type Campaign = z.infer<typeof campaignSchema>;
+export type Analysis = z.infer<typeof analysisSchema>;
+export type AlgoAnalysis = Analysis["algos"][number];
+
+/**
+ * Every knob the site has. `snake_case` because it crosses into Rust: this object
+ * is deserialized straight into `analysis::Options`.
+ */
+export interface Options {
+  /** Warmup rounds are always recorded. This decides whether they are aggregated. */
+  include_warmup: boolean;
+}
+
+let ready: Promise<void> | undefined;
+
+/** Instantiate the WebAssembly module once, however many callers ask for it. */
+function load(): Promise<void> {
+  if (ready === undefined) {
+    ready = init().then(() => {
+      logger.debug("wasm.ready");
+    });
+  }
+  return ready;
+}
+
+/**
+ * Fetch a campaign and summarize it — with the harness's own arithmetic.
+ *
+ * `campaignUrl` is served as text and never parsed by JavaScript. See the header.
+ */
+export async function fetchAnalysis(campaignUrl: string, options: Options): Promise<Analysis> {
+  await load();
+
+  const response = await fetch(campaignUrl);
+  if (!response.ok) {
+    throw new Error(`fetching the campaign: ${response.status} ${response.statusText}`);
+  }
+  // `.text()`, deliberately. `.json()` would round every checksum past 2^53.
+  const ndjson = await response.text();
+  logger.debug("campaign.fetched", { url: campaignUrl, bytes: ndjson.length });
+
+  const raw: unknown = analyzeWasm(ndjson, options);
+  const analysis = analysisSchema.parse(raw);
+  logger.debug("campaign.analyzed", {
+    algos: analysis.algos.length,
+    backends: analysis.backends.length,
+    warnings: analysis.warnings.length,
+    include_warmup: options.include_warmup,
+  });
+  return analysis;
+}

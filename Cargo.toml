@@ -8,18 +8,41 @@ repository = "https://github.com/leroyguillaume/langbench"
 license = "MIT"
 readme = "README.md"
 
+[lib]
+# `cdylib` for the website's WebAssembly module, `rlib` for the binary and the
+# tests. The site does not re-implement the statistics; it calls these.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "langbench"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# Everything that touches the machine: discovery, Docker, the campaign, the
+# Markdown renderer.
+cli = ["dep:chrono", "dep:clap", "dep:liquid", "dep:signal-hook", "dep:tracing-subscriber"]
+# The `wasm-bindgen` boundary the website calls. Never built for the host.
+wasm = ["dep:console_error_panic_hook", "dep:js-sys", "dep:serde-wasm-bindgen", "dep:wasm-bindgen"]
+
 [dependencies]
 anyhow = "1.0.103"
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "std"] }
-clap = { version = "4.6.1", features = ["derive", "env"] }
-liquid = "0.26.11"
 schemars = "1.2.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 serde_norway = "0.9.42"
-signal-hook = "0.4.4"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "std"], optional = true }
+clap = { version = "4.6.1", features = ["derive", "env"], optional = true }
+liquid = { version = "0.26.11", optional = true }
+signal-hook = { version = "0.4.4", optional = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
+
+console_error_panic_hook = { version = "0.1.7", optional = true }
+js-sys = { version = "0.3.77", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
+wasm-bindgen = { version = "0.2.100", optional = true }
 
 [dev-dependencies]
 mockall = "0.15.0"

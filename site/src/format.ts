@@ -1,0 +1,71 @@
+// Units belong to the value, not to the template: `n/a ms` is nonsense.
+//
+// The same rules as `src/report.rs` formats the Markdown table with — the numbers
+// arrive already computed, and all that is left is how to spell them.
+
+import type { Summary } from "./analysis";
+
+export const NOT_AVAILABLE = "n/a";
+
+export function milliseconds(nanoseconds: number | null | undefined): string {
+  if (nanoseconds === null || nanoseconds === undefined) {
+    return NOT_AVAILABLE;
+  }
+  return `${(nanoseconds / 1e6).toFixed(1)} ms`;
+}
+
+export function seconds(microseconds: number | null | undefined): string {
+  if (microseconds === null || microseconds === undefined) {
+    return NOT_AVAILABLE;
+  }
+  return `${(microseconds / 1e6).toFixed(2)} s`;
+}
+
+export function bytes(value: number | null): string {
+  if (value === null) {
+    return NOT_AVAILABLE;
+  }
+  return value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KiB`;
+}
+
+/**
+ * Below three samples the median absolute deviation is structurally zero — the
+ * lower median of `[0, d]` is `0` — so reporting it would claim a precision the
+ * campaign never had.
+ */
+export function dispersion(summary: Summary | null): string {
+  if (summary === null) {
+    return NOT_AVAILABLE;
+  }
+  return summary.n >= 3 ? `${summary.mad_pct.toFixed(2)}%` : `${NOT_AVAILABLE} (n=${summary.n})`;
+}
+
+/** A relaxed mode's distance from the strict reference, as an opaque token. */
+export function delta(value: string | null): string {
+  if (value === null) {
+    return NOT_AVAILABLE;
+  }
+  // A string, and it stays one: the checksum is 64-bit and JavaScript's `+`
+  // would round it. `startsWith("-")` is all the arithmetic we need.
+  return value === "0" || value.startsWith("-") ? value : `+${value}`;
+}
+
+/** An absent half of the triple is a fact about the backend, so it is rendered. */
+export function optional(value: string | null): string {
+  return value ?? NOT_AVAILABLE;
+}
+
+/**
+ * A ratio against the fastest backend of the same table: `1.00×`, `13.4×`.
+ *
+ * The only cross-backend number the site publishes. Absolute timings are a
+ * property of the machine; a ratio within one campaign, on one ISA, is a
+ * property of the backends. See `METHODOLOGY.md#the-isa-rule`.
+ */
+export function ratio(value: number, reference: number): string {
+  if (reference === 0) {
+    return NOT_AVAILABLE;
+  }
+  const times = value / reference;
+  return times < 10 ? `${times.toFixed(2)}×` : `${times.toFixed(1)}×`;
+}

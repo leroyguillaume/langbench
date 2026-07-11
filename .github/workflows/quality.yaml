@@ -1,0 +1,70 @@
+name: quality
+
+# The single gate. Never path-filtered: it runs on everything, whatever changed.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The `language: system` hooks shell out to real binaries -- `cargo`,
+      # `npm`, `wasm-pack`. Every one of them has to be here before `pre-commit`
+      # runs, or the hook that needs it fails on a missing command rather than on
+      # the code it was meant to check.
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+
+      - name: set up wasm-pack
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+        with:
+          version: v0.13.1
+
+      - name: set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: install the site's dependencies
+        run: npm ci
+        working-directory: site
+
+      - name: set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: install pre-commit
+        run: pip install pre-commit
+
+      # Every hook, on every file. `cargo test` and the site's `vitest` are hooks,
+      # so the test suite runs here too -- the gate is not split.
+      - name: run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      # The one thing no hook covers: the library still has to compile *without*
+      # the machine half of it. A `std::process::Command` that creeps into
+      # `analysis.rs` breaks the website and nothing else would say so.
+      - name: check the WebAssembly build
+        run: cargo check --target wasm32-unknown-unknown --no-default-features --features wasm

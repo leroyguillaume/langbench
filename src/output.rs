@@ -61,8 +61,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::cli::{FpMode, RenderArgs};
+    use crate::cli::RenderArgs;
     use crate::machine::Machine;
+    use crate::mode::FpMode;
     use crate::sample::{Campaign, Phase, Sample, SampleWriter};
 
     /// A one-sample campaign on disk, as `run` would have left it.

@@ -20,7 +20,8 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use crate::cli::{Arch, FpMode};
+use crate::cli::Arch;
+use crate::mode::FpMode;
 use crate::sample::backend_slug;
 
 /// The file that declares an implementation. Its presence is the discovery

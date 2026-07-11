@@ -13,8 +13,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::FpMode;
 use crate::machine::Machine;
+use crate::mode::FpMode;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -186,18 +186,26 @@ pub struct Recording {
 pub fn load(path: &Path) -> Result<Recording> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    parse(&raw).with_context(|| format!("reading {}", path.display()))
+}
+
+/// The same campaign, from bytes rather than from a path.
+///
+/// The website has no filesystem: it fetches `samples.ndjson` over HTTP and
+/// parses it *here*, in Rust, precisely so that a `JSON.parse` in JavaScript
+/// never gets to round a 64-bit checksum to the nearest double. See
+/// `crate::wasm`.
+pub fn parse(raw: &str) -> Result<Recording> {
     let mut lines = raw
         .lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty());
 
-    let (_, first) = lines
-        .next()
-        .with_context(|| format!("{} is empty", path.display()))?;
-    let OwnedRecord::Header { machine, campaign } = parse_record(first, 1, path)? else {
+    let (_, first) = lines.next().context("the campaign is empty")?;
+    let OwnedRecord::Header { machine, campaign } = parse_record(first, 1)? else {
         anyhow::bail!(
-            "{} does not start with a header record; it was not written by `langbench run`",
-            path.display(),
+            "the campaign does not start with a header record; it was not written by \
+             `langbench run`",
         );
     };
 
@@ -207,11 +215,10 @@ pub fn load(path: &Path) -> Result<Recording> {
         // Only the *last* line can be a torn write: hold each one back until the
         // next arrives, so a truncation in the middle is still an error.
         if let Some((index, line)) = pending.take() {
-            match parse_record(line, index + 1, path)? {
+            match parse_record(line, index + 1)? {
                 OwnedRecord::Sample(sample) => samples.push(sample),
                 OwnedRecord::Header { .. } => anyhow::bail!(
-                    "{}:{}: a second header record; two campaigns were appended to one file",
-                    path.display(),
+                    "line {}: a second header record; two campaigns were appended to one file",
                     index + 1,
                 ),
             }
@@ -219,17 +226,15 @@ pub fn load(path: &Path) -> Result<Recording> {
         pending = Some((index, line));
     }
     if let Some((index, line)) = pending {
-        match parse_record(line, index + 1, path) {
+        match parse_record(line, index + 1) {
             Ok(OwnedRecord::Sample(sample)) => samples.push(sample),
             Ok(OwnedRecord::Header { .. }) => anyhow::bail!(
-                "{}:{}: a second header record; two campaigns were appended to one file",
-                path.display(),
+                "line {}: a second header record; two campaigns were appended to one file",
                 index + 1,
             ),
             Err(error) => tracing::warn!(
-                "{}: the last line is truncated and was dropped ({error:#}). The campaign was \
-                 most likely interrupted mid-write; every earlier sample is intact.",
-                path.display(),
+                "the last line is truncated and was dropped ({error:#}). The campaign was most \
+                 likely interrupted mid-write; every earlier sample is intact.",
             ),
         }
     }
@@ -241,8 +246,8 @@ pub fn load(path: &Path) -> Result<Recording> {
     })
 }
 
-fn parse_record(line: &str, number: usize, path: &Path) -> Result<OwnedRecord> {
-    serde_json::from_str(line).with_context(|| format!("{}:{number}", path.display()))
+fn parse_record(line: &str, number: usize) -> Result<OwnedRecord> {
+    serde_json::from_str(line).with_context(|| format!("line {number}"))
 }
 
 /// Columns of the CSV rendering, in the order `Sample` declares them.
@@ -567,8 +572,11 @@ mod tests {
             serde_json::to_string(&Record::Sample(&sample(Phase::Run, Some(1)))).unwrap();
         std::fs::write(&path, format!("{headless}\n")).unwrap();
 
-        let error = load(&path).unwrap_err();
-        assert!(error.to_string().contains("header"), "{error}");
+        // `{:#}` walks the chain: `load` names the file, `parse` says what is
+        // wrong with it.
+        let error = format!("{:#}", load(&path).unwrap_err());
+        assert!(error.contains("header"), "{error}");
+        assert!(error.contains("samples.ndjson"), "{error}");
     }
 
     #[test]

@@ -109,6 +109,32 @@ subject is **compiler and runtime backends**, not languages.
   ([why](METHODOLOGY.md#the-isa-rule))
 - Never run a benchmark under QEMU / `binfmt` emulation.
 
+**The website** (`site/`)
+
+- The site is a **third rendering**, beside `csv` and `md`, and obeys the same
+  rule: a pure function of `samples.ndjson`. It measures nothing, and CI never
+  measures anything either — a shared, virtualised, frequency-scaled runner is the
+  worst benchmark target money can rent.
+- **The site computes no statistic.** Min-of-N, the buckets, the definition of
+  startup all live in `src/analysis.rs`, compiled to WebAssembly (`src/wasm.rs`)
+  and called from the browser. `langbench md` calls the same function. A
+  re-implementation in TypeScript would be a second definition of what this
+  project measures — the same drift `bench.schema.json` is generated to prevent.
+  TypeScript sorts, formats and draws; it never does arithmetic on a sample.
+- **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
+  integer, a JavaScript number is a double, and `JSON.parse` silently rounds past
+  2^53. `samples.ndjson` is fetched as *text* and parsed in Rust; checksums cross
+  the wire as **strings** and are never added, only displayed and compared.
+- The site's data file **is** `samples.ndjson` at the repo root, byte for byte. No export format,
+  no intermediate file: the raw samples are the only thing that cannot be
+  recomputed, so they are what gets published.
+- `src/lib.rs` carves the crate in two: the `cli` feature owns everything that
+  touches the machine (Docker, discovery, the campaign, Liquid); what is left is
+  data and arithmetic, and it compiles to `wasm32-unknown-unknown`. Nothing that
+  spawns a process belongs in `analysis`, `sample`, `stats` or `mode`.
+- The wire is `snake_case` throughout — the sample's own vocabulary, from the
+  NDJSON to the CSV to the browser. One vocabulary, no translation table.
+
 ## Rust specifics
 
 - **No `tokio`, no async.** The harness is deliberately sequential — running two

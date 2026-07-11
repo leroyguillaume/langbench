@@ -1,0 +1,19 @@
+version: 2
+
+# The workflows pin every action by SHA, and a SHA does not tell you it has gone
+# stale. This is what bumps them -- and the tag comment beside them.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly

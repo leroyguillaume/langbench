@@ -331,9 +331,11 @@ awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
-benchmark target. It renders `templates/report.md.liquid`, embedded in the binary;
-`--template` swaps in your own [Liquid][liquid] template, which receives exactly
-the same variables:
+benchmark target. **The current one is [`report.md`](report.md)**, at the repo
+root — rewritten by the [`bench`](.github/workflows/bench.yaml) workflow every
+time a campaign runs, beside the samples it was rendered from. It renders
+`templates/report.md.liquid`, embedded in the binary; `--template` swaps in your
+own [Liquid][liquid] template, which receives exactly the same variables:
 
 ```sh
 cp templates/report.md.liquid mine.liquid   # the built-in one, as a starting point
@@ -341,6 +343,90 @@ langbench md --template mine.liquid         # renders into report.md
 ```
 
 [liquid]: https://shopify.github.io/liquid/
+
+## The website
+
+The third rendering. `site/` is a static page — sortable table, charts, filters
+that live in the URL — published to GitHub Pages by
+[`.github/workflows/pages.yaml`](.github/workflows/pages.yaml).
+
+It is a rendering like the other two, which means two things it would have been
+much easier not to do:
+
+**The site computes no statistic of its own.** Min-of-N, the buckets, the
+definition of startup — all of it is `src/analysis.rs`, the same code
+`langbench md` calls, compiled to WebAssembly and called from the browser. A
+second implementation of min-of-N in TypeScript would be a second definition of
+what this project measures, and the two would drift the first time one of them
+was "fixed". The site sorts, formats and draws; it does not do arithmetic on the
+samples.
+
+**The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
+integer and a JavaScript number is a double: `JSON.parse` rounds every integer
+past 2^53 without a word, and the checksum is the correctness gate of the whole
+harness. So `samples.ndjson` is fetched as *text*, parsed in Rust by `serde_json`,
+and the checksums come back as strings. The page displays them and compares them;
+it never adds them.
+
+The data it publishes is the campaign's `samples.ndjson`, byte for byte — there
+is no export format and no intermediate file. The campaign it publishes is
+[`samples.ndjson`](samples.ndjson) at the repo root, which is where `langbench
+run` writes by default:
+
+```sh
+langbench run
+```
+
+Locally:
+
+```sh
+cd site
+npm install
+npm run dev        # compiles the crate to WASM, copies the campaign in, serves it
+npm run build      # into site/dist/
+npm test           # runs the real WASM module over the real campaign
+```
+
+`npm run dev` and `npm run build` both invoke `wasm-pack`, so a change to
+`src/analysis.rs` reaches the page without a second step. Requirements beyond the
+harness's own: Node 22+, and
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+```
+
+## Continuous integration
+
+Two workflows, and they do different jobs.
+
+**[`quality`](.github/workflows/quality.yaml)** — every push, every pull request,
+no path filter. It runs `pre-commit run --all-files`, which is where the whole
+gate lives: `cargo fmt`, `clippy`, `cargo test`, the generated `bench.schema.json`,
+every `bench.yaml`, and the site's `biome`, `tsc` and `vitest`. Plus one check no
+hook covers — that the library still compiles to `wasm32-unknown-unknown` without
+the half of it that talks to Docker.
+
+**[`bench`](.github/workflows/bench.yaml)** — runs a campaign, commits
+[`samples.ndjson`](samples.ndjson) **and** [`report.md`](report.md) back to `main`, then
+builds the site from those very samples and deploys it to GitHub Pages. Both
+files, never one without the other: the samples are the only artefact that cannot
+be recomputed, and committing a report without its evidence publishes a conclusion
+nobody can check.
+
+**`workflow_dispatch` only** — it takes `grid_size`, `max_iter` and `rounds` as
+inputs. A campaign is a deliberate act, not a side effect of a push: it costs
+minutes of runner time and it rewrites the two files this repository publishes,
+which on every commit would mean churning them for reasons that have nothing to do
+with the backends being measured. Which also means a change to `site/` alone
+reaches the page only when a campaign is next dispatched.
+
+**A number this workflow produces is indicative, not publishable.** A GitHub
+runner is shared, virtualised and frequency-scaled — the worst benchmark target
+money can rent. It says so itself: the report and the page both lead with every
+reason the host was a poor target. For a number worth trusting, run a campaign on
+a real machine and commit its `samples.ndjson`; the report and the site are pure
+functions of that file and will render it unchanged.
 
 ## Adding an implementation
 

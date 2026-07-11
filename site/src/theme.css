@@ -1,0 +1,513 @@
+/*
+ * Tokens first, components after. Light is the base; dark is *selected*, not an
+ * automatic inversion — the categorical hues are stepped for the dark surface,
+ * they are not the light ones flipped.
+ *
+ * The palette is the validated reference instance: worst adjacent CVD ΔE 24.2 in
+ * light, 10.3 in dark. Three modes means three series, which sits in the band
+ * where color alone is comfortable — and every bar is direct-labeled anyway.
+ */
+
+:root {
+  --surface-0: #f5f5f3;
+  --surface-1: #fcfcfb;
+  --surface-2: #ececea;
+  --border: #dcdcd8;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #79776f;
+
+  /* Categorical slots, in the order the validator picked. strict / fma / fast. */
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #eda100;
+  /* Compute / startup, for the wall-clock decomposition. */
+  --series-4: #4a3aa7;
+  --series-5: #e87ba4;
+
+  --sequential: #2a78d6;
+  --warning-bg: #fdf3e2;
+  --warning-border: #eda100;
+  --warning-text: #6b4a00;
+
+  --radius: 8px;
+  --bar-radius: 4px;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #242423;
+    --border: #35352f;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #94938a;
+
+    --series-1: #3987e5;
+    --series-2: #199e70;
+    --series-3: #c98500;
+    --series-4: #9085e9;
+    --series-5: #d55181;
+
+    --sequential: #3987e5;
+    --warning-bg: #2b2109;
+    --warning-border: #c98500;
+    --warning-text: #f0d9a4;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--series-1);
+}
+
+/* Mobile-first: one column, everything stacked. Wider viewports add columns. */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 2rem;
+  }
+}
+
+.masthead h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.masthead p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card > h2 {
+  font-size: 1rem;
+  margin: 0 0 0.25rem;
+}
+
+.card > h2 + p {
+  margin: 0 0 1rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* The host's warnings ride with the numbers. A chart read without them is a
+ * chart read wrong, so they are not collapsible and not dismissible. */
+.warnings {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  color: var(--warning-text);
+}
+
+.warnings h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.warnings ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.warnings li + li {
+  margin-top: 0.35rem;
+}
+
+/* Stat tiles: the headline numbers, before any chart. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .tiles {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+.tile-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.tile-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 0.15rem;
+}
+
+.tile-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Filters: one row above the charts, wrapping on a phone. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filter > span {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.filter select,
+.filter input[type="search"] {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  min-width: 10rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  padding-bottom: 0.35rem;
+}
+
+/* Charts. Horizontal bars: the labels are long, and long labels belong on the
+ * y-axis where they read horizontally. */
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chart-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+@media (min-width: 640px) {
+  .chart-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+  }
+}
+
+.chart-label {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 640px) {
+  .chart-label {
+    width: 14rem;
+    flex: none;
+    text-align: right;
+  }
+}
+
+.chart-track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* The surface gap between adjacent bars of a group: 2px of surface, never a
+   * stroke. */
+  gap: 2px;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chart-stack {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  /* Same 2px gap between the segments of a stack. */
+  gap: 2px;
+}
+
+.bar {
+  height: 14px;
+  border-radius: 0 var(--bar-radius) var(--bar-radius) 0;
+  min-width: 2px;
+  transition: filter 120ms ease;
+}
+
+.bar:hover,
+.bar:focus-visible {
+  filter: brightness(1.12);
+  outline: none;
+}
+
+/* A stack's interior segments are square where they meet; only the last one has
+ * a data-end. The first is square at the baseline. */
+.chart-stack .bar {
+  border-radius: 0;
+}
+
+.chart-stack .bar:last-child {
+  border-radius: 0 var(--bar-radius) var(--bar-radius) 0;
+}
+
+.bar-value {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex: none;
+}
+
+.bar-empty {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* The table. Scrolls inside its own box; the page never scrolls sideways. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+th,
+td {
+  text-align: right;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child,
+th.text,
+td.text {
+  text-align: left;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  user-select: none;
+}
+
+thead th:hover {
+  color: var(--text-primary);
+}
+
+tbody tr:hover {
+  background: var(--surface-2);
+}
+
+td.numeric {
+  font-family: var(--mono);
+}
+
+.sort-caret {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.mode-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+/* Identity is never color alone: the dot rides *beside* the word. */
+.mode-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* A dispersion the campaign cannot defend. Not colour alone — the row says so. */
+.suspect {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+}
+
+.backends {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .backends {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.backend h3 {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}
+
+.backend p {
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.backend dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.backend dt {
+  color: var(--text-muted);
+}
+
+.backend dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+.machine {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 1rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.machine dt {
+  color: var(--text-muted);
+}
+
+.machine dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  background: var(--text-primary);
+  color: var(--surface-1);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  white-space: pre;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.footer {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 2rem;
+}
+
+.status {
+  padding: 2rem;
+  color: var(--text-secondary);
+}
