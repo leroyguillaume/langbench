@@ -440,6 +440,22 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 ```
 
+Two environment variables move the paths, and neither changes what is published:
+
+| Variable | Default | What it moves |
+| --- | --- | --- |
+| `SAMPLES_DIR` | `samples` | Where the campaigns are **read from**. Relative to the repository root, or absolute. |
+| `BASE_PATH` | `/` | The URL prefix the built site is **served under** — `/langbench/` for a GitHub Pages project site. |
+
+```sh
+SAMPLES_DIR=/mnt/bench/campaigns npm run dev
+SAMPLES_DIR=../scratch/samples BASE_PATH=/langbench/ npm run build
+```
+
+Whatever `SAMPLES_DIR` points at, the `.ndjson` files under it are copied into
+`public/data/` byte for byte and indexed in `campaigns.json`; the page still reads
+each campaign's ISA out of its own machine record, never out of a path.
+
 ## Continuous integration
 
 Two workflows, and they do different jobs.
