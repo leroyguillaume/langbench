@@ -9,7 +9,7 @@
     "build": "npm run wasm && npm run data && tsc --noEmit && vite build",
     "preview": "vite preview",
     "check": "biome check --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run wasm && tsc --noEmit",
     "test": "npm run wasm && npm run data && vitest run"
   },
   "dependencies": {

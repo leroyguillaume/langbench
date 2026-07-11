@@ -17,3 +17,16 @@ updates:
     directory: /site
     schedule:
       interval: weekly
+    groups:
+      # Vite, its plugins and Vitest are one peer-dependency graph: Vitest builds
+      # on Vite, and `@vitejs/plugin-react` 6 requires `vite` 8. Bumped one
+      # package per pull request, a major lands on a peer conflict and `npm ci`
+      # refuses to install -- and no merge order rescues it, because the PR that
+      # would satisfy the peer is a different PR. They move together or not at
+      # all.
+      vite:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - vitest
+          - "@vitest/*"
