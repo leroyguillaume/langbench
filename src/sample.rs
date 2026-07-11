@@ -1,7 +1,10 @@
 //! Raw samples, one NDJSON line per measured invocation.
 //!
-//! Aggregates are recomputed at report time; a discarded sample is gone
-//! forever. See `METHODOLOGY.md#sampling`.
+//! `samples.ndjson` is the **only** thing a campaign writes, and it is the only
+//! thing that cannot be recomputed. Every other artifact — the CSV, the report —
+//! is a rendering of these lines, produced after the fact by `langbench csv` and
+//! `langbench md`. Aggregates never replace the samples; a discarded sample is
+//! gone forever. See `METHODOLOGY.md#sampling`.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -13,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli::FpMode;
 use crate::machine::Machine;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
     /// A timed recompile from a clean tree, artifacts discarded.
@@ -52,7 +55,7 @@ pub struct ContainerRecord {
 }
 
 /// One measured invocation, as written to `samples.ndjson`.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Sample {
     pub algo: String,
     pub implementation: String,
@@ -90,7 +93,7 @@ impl Sample {
 }
 
 /// Parameters of a campaign, recorded once in the header.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Campaign {
     pub langbench_version: String,
     pub timestamp: String,
@@ -104,6 +107,7 @@ pub struct Campaign {
     pub modes: Vec<String>,
 }
 
+/// A line of `samples.ndjson`, as written.
 #[derive(Serialize)]
 #[serde(tag = "record", rename_all = "lowercase")]
 enum Record<'a> {
@@ -114,7 +118,100 @@ enum Record<'a> {
     Sample(&'a Sample),
 }
 
-/// Columns of `samples.csv`, in the order `Sample` declares them.
+/// The same line, as read back. Owned, because nothing borrows the file.
+///
+/// The machine is boxed: it dwarfs a sample, and every line but the first is a
+/// sample.
+#[derive(Deserialize)]
+#[serde(tag = "record", rename_all = "lowercase")]
+enum OwnedRecord {
+    Header {
+        machine: Box<Machine>,
+        campaign: Campaign,
+    },
+    Sample(Sample),
+}
+
+/// Everything one campaign recorded: its context, and every measured invocation.
+///
+/// This is what `langbench csv` and `langbench md` consume. Both are pure
+/// functions of this value, which is why the campaign never renders anything
+/// itself.
+#[derive(Debug)]
+pub struct Recording {
+    pub machine: Machine,
+    pub campaign: Campaign,
+    pub samples: Vec<Sample>,
+}
+
+/// Read back a `samples.ndjson` written by a campaign.
+///
+/// A campaign killed mid-round leaves a truncated last line; that is a fact
+/// about the run, not a reason to lose the samples that precede it, so the
+/// final line is dropped with a warning rather than failing the command.
+pub fn load(path: &Path) -> Result<Recording> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut lines = raw
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty());
+
+    let (_, first) = lines
+        .next()
+        .with_context(|| format!("{} is empty", path.display()))?;
+    let OwnedRecord::Header { machine, campaign } = parse_record(first, 1, path)? else {
+        anyhow::bail!(
+            "{} does not start with a header record; it was not written by `langbench run`",
+            path.display(),
+        );
+    };
+
+    let mut samples = Vec::new();
+    let mut pending: Option<(usize, &str)> = None;
+    for (index, line) in lines {
+        // Only the *last* line can be a torn write: hold each one back until the
+        // next arrives, so a truncation in the middle is still an error.
+        if let Some((index, line)) = pending.take() {
+            match parse_record(line, index + 1, path)? {
+                OwnedRecord::Sample(sample) => samples.push(sample),
+                OwnedRecord::Header { .. } => anyhow::bail!(
+                    "{}:{}: a second header record; two campaigns were appended to one file",
+                    path.display(),
+                    index + 1,
+                ),
+            }
+        }
+        pending = Some((index, line));
+    }
+    if let Some((index, line)) = pending {
+        match parse_record(line, index + 1, path) {
+            Ok(OwnedRecord::Sample(sample)) => samples.push(sample),
+            Ok(OwnedRecord::Header { .. }) => anyhow::bail!(
+                "{}:{}: a second header record; two campaigns were appended to one file",
+                path.display(),
+                index + 1,
+            ),
+            Err(error) => tracing::warn!(
+                "{}: the last line is truncated and was dropped ({error:#}). The campaign was \
+                 most likely interrupted mid-write; every earlier sample is intact.",
+                path.display(),
+            ),
+        }
+    }
+
+    Ok(Recording {
+        machine: *machine,
+        campaign,
+        samples,
+    })
+}
+
+fn parse_record(line: &str, number: usize, path: &Path) -> Result<OwnedRecord> {
+    serde_json::from_str(line).with_context(|| format!("{}:{number}", path.display()))
+}
+
+/// Columns of the CSV rendering, in the order `Sample` declares them.
 const CSV_COLUMNS: &[&str] = &[
     "algo",
     "implementation",
@@ -134,6 +231,22 @@ const CSV_COLUMNS: &[&str] = &[
     "binary_stripped_bytes",
     "text_bytes",
 ];
+
+/// The flat view of the samples a spreadsheet or a dataframe can read.
+///
+/// The header record has no room here — a CSV has one shape, and the machine and
+/// campaign context does not fit it. That context stays in the NDJSON, which is
+/// why this is a rendering and not the source of truth.
+pub fn to_csv(samples: &[Sample]) -> String {
+    let mut out = String::new();
+    out.push_str(&CSV_COLUMNS.join(","));
+    out.push('\n');
+    for sample in samples {
+        out.push_str(&sample.csv_row());
+        out.push('\n');
+    }
+    out
+}
 
 impl Sample {
     /// A flat view of the same record `samples.ndjson` carries.
@@ -179,46 +292,36 @@ fn escape(value: &str) -> String {
 /// Appends and **flushes** one line per sample, so an interrupted campaign keeps
 /// every sample it completed.
 ///
-/// Two renderings of the same records: `samples.ndjson` is the source of truth
-/// and carries the machine and campaign header; `samples.csv` is the flat view a
-/// spreadsheet or a dataframe can read directly. Both are written in lockstep.
+/// The campaign writes this and nothing else. Rendering — CSV, Markdown — happens
+/// afterwards, from this file, so a report can never be produced from anything a
+/// run did not actually record.
 pub struct SampleWriter {
     ndjson: BufWriter<File>,
-    csv: BufWriter<File>,
 }
 
 impl SampleWriter {
-    pub fn create(dir: &Path) -> Result<Self> {
+    pub fn create(path: &Path) -> Result<Self> {
+        let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
         Ok(Self {
-            ndjson: create(&dir.join("samples.ndjson"))?,
-            csv: create(&dir.join("samples.csv"))?,
+            ndjson: BufWriter::new(file),
         })
     }
 
-    /// The header lands in the NDJSON only: a CSV has no room for it. The
-    /// campaign's context — machine, grid size, `-march` — lives there.
+    /// The campaign's context — machine, grid size, `-march` — recorded once, so
+    /// the file explains itself without the command line that produced it.
     pub fn write_header(&mut self, machine: &Machine, campaign: &Campaign) -> Result<()> {
-        self.write_ndjson(&Record::Header { machine, campaign })?;
-        writeln!(self.csv, "{}", CSV_COLUMNS.join(",")).context("writing the CSV header")?;
-        self.csv.flush().context("flushing samples.csv")
+        self.write_record(&Record::Header { machine, campaign })
     }
 
     pub fn write_sample(&mut self, sample: &Sample) -> Result<()> {
-        self.write_ndjson(&Record::Sample(sample))?;
-        writeln!(self.csv, "{}", sample.csv_row()).context("writing a CSV row")?;
-        self.csv.flush().context("flushing samples.csv")
+        self.write_record(&Record::Sample(sample))
     }
 
-    fn write_ndjson(&mut self, record: &Record<'_>) -> Result<()> {
+    fn write_record(&mut self, record: &Record<'_>) -> Result<()> {
         serde_json::to_writer(&mut self.ndjson, record).context("serializing record")?;
         self.ndjson.write_all(b"\n")?;
         self.ndjson.flush().context("flushing samples.ndjson")
     }
-}
-
-fn create(path: &Path) -> Result<BufWriter<File>> {
-    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
-    Ok(BufWriter::new(file))
 }
 
 /// Parse the single JSON object a container prints on stdout.
@@ -239,6 +342,8 @@ pub fn parse_container_stdout(stdout: &str) -> Result<ContainerRecord> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -306,6 +411,133 @@ mod tests {
             binary_stripped_bytes: Some(67_568),
             text_bytes: Some(1_340),
         }
+    }
+
+    /// Write a campaign the way `run` does, then read it back the way `csv` and
+    /// `md` do. The two commands only exist because this round-trip holds.
+    fn round_trip(campaign: &Campaign, samples: &[Sample]) -> Result<Recording> {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("samples.ndjson");
+        let mut writer = SampleWriter::create(&path).unwrap();
+        writer.write_header(&Machine::default(), campaign).unwrap();
+        for sample in samples {
+            writer.write_sample(sample).unwrap();
+        }
+        drop(writer);
+        load(&path)
+    }
+
+    fn campaign() -> Campaign {
+        Campaign {
+            langbench_version: "0.1.0".to_owned(),
+            timestamp: "2026-07-11T12:00:00Z".to_owned(),
+            cpu: 8,
+            grid_size: 2048,
+            max_iter: 1000,
+            rounds: 10,
+            build_rounds: 3,
+            warmup_rounds: 1,
+            march: "x86-64-v3".to_owned(),
+            modes: vec!["strict".to_owned()],
+        }
+    }
+
+    #[test]
+    fn a_campaign_survives_the_round_trip_through_the_file() {
+        let samples = [
+            sample(Phase::Run, Some(448_356_792)),
+            sample(Phase::Build, None),
+        ];
+        let recording = round_trip(&campaign(), &samples).unwrap();
+
+        assert_eq!(recording.campaign.grid_size, 2048);
+        assert_eq!(recording.campaign.march, "x86-64-v3");
+        assert_eq!(recording.samples.len(), 2);
+        assert_eq!(recording.samples[0].mode, FpMode::Strict);
+        assert_eq!(recording.samples[0].phase, Phase::Run);
+        assert_eq!(recording.samples[0].checksum, Some(448_356_792));
+        assert_eq!(recording.samples[1].checksum, None);
+    }
+
+    #[test]
+    fn a_checksum_beyond_two_to_the_fifty_three_survives_the_file_too() {
+        // The same 2^53 trap as on the container's stdout: a `f64` on either side
+        // of the file would silently round the correctness gate.
+        let mut huge = sample(Phase::Run, Some(9_007_199_254_740_993));
+        huge.wall_ns = 9_007_199_254_740_993;
+        let recording = round_trip(&campaign(), &[huge]).unwrap();
+        assert_eq!(recording.samples[0].checksum, Some(9_007_199_254_740_993));
+        assert_eq!(recording.samples[0].wall_ns, 9_007_199_254_740_993);
+    }
+
+    #[test]
+    fn an_interrupted_campaign_keeps_every_sample_before_the_torn_line() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("samples.ndjson");
+        let mut writer = SampleWriter::create(&path).unwrap();
+        writer
+            .write_header(&Machine::default(), &campaign())
+            .unwrap();
+        writer.write_sample(&sample(Phase::Run, Some(7))).unwrap();
+        drop(writer);
+
+        // A process killed mid-`write` leaves exactly this.
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(br#"{"record":"sample","algo":"mandelb"#)
+            .unwrap();
+        drop(file);
+
+        let recording = load(&path).unwrap();
+        assert_eq!(recording.samples.len(), 1);
+        assert_eq!(recording.samples[0].checksum, Some(7));
+    }
+
+    #[test]
+    fn a_truncation_that_is_not_the_last_line_is_still_an_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("samples.ndjson");
+        let mut writer = SampleWriter::create(&path).unwrap();
+        writer
+            .write_header(&Machine::default(), &campaign())
+            .unwrap();
+        drop(writer);
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"{\"record\":\"sample\",\"algo\":\"mandelb\n")
+            .unwrap();
+        file.write_all(b"{\"record\":\"sample\",\"algo\":\"mandelb\n")
+            .unwrap();
+        drop(file);
+
+        assert!(load(&path).is_err());
+    }
+
+    #[test]
+    fn a_file_that_does_not_open_on_a_header_is_refused_rather_than_half_read() {
+        // Well-formed samples, but no header: the campaign's context is missing,
+        // and a report without a machine is a report about nothing.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("samples.ndjson");
+        let headless =
+            serde_json::to_string(&Record::Sample(&sample(Phase::Run, Some(1)))).unwrap();
+        std::fs::write(&path, format!("{headless}\n")).unwrap();
+
+        let error = load(&path).unwrap_err();
+        assert!(error.to_string().contains("header"), "{error}");
+    }
+
+    #[test]
+    fn the_csv_rendering_starts_with_the_column_header() {
+        let csv = to_csv(&[sample(Phase::Run, Some(1))]);
+        let mut lines = csv.lines();
+        assert_eq!(lines.next().unwrap(), CSV_COLUMNS.join(","));
+        assert_eq!(lines.next().unwrap().split(',').count(), CSV_COLUMNS.len());
+        assert_eq!(lines.next(), None);
     }
 
     #[test]

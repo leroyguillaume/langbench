@@ -1,2 +1,4 @@
+# Development only: keep `cargo run` from writing over a real campaign. `OUTPUT`
+# is the samples file itself — `run` writes it, `csv` and `md` read it.
 [env]
-OUTPUT_DIR = "results.local"
+OUTPUT = "samples.local.ndjson"

@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use std::thread::available_parallelism;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Floating-point semantics the kernels are compiled under.
 ///
 /// The axis is FP semantics, not "optimization on/off": every mode is `-O3`.
 /// See `METHODOLOGY.md#floating-point-modes`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ValueEnum)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum FpMode {
     /// `-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.
@@ -54,13 +54,59 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Build every selected implementation and measure it.
+    ///
+    /// Writes `samples.ndjson` and nothing else. Render it with `csv` or `md`.
     Run(RunArgs),
+
+    /// Render a campaign's samples as CSV, for a spreadsheet or a dataframe.
+    Csv(RenderArgs),
+
+    /// Render a campaign's samples as a Markdown report.
+    Md(MarkdownArgs),
 
     /// Describe this machine, and why it may be a poor benchmark target.
     ///
     /// Prints exactly what a campaign would record in its header, so you can
     /// check a host before spending an hour measuring on it.
     Machine,
+}
+
+/// The one file a campaign writes, and the one file a rendering reads. `OUTPUT`
+/// names it on both sides, so a `run` and the `md` that follows agree without
+/// being told twice.
+pub const DEFAULT_OUTPUT: &str = "samples.ndjson";
+
+/// Reading a campaign back. Rendering is never part of measuring: the samples
+/// are the source of truth, and every artifact is recomputed from them.
+///
+/// Renderings go to stdout. Redirect them — `langbench md > report.md` — rather
+/// than growing a second, opposite meaning for `--output`.
+#[derive(Args, Debug)]
+pub struct RenderArgs {
+    /// The `samples.ndjson` a campaign wrote.
+    #[arg(
+        value_name = "SAMPLES",
+        env = "OUTPUT",
+        default_value_os_t = PathBuf::from(DEFAULT_OUTPUT),
+    )]
+    pub samples: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct MarkdownArgs {
+    #[command(flatten)]
+    pub render: RenderArgs,
+
+    /// A Liquid template to render instead of the built-in one.
+    ///
+    /// It receives exactly the same variables; `langbench md --print-template`
+    /// writes the built-in one out as a starting point.
+    #[arg(long, env = "TEMPLATE", conflicts_with = "print_template")]
+    pub template: Option<PathBuf>,
+
+    /// Print the built-in template on stdout and exit, measuring nothing.
+    #[arg(long)]
+    pub print_template: bool,
 }
 
 #[derive(Args, Debug)]
@@ -80,9 +126,11 @@ pub struct RunArgs {
     #[arg(long, env = "CPUS", default_value_t = default_cpu())]
     pub cpu: usize,
 
-    /// Directory receiving `samples.ndjson` and `report.md`.
-    #[arg(long, env = "OUTPUT_DIR", default_value_os_t = PathBuf::from("results"))]
-    pub output_dir: PathBuf,
+    /// Path of the `samples.ndjson` this campaign writes: its only artifact.
+    ///
+    /// Missing parent directories are created.
+    #[arg(long, short, env = "OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_OUTPUT))]
+    pub output: PathBuf,
 
     /// Root of the `<algo>/<language>-<compiler>/Dockerfile` tree.
     #[arg(long, env = "BENCHMARKS_DIR", default_value_os_t = PathBuf::from("benchmarks"))]

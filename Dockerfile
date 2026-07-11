@@ -64,8 +64,9 @@ COPY --from=builder --chown=langbench:langbench \
 
 # Campaign inputs and outputs. Mount the benchmark tree read-only and the result
 # directory read-write; both default here so the container needs no flags.
+# `OUTPUT` is the samples file itself: `run` writes it, `csv` and `md` read it.
 ENV BENCHMARKS_DIR=/var/lib/langbench/benchmarks \
-    OUTPUT_DIR=/var/lib/langbench/results
+    OUTPUT=/var/lib/langbench/samples.ndjson
 
 USER langbench
 WORKDIR /var/lib/langbench

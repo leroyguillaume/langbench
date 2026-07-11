@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::Command;
 use std::thread::available_parallelism;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 /// ISA extensions worth recording. Anything else is noise in a report.
@@ -44,7 +44,11 @@ pub struct Field {
     pub value: String,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+/// Deserializable so a report can be re-rendered from a `samples.ndjson` written
+/// on another host: the machine in the report is the one that measured, never the
+/// one that formatted.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Machine {
     /// A Linux `/proc` is visible. Determined at **runtime**: a
     /// `cfg!(target_os = "linux")` would be a tautology inside a container,

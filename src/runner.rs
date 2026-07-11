@@ -14,7 +14,6 @@ use crate::cli::{FpMode, RunArgs};
 use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
-use crate::report;
 use crate::sample::{Campaign, Phase, Sample, SampleWriter};
 
 /// One (implementation, FP mode) pair: the atom of the schedule.
@@ -48,8 +47,11 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         })
         .collect();
 
-    fs::create_dir_all(&args.output_dir)
-        .with_context(|| format!("creating {}", args.output_dir.display()))?;
+    // The campaign is about to spend an hour measuring; find out *now* that its
+    // destination directory does not exist, not when the first sample is due.
+    if let Some(parent) = args.output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
 
     let campaign = Campaign {
         langbench_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -64,14 +66,14 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         modes: args.mode.iter().map(FpMode::to_string).collect(),
     };
 
-    let mut writer = SampleWriter::create(&args.output_dir)?;
+    let mut writer = SampleWriter::create(&args.output)?;
     writer.write_header(&machine, &campaign)?;
 
     let mut runner = Runner {
         engine,
         args: &args,
         writer,
-        samples: Vec::new(),
+        written: 0,
         strict_checksum: None,
     };
 
@@ -79,16 +81,13 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     runner.measure_phase(&units, Phase::Build, args.build_rounds)?;
     runner.measure_phase(&units, Phase::Run, args.rounds)?;
 
-    let data = report::build(&machine, &campaign, &runner.samples, runner.strict_checksum);
-    let markdown = report::render(&data)?;
-    let report_path = args.output_dir.join("report.md");
-    fs::write(&report_path, markdown)
-        .with_context(|| format!("writing {}", report_path.display()))?;
-
+    // The campaign produces the samples and stops there. The CSV and the report
+    // are renderings, recomputed on demand from this file — including from a
+    // campaign that was interrupted, which is exactly when you want them.
     info!(
-        samples = runner.samples.len(),
-        output_dir = %args.output_dir.display(),
-        "campaign complete",
+        samples = runner.written,
+        path = %args.output.display(),
+        "campaign complete; render it with `langbench csv` or `langbench md`",
     );
     Ok(())
 }
@@ -97,7 +96,9 @@ struct Runner<'a, E: ContainerEngine> {
     engine: &'a E,
     args: &'a RunArgs,
     writer: SampleWriter,
-    samples: Vec<Sample>,
+    /// Samples are streamed to disk, never accumulated: the harness holds a
+    /// count, and whoever renders reads them back.
+    written: usize,
     /// The one value every strict-mode run must agree on, bit for bit.
     strict_checksum: Option<u64>,
 }
@@ -151,7 +152,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
                     wall_ms = sample.wall_ns / 1_000_000,
                     "measured",
                 );
-                self.samples.push(sample);
+                self.written += 1;
             }
         }
         Ok(())
@@ -255,12 +256,12 @@ mod tests {
         }
     }
 
-    fn args(benchmarks_dir: &Path, output_dir: &Path, modes: Vec<FpMode>) -> RunArgs {
+    fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
         RunArgs {
             algo: vec![],
             mode: modes,
             cpu: 4,
-            output_dir: output_dir.to_path_buf(),
+            output: output.join("samples.ndjson"),
             benchmarks_dir: benchmarks_dir.to_path_buf(),
             grid_size: 64,
             max_iter: 10,
@@ -305,8 +306,36 @@ mod tests {
         let args = args(root.path(), out.path(), vec![FpMode::Strict, FpMode::Fast]);
         execute(args, &engine).unwrap();
 
+        // The samples, and strictly nothing else: rendering is a separate command
+        // now, so a campaign cannot emit a report it did not measure.
         assert!(out.path().join("samples.ndjson").is_file());
-        assert!(out.path().join("report.md").is_file());
+        assert!(!out.path().join("report.md").exists());
+        assert!(!out.path().join("samples.csv").exists());
+    }
+
+    #[test]
+    fn the_samples_file_gets_the_directories_it_needs() {
+        // `--output` names a file now, and an hour of measuring must not be lost
+        // to a parent directory that was never created.
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(|_| {
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.output = out.path().join("x86-64/strict/samples.ndjson");
+        let path = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        assert!(path.is_file());
     }
 
     #[test]

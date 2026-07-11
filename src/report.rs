@@ -8,11 +8,14 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::machine::{Field, Machine};
-use crate::sample::{Campaign, Phase, Sample};
+use crate::cli::FpMode;
+use crate::machine::Field;
+use crate::sample::{Campaign, Phase, Recording, Sample};
 use crate::stats::{Summary, summarize};
 
-const TEMPLATE: &str = include_str!("../templates/report.md.liquid");
+/// Embedded, so the binary renders a report without a working directory. A
+/// campaign can override it with `--template`.
+pub const DEFAULT_TEMPLATE: &str = include_str!("../templates/report.md.liquid");
 
 #[derive(Debug, Serialize)]
 pub struct ReportData {
@@ -64,12 +67,10 @@ struct Bucket {
     text_bytes: Option<u64>,
 }
 
-pub fn build(
-    machine: &Machine,
-    campaign: &Campaign,
-    samples: &[Sample],
-    strict_checksum: Option<u64>,
-) -> ReportData {
+pub fn build(recording: &Recording) -> ReportData {
+    let samples = &recording.samples;
+    let strict_checksum = strict_reference(samples);
+
     // Insertion order comes from the first round, which is the schedule order.
     let mut order: Vec<(String, String, String)> = Vec::new();
     let mut buckets: HashMap<(String, String, String), Bucket> = HashMap::new();
@@ -147,20 +148,32 @@ pub fn build(
     }
 
     ReportData {
-        campaign: campaign.clone(),
-        machine_fields: machine.fields(),
-        warnings: machine.warnings(),
+        campaign: recording.campaign.clone(),
+        machine_fields: recording.machine.fields(),
+        warnings: recording.machine.warnings(),
         strict_checksum: strict_checksum.map_or_else(|| "n/a".to_owned(), |c| c.to_string()),
         algos,
     }
 }
 
-pub fn render(data: &ReportData) -> Result<String> {
+/// The one value every strict-mode run agreed on.
+///
+/// The campaign already refused to record a divergent one — `Runner::verify`
+/// aborts on the spot — so any strict sample carries the reference and the first
+/// one is as good as the last. See `METHODOLOGY.md#the-strict-mode-invariant`.
+fn strict_reference(samples: &[Sample]) -> Option<u64> {
+    samples
+        .iter()
+        .filter(|sample| sample.mode == FpMode::Strict)
+        .find_map(|sample| sample.checksum)
+}
+
+pub fn render(data: &ReportData, template: &str) -> Result<String> {
     let template = liquid::ParserBuilder::with_stdlib()
         .build()
         .context("building the Liquid parser")?
-        .parse(TEMPLATE)
-        .context("parsing templates/report.md.liquid")?;
+        .parse(template)
+        .context("parsing the report template")?;
     let globals = liquid::to_object(data).context("serializing the report data")?;
     template.render(&globals).context("rendering the report")
 }
@@ -207,7 +220,15 @@ fn delta(checksum: Option<u64>, reference: Option<u64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::FpMode;
+    use crate::machine::Machine;
+
+    fn recording(samples: Vec<Sample>) -> Recording {
+        Recording {
+            machine: Machine::default(),
+            campaign: campaign(),
+            samples,
+        }
+    }
 
     fn sample(implementation: &str, mode: FpMode, phase: Phase, warmup: bool, wall: u64) -> Sample {
         Sample {
@@ -252,7 +273,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Run, true, 9_000_000_000),
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 2_000_000_000),
         ];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         let row = &data.algos[0].rows[0];
         assert_eq!(row.run_samples, 1);
         assert_eq!(row.run_min, "2000.0 ms");
@@ -264,7 +285,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Build, false, 800_000_000),
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 2_000_000_000),
         ];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         let row = &data.algos[0].rows[0];
         assert_eq!(row.build_min, "800.0 ms");
         assert_eq!(row.run_min, "2000.0 ms");
@@ -279,16 +300,52 @@ mod tests {
             false,
             1_000_000,
         )];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         assert_eq!(data.algos[0].rows[0].build_min, "n/a");
     }
 
     #[test]
     fn a_relaxed_mode_reports_its_distance_from_the_strict_reference() {
+        // The reference is read back out of the samples, not handed in: a report
+        // rendered from a file has nothing else to go on. `sample()` checksums 42.
+        let reference = sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000);
         let mut divergent = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
         divergent.checksum = Some(40);
-        let data = build(&Machine::default(), &campaign(), &[divergent], Some(42));
-        assert_eq!(data.algos[0].rows[0].checksum_delta, "-2");
+        let data = build(&recording(vec![reference, divergent]));
+        assert_eq!(data.algos[0].rows[1].checksum_delta, "-2");
+    }
+
+    #[test]
+    fn a_campaign_without_a_strict_mode_has_no_reference_to_measure_against() {
+        let mut relaxed = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
+        relaxed.checksum = Some(40);
+        let data = build(&recording(vec![relaxed]));
+        assert_eq!(data.strict_checksum, "n/a");
+        assert_eq!(data.algos[0].rows[0].checksum_delta, "n/a");
+    }
+
+    #[test]
+    fn a_custom_template_replaces_the_built_in_one() {
+        let data = build(&recording(vec![sample(
+            "c-gcc",
+            FpMode::Strict,
+            Phase::Run,
+            false,
+            2_000_000_000,
+        )]));
+        let markdown = render(
+            &data,
+            "{% for algo in algos %}{{ algo.algo }}:{% for row in algo.rows %}{{ row.run_min }}{% endfor %}{% endfor %}",
+        )
+        .unwrap();
+        assert_eq!(markdown, "mandelbrot:2000.0 ms");
+    }
+
+    #[test]
+    fn a_broken_template_names_the_template_not_the_data() {
+        let data = build(&recording(vec![]));
+        let error = render(&data, "{% for %}").unwrap_err();
+        assert!(error.to_string().contains("template"), "{error}");
     }
 
     #[test]
@@ -299,7 +356,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 5_000_000),
         ];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         assert_eq!(data.algos[0].rows[0].run_dispersion, "n/a (n=2)");
     }
 
@@ -312,7 +369,7 @@ mod tests {
             false,
             1_000_000,
         )];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         assert_eq!(data.algos[0].rows[0].checksum_delta, "0");
     }
 
@@ -323,7 +380,7 @@ mod tests {
             sample("rust-llvm", FpMode::Strict, Phase::Run, false, 1_000_000),
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
         ];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
+        let data = build(&recording(samples));
         let names: Vec<_> = data.algos[0]
             .rows
             .iter()
@@ -341,8 +398,8 @@ mod tests {
             false,
             2_000_000_000,
         )];
-        let data = build(&Machine::default(), &campaign(), &samples, Some(42));
-        let markdown = render(&data).unwrap();
+        let data = build(&recording(samples));
+        let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
         assert!(markdown.contains("mandelbrot"));
         assert!(markdown.contains("c-gcc"));
         assert!(markdown.contains("2000.0"));
@@ -357,8 +414,7 @@ mod tests {
             false,
             2_000_000_000,
         )];
-        let markdown =
-            render(&build(&Machine::default(), &campaign(), &samples, Some(42))).unwrap();
+        let markdown = render(&build(&recording(samples)), DEFAULT_TEMPLATE).unwrap();
 
         let header = markdown
             .lines()
@@ -382,8 +438,8 @@ mod tests {
 
     #[test]
     fn the_report_surfaces_the_hosts_warnings() {
-        let data = build(&Machine::default(), &campaign(), &[], None);
-        let markdown = render(&data).unwrap();
+        let data = build(&recording(vec![]));
+        let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
         assert!(markdown.contains("Linux"));
         assert!(markdown.contains("n/a"));
     }

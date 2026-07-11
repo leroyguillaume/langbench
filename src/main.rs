@@ -2,6 +2,7 @@ mod cli;
 mod discovery;
 mod engine;
 mod machine;
+mod output;
 mod report;
 mod runner;
 mod sample;
@@ -23,6 +24,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Run(args) => runner::execute(args, &DockerEngine),
+        Command::Csv(args) => output::csv(&args),
+        Command::Md(args) => output::markdown(&args),
         Command::Machine => {
             // Program output, not a diagnostic: stdout, not `tracing`.
             print!("{}", Machine::collect().console_report());

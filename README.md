@@ -3,8 +3,8 @@
 A benchmark harness comparing **compiler and runtime backends**, not languages.
 
 `langbench` discovers benchmark implementations on disk, builds one container per
-implementation, runs them under a controlled protocol, and writes raw samples
-plus a Markdown report.
+implementation, runs them under a controlled protocol, and writes raw samples —
+which it then renders as a CSV or a Markdown report, on demand.
 
 The question it answers is *given the same source, how do different backends
 compare?* — gcc versus clang on identical C, rustc-LLVM versus rustc-cranelift on
@@ -60,7 +60,8 @@ langbench run
 
 By default that discovers everything under `benchmarks/`, builds each
 implementation in all three floating-point modes, and measures with the machine's
-thread count.
+thread count. It writes `samples.ndjson` and nothing else; `langbench csv` and
+`langbench md` turn that file into a table or a report, whenever you like.
 
 Common flags — every one of them also reads an environment variable:
 
@@ -69,7 +70,7 @@ Common flags — every one of them also reads an environment variable:
 | `--algo` | `ALGO` | all discovered | Restrict to some algorithms |
 | `--mode` | `FP_MODE` | `strict,fma,fast` | Floating-point semantics |
 | `--cpu` | `CPUS` | machine parallelism | Threads for kernels *and* compilers |
-| `--output-dir` | `OUTPUT_DIR` | `results` | Where samples and report land |
+| `--output`, `-o` | `OUTPUT` | `samples.ndjson` | Path of the samples file the campaign writes |
 | `--benchmarks-dir` | `BENCHMARKS_DIR` | `benchmarks` | Root of the benchmark tree |
 | `--grid-size` | `GRID_SIZE` | `2048` | Side of the N×N grid |
 | `--max-iter` | `MAX_ITER` | `1000` | Iteration ceiling |
@@ -85,7 +86,7 @@ Common flags — every one of them also reads an environment variable:
 Example — only the strict mode, on four threads, for one algorithm:
 
 ```sh
-langbench run --algo mandelbrot --mode strict --cpu 4 --output-dir results/strict-4
+langbench run --algo mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
 ```
 
 ### Sizing a campaign
@@ -155,25 +156,48 @@ compile-time one — inside a Linux container a compile-time check would report
 
 ## Output
 
-`--output-dir` receives three files:
+A campaign writes **one** file, the one `--output` (`OUTPUT`) names: a header
+record with the full machine description and campaign parameters, then one line
+per measured invocation, flushed as it is produced. It is the source of truth,
+and the only artifact that cannot be recomputed — an interrupted campaign keeps
+every sample it completed.
 
-- **`samples.ndjson`** — the source of truth. A header record with the full
-  machine description and campaign parameters, then one line per measured
-  invocation, flushed as it is produced. Aggregates are never stored: they are
-  recomputed from here.
-- **`samples.csv`** — the same records, flat, for a spreadsheet or a dataframe.
-  Written in lockstep with the NDJSON. Missing values are **empty fields**, never
-  `n/a`: a numeric column that sometimes holds a word breaks every parser that
-  reads it. The campaign's context (machine, grid size, `-march`) has no room in
-  a flat table and lives in the NDJSON header only, so keep the two together.
-- **`report.md`** — a human-facing view, rendered from
-  `templates/report.md.liquid`. It leads with any reason this host is a poor
-  benchmark target.
+Everything else is a *rendering*, produced afterwards by a separate command. That
+is the point: a report can only ever show what a run actually recorded, and the
+same file re-renders identically on any host, months later.
 
 ```sh
-# Median run time per mode, straight from the CSV.
-awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' results/samples.csv
+langbench csv > samples.csv       # the samples, flat
+langbench md  > report.md         # the samples, as a report
+
+langbench md results/strict-4.ndjson   # any campaign, not just the default
 ```
+
+Both read the same `OUTPUT` the campaign wrote unless you name another file, and
+both print to stdout — so they pipe, and `OUTPUT` keeps exactly one meaning.
+
+**CSV.** The same records, flat, for a spreadsheet or a dataframe. Missing values
+are **empty fields**, never `n/a`: a numeric column that sometimes holds a word
+breaks every parser that reads it. The campaign's context (machine, grid size,
+`-march`) has no room in a flat table, which is exactly why the NDJSON stays the
+source of truth.
+
+```sh
+# Median run time per mode, straight from the samples.
+langbench csv | awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }'
+```
+
+**Markdown.** A human-facing view that leads with any reason this host is a poor
+benchmark target. It renders `templates/report.md.liquid`, embedded in the binary;
+`--template` swaps in your own [Liquid][liquid] template, which receives exactly
+the same variables:
+
+```sh
+langbench md --print-template > mine.liquid   # the built-in one, as a starting point
+langbench md --template mine.liquid > report.md
+```
+
+[liquid]: https://shopify.github.io/liquid/
 
 ## Adding an implementation
 

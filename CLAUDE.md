@@ -11,9 +11,9 @@ silently produces wrong numbers.
 ## What this is
 
 A Rust CLI that discovers benchmark implementations on disk, builds one container
-per implementation, runs them under a controlled protocol, and emits raw samples
-plus a Markdown report. The subject is **compiler and runtime backends**, not
-languages.
+per implementation, runs them under a controlled protocol, and emits raw samples —
+rendered afterwards as a CSV or a Markdown report by separate commands. The
+subject is **compiler and runtime backends**, not languages.
 
 ## Rules
 
@@ -66,6 +66,10 @@ languages.
   implementations. Never block by implementation.
 - **Write raw samples, never aggregates.** One NDJSON line per run, flushed as it
   is produced. Aggregates are recomputed at report time.
+- **`run` writes `samples.ndjson` and nothing else.** Rendering is not part of
+  measuring: `langbench csv` and `langbench md` are separate commands, pure
+  functions of the file. A report that a run could emit directly is a report that
+  can outlive the samples it came from.
 - Report min-of-N, not the median: contention noise is one-sided. Publish the
   dispersion beside it as a verdict on the campaign.
 
@@ -86,8 +90,9 @@ languages.
 - Samples are appended and flushed one at a time, so an interrupted campaign
   keeps every completed sample. That is the graceful-shutdown requirement,
   satisfied by durability rather than by a signal handler.
-- The report template is `templates/report.md.liquid`, embedded with
-  `include_str!` so the binary stays self-contained.
+- The default report template is `templates/report.md.liquid`, embedded with
+  `include_str!` so the binary stays self-contained. `langbench md --template`
+  overrides it; the built-in one is always the fallback, never a required file.
 
 ## Testing
 
