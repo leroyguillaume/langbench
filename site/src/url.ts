@@ -9,7 +9,8 @@
 // back to the default rather than reaching the sort with a key it has no column for.
 
 import { z } from "zod";
-import { type FpMode, fpModeSchema } from "./analysis";
+import { type FpMode, fpModeSchema, type Row } from "./analysis";
+import { rowKey } from "./components/Compare";
 import type { Sort, SortKey } from "./components/ResultsTable";
 import { MODES } from "./series";
 
@@ -35,6 +36,34 @@ export interface UrlState {
   modes: FpMode[];
   includeWarmup: boolean;
   sort: Sort;
+  /**
+   * The two rows of the head-to-head, `backend:mode`. `null` — the site pairs the
+   * fastest with its runner-up.
+   *
+   * A comparison *is* a claim, and it is the sharpest one this site makes. It gets
+   * a URL like every other view: a head-to-head somebody cannot link to is a
+   * head-to-head nobody can check.
+   */
+  compareLeft: Row | null;
+  compareRight: Row | null;
+}
+
+/**
+ * A row as the query string spells it: `c-gcc:strict`.
+ *
+ * Validated, never trusted — the mode has to be one of the three, and a backend
+ * this campaign never measured is dropped later, by whoever holds the aggregates.
+ */
+function readRow(raw: string | null): Row | null {
+  if (raw === null) {
+    return null;
+  }
+  const [backend, mode] = raw.split(":");
+  const parsed = fpModeSchema.safeParse(mode);
+  if (backend === undefined || backend === "" || !parsed.success) {
+    return null;
+  }
+  return { backend, mode: parsed.data };
 }
 
 /** Fastest first, on the statistic the report headlines. The same default as `report.md`. */
@@ -60,6 +89,8 @@ export function readUrl(): UrlState {
     sort: sortKey.success
       ? { key: sortKey.data as SortKey, descending: params.get("desc") === "1" }
       : DEFAULT_SORT,
+    compareLeft: readRow(params.get("a")),
+    compareRight: readRow(params.get("b")),
   };
 }
 
@@ -88,6 +119,12 @@ export function writeUrl(state: UrlState): void {
     if (state.sort.descending) {
       params.set("desc", "1");
     }
+  }
+  if (state.compareLeft !== null) {
+    params.set("a", rowKey(state.compareLeft));
+  }
+  if (state.compareRight !== null) {
+    params.set("b", rowKey(state.compareRight));
   }
 
   const query = params.toString();

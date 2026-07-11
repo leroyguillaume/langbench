@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Aggregate, Analysis, Failure, FpMode } from "./analysis";
-import { fetchCampaigns } from "./analysis";
+import type { Aggregate, Analysis, Comparison, Failure, FpMode, LoadedCampaign } from "./analysis";
+import { compare, fetchCampaigns } from "./analysis";
 import { BarChart, type ChartRow } from "./components/BarChart";
+import { Compare, resolve } from "./components/Compare";
 import { ResultsTable, type Sort, type SortKey, sortRows } from "./components/ResultsTable";
 import { bytes, dispersion, milliseconds, optional, ratio } from "./format";
 import { logger } from "./logger";
@@ -13,7 +14,7 @@ const DATA_URL = `${import.meta.env.BASE_URL}data/`;
 
 export function App() {
   const [state, setState] = useState<UrlState>(readUrl);
-  const [campaigns, setCampaigns] = useState<Analysis[] | null>(null);
+  const [campaigns, setCampaigns] = useState<LoadedCampaign[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Every campaign is re-analyzed by the WASM when `includeWarmup` changes: it is
@@ -61,8 +62,8 @@ export function App() {
   // same claim, and a chart that puts them in one bar group invites exactly the
   // comparison `METHODOLOGY.md#the-isa-rule` forbids. The reader picks an ISA;
   // the site never adds one to another.
-  const analysis = campaigns.find((entry) => entry.arch === state.arch) ?? campaigns[0];
-  if (analysis === undefined) {
+  const loaded = campaigns.find((entry) => entry.analysis.arch === state.arch) ?? campaigns[0];
+  if (loaded === undefined) {
     return (
       <main className="page">
         <div className="warnings">
@@ -75,17 +76,18 @@ export function App() {
     );
   }
 
-  return <Report analysis={analysis} campaigns={campaigns} state={state} setState={setState} />;
+  return <Report loaded={loaded} campaigns={campaigns} state={state} setState={setState} />;
 }
 
 interface ReportProps {
-  analysis: Analysis;
-  campaigns: Analysis[];
+  loaded: LoadedCampaign;
+  campaigns: LoadedCampaign[];
   state: UrlState;
   setState: (state: UrlState) => void;
 }
 
-function Report({ analysis, campaigns, state, setState }: ReportProps) {
+function Report({ loaded, campaigns, state, setState }: ReportProps) {
+  const { analysis, ndjson } = loaded;
   const { campaign } = analysis;
 
   const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
@@ -115,6 +117,35 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
   };
 
   const series = modeSeries(state.modes);
+
+  // The head-to-head is drawn from the whole algorithm, not from `visible`: the
+  // filters above scope the charts, and a reader who narrowed the table to one
+  // language has not thereby declined to compare it with another.
+  const selection = useMemo(
+    () => resolve(algo?.aggregates ?? [], algo?.algo ?? "", state.compareLeft, state.compareRight),
+    [algo, state.compareLeft, state.compareRight],
+  );
+
+  // The comparison is the harness's, computed from the raw campaign — the same
+  // file, the same code, the same min-of-N as every other number on this page.
+  // The site never decides whether a gap is a difference.
+  const comparison: { value: Comparison | null; error: string | null } = useMemo(() => {
+    if (selection === null) {
+      return { value: null, error: null };
+    }
+    try {
+      return {
+        value: compare(ndjson, { include_warmup: state.includeWarmup }, selection),
+        error: null,
+      };
+    } catch (cause: unknown) {
+      // A pair the campaign cannot honour is a broken card, never a broken page:
+      // every number above it was measured independently and is still true.
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.error("compare.failed", { message });
+      return { value: null, error: message };
+    }
+  }, [ndjson, selection, state.includeWarmup]);
 
   // Grouped: one row per backend, one bar per mode. The bars a filter left
   // standing keep their own colour — the series is the mode, not the position.
@@ -173,8 +204,9 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
         <p className="isa-note">
           This build publishes {campaigns.length} campaigns, one per ISA, and never shows them
           together: an <strong>absolute timing does not cross an ISA</strong>. A millisecond here
-          and a millisecond on {campaigns.find((entry) => entry.arch !== analysis.arch)?.arch} are
-          not the same claim. Compare backends <em>within</em> one architecture — the ratio is what
+          and a millisecond on{" "}
+          {campaigns.find((entry) => entry.analysis.arch !== analysis.arch)?.analysis.arch} are not
+          the same claim. Compare backends <em>within</em> one architecture — the ratio is what
           travels.
         </p>
       )}
@@ -197,7 +229,7 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
         setState={setState}
         languages={languages}
         algoKeys={analysis.algos.map((entry) => entry.algo)}
-        arches={campaigns.map((entry) => entry.arch)}
+        arches={campaigns.map((entry) => entry.analysis.arch)}
         arch={analysis.arch}
       />
 
@@ -251,6 +283,16 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
         </p>
         <ResultsTable rows={visible} sort={state.sort} onSort={onSort} />
       </section>
+
+      <Compare
+        aggregates={algo?.aggregates ?? []}
+        selection={selection}
+        comparison={comparison.value}
+        error={comparison.error}
+        onSelect={(next) =>
+          setState({ ...state, compareLeft: next.left, compareRight: next.right })
+        }
+      />
 
       <Failures failures={analysis.failures.filter((failure) => failure.algo === algo?.algo)} />
 

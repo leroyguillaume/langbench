@@ -19,6 +19,7 @@ use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::analysis::{self, Options};
+use crate::compare::{self, Selection};
 use crate::sample;
 
 /// Route a Rust panic to the browser console instead of an opaque `unreachable`.
@@ -59,26 +60,59 @@ pub fn analyze(
     ndjson: &str,
     options: wasm_bindgen::JsValue,
 ) -> Result<wasm_bindgen::JsValue, JsError> {
-    let options: WebOptions = if options.is_undefined() || options.is_null() {
-        WebOptions::default()
-    } else {
-        serde_wasm_bindgen::from_value(options)
-            .map_err(|error| JsError::new(&format!("invalid options: {error}")))?
-    };
-
-    let recording = sample::parse(ndjson).map_err(|error| JsError::new(&format!("{error:#}")))?;
-    let analysis = analysis::analyze(&recording, options.into());
-
-    // `serde_json` first, then into JS: `serde_wasm_bindgen` would refuse the
-    // `serialize_with` that turns a `u64` checksum into a string, and a `u64` it
-    // serialized itself would arrive as a `BigInt` that no chart library accepts.
-    let json = serde_json::to_string(&analysis)
-        .map_err(|error| JsError::new(&format!("serializing the analysis: {error}")))?;
-    js_sys_json_parse(&json)
+    let options = web_options(options)?;
+    let analysis = analysis::analyze(&recording(ndjson)?, options.into());
+    into_js(&analysis, "the analysis")
 }
 
+/// Two rows of one campaign, head to head — and whether the gap between them is
+/// larger than the noise the campaign carries.
+///
+/// `selection` is a [`Selection`]: the algorithm, and a `{backend, mode}` on each
+/// side. The pair is named, never indexed — a row number is a property of the
+/// sort somebody clicked, and it does not survive a reload.
+///
+/// The verdict is the harness's, not the browser's. What counts as a difference
+/// is a definition of what this project measures, and it has exactly one home.
+/// See [`crate::compare`].
+///
+/// Errs on a row this campaign never measured, rather than inventing a zero.
+#[wasm_bindgen]
+pub fn compare(
+    ndjson: &str,
+    options: wasm_bindgen::JsValue,
+    selection: wasm_bindgen::JsValue,
+) -> Result<wasm_bindgen::JsValue, JsError> {
+    let options = web_options(options)?;
+    let selection: Selection = serde_wasm_bindgen::from_value(selection)
+        .map_err(|error| JsError::new(&format!("invalid selection: {error}")))?;
+
+    let analysis = analysis::analyze(&recording(ndjson)?, options.into());
+    let comparison = compare::compare(&analysis, &selection)
+        .map_err(|error| JsError::new(&format!("{error:#}")))?;
+    into_js(&comparison, "the comparison")
+}
+
+/// The campaign, parsed by `serde_json` — never by `JSON.parse`. See the header.
+fn recording(ndjson: &str) -> Result<sample::Recording, JsError> {
+    sample::parse(ndjson).map_err(|error| JsError::new(&format!("{error:#}")))
+}
+
+fn web_options(options: wasm_bindgen::JsValue) -> Result<WebOptions, JsError> {
+    if options.is_undefined() || options.is_null() {
+        return Ok(WebOptions::default());
+    }
+    serde_wasm_bindgen::from_value(options)
+        .map_err(|error| JsError::new(&format!("invalid options: {error}")))
+}
+
+/// `serde_json` first, then into JS: `serde_wasm_bindgen` would refuse the
+/// `serialize_with` that turns a `u64` checksum into a string, and a `u64` it
+/// serialized itself would arrive as a `BigInt` that no chart library accepts.
 /// `JSON.parse`, on a string this module produced. Safe where a `JSON.parse` on
 /// the raw campaign would not be: every wide integer left as a string.
-fn js_sys_json_parse(json: &str) -> Result<wasm_bindgen::JsValue, JsError> {
-    js_sys::JSON::parse(json).map_err(|_| JsError::new("the analysis is not valid JSON"))
+fn into_js<T: serde::Serialize>(value: &T, what: &str) -> Result<wasm_bindgen::JsValue, JsError> {
+    let json = serde_json::to_string(value)
+        .map_err(|error| JsError::new(&format!("serializing {what}: {error}")))?;
+    js_sys::JSON::parse(&json).map_err(|_| JsError::new(&format!("{what} is not valid JSON")))
 }

@@ -19,6 +19,7 @@
 //! anywhere in sight.
 
 pub mod analysis;
+pub mod compare;
 pub mod machine;
 pub mod mode;
 pub mod sample;

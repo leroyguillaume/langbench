@@ -66,6 +66,27 @@ export function ratio(value: number, reference: number): string {
   if (reference === 0) {
     return NOT_AVAILABLE;
   }
-  const times = value / reference;
-  return times < 10 ? `${times.toFixed(2)}×` : `${times.toFixed(1)}×`;
+  return times(value / reference);
+}
+
+/**
+ * A ratio, spelled: `1.00×`, `13.4×`.
+ *
+ * Takes the number already computed rather than the two it came from — the
+ * head-to-head's ratios are `src/compare.rs`'s, and a division redone here would
+ * be a second definition of the site's one cross-backend claim.
+ */
+export function times(value: number | null): string {
+  if (value === null) {
+    return NOT_AVAILABLE;
+  }
+  return value < 10 ? `${value.toFixed(2)}×` : `${value.toFixed(1)}×`;
+}
+
+/** A percentage the harness computed — a gap, or the dispersion it has to clear. */
+export function percent(value: number | null): string {
+  if (value === null) {
+    return NOT_AVAILABLE;
+  }
+  return `${value.toFixed(1)}%`;
 }

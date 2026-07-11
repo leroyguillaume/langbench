@@ -9,8 +9,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { analysisSchema } from "./analysis";
-import init, { analyze } from "./wasm/langbench.js";
+import { analysisSchema, comparisonSchema } from "./analysis";
+import init, { analyze, compare } from "./wasm/langbench.js";
 
 // Resolved from the project root, not from `import.meta.url`: under jsdom the
 // module URL is an `http://` one, and there is no file behind it.
@@ -103,6 +103,80 @@ describe("the WebAssembly boundary", () => {
 
   it("refuses a file that is not a campaign, rather than plotting nonsense", () => {
     expect(() => analyze("not ndjson at all", { include_warmup: false })).toThrow();
+  });
+
+  /// The head-to-head is the harness's arithmetic too. The site picks two rows and
+  /// spells the answer; it does not decide whether a gap is a difference.
+  it("compares two rows of the published campaign, and hands back the harness's verdict", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const algo = analysis.algos[0];
+    const [first, second] = algo?.aggregates ?? [];
+    if (algo === undefined || first === undefined || second === undefined) {
+      throw new Error("the fixture campaign measured fewer than two rows");
+    }
+
+    const selection = {
+      algo: algo.algo,
+      left: { backend: first.backend, mode: first.mode },
+      right: { backend: second.backend, mode: second.mode },
+    };
+    const comparison = comparisonSchema.parse(
+      compare(ndjson, { include_warmup: false }, selection),
+    );
+
+    expect(comparison.left.backend).toBe(first.backend);
+    expect(comparison.right.backend).toBe(second.backend);
+
+    const run = comparison.metrics.find((metric) => metric.key === "run");
+    // The aggregates arrive fastest first, so the runner-up is never the smaller
+    // number: the ratio of the two is at least one.
+    expect(run?.ratio ?? 0).toBeGreaterThanOrEqual(1);
+    expect(run?.left).toBe(first.run_wall?.min);
+    expect(run?.right).toBe(second.run_wall?.min);
+    expect(["left", "tie"]).toContain(run?.verdict);
+  });
+
+  /// A comparison is a property of the pair, not of the order the reader picked
+  /// them in.
+  it("inverts the ratio when the two rows are swapped, and nothing else", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const algo = analysis.algos[0];
+    const [first, second] = algo?.aggregates ?? [];
+    if (algo === undefined || first === undefined || second === undefined) {
+      throw new Error("the fixture campaign measured fewer than two rows");
+    }
+
+    const left = { backend: first.backend, mode: first.mode };
+    const right = { backend: second.backend, mode: second.mode };
+    const forward = comparisonSchema.parse(
+      compare(ndjson, { include_warmup: false }, { algo: algo.algo, left, right }),
+    );
+    const backward = comparisonSchema.parse(
+      compare(ndjson, { include_warmup: false }, { algo: algo.algo, left: right, right: left }),
+    );
+
+    const run = (comparison: typeof forward) =>
+      comparison.metrics.find((metric) => metric.key === "run");
+    expect((run(forward)?.ratio ?? 0) * (run(backward)?.ratio ?? 0)).toBeCloseTo(1, 6);
+    expect(run(forward)?.gap_pct).toBe(run(backward)?.gap_pct);
+  });
+
+  it("refuses a row the campaign never measured, rather than comparing against a zero", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const algo = analysis.algos[0]?.algo ?? "mandelbrot";
+    const first = analysis.algos[0]?.aggregates[0];
+
+    expect(() =>
+      compare(
+        ndjson,
+        { include_warmup: false },
+        {
+          algo,
+          left: { backend: first?.backend ?? "c-gcc", mode: first?.mode ?? "strict" },
+          right: { backend: "cobol-gnucobol", mode: "strict" },
+        },
+      ),
+    ).toThrow(/cobol-gnucobol/);
   });
 
   /// The ISA comes out of the machine record the campaign wrote, never out of the

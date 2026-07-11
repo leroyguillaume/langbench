@@ -126,11 +126,16 @@ subject is **compiler and runtime backends**, not languages.
   measures anything either — a shared, virtualised, frequency-scaled runner is the
   worst benchmark target money can rent.
 - **The site computes no statistic.** Min-of-N, the buckets, the definition of
-  startup all live in `src/analysis.rs`, compiled to WebAssembly (`src/wasm.rs`)
+  startup all live in `src/analysis.rs`, and what counts as a *difference* between
+  two backends in `src/compare.rs` — both compiled to WebAssembly (`src/wasm.rs`)
   and called from the browser. `langbench md` calls the same function. A
   re-implementation in TypeScript would be a second definition of what this
   project measures — the same drift `bench.schema.json` is generated to prevent.
   TypeScript sorts, formats and draws; it never does arithmetic on a sample.
+- **A gap smaller than the dispersion is a tie, not a win.** The head-to-head
+  compares two rows of one campaign; a gap that does not clear the worse of the two
+  rows' dispersions is `indistinguishable`, whichever minimum came out lower.
+  ([why](METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference))
 - **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
   integer, a JavaScript number is a double, and `JSON.parse` silently rounds past
   2^53. `samples.ndjson` is fetched as *text* and parsed in Rust; checksums cross
