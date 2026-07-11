@@ -74,6 +74,32 @@ export const backendSchema = z.object({
   comments: z.string().nullable(),
 });
 
+/**
+ * A backend the campaign lost, and what it lost it to.
+ *
+ * Not a sample: it carries no timing and nothing aggregates it. It is on the wire
+ * for the same reason `warnings` is — a table cannot be read without knowing what
+ * is *not* in it. A backend that crashed has no row, and a row that is absent looks
+ * exactly like a backend nobody ever wrote.
+ */
+export const failureSchema = z.object({
+  algo: z.string(),
+  backend: z.string(),
+  backend_id: z.string(),
+  language: z.string(),
+  compiler: z.string().nullable(),
+  interpreter: z.string().nullable(),
+  description: z.string(),
+  comments: z.string().nullable(),
+  mode: fpModeSchema,
+  /** `prepare`: the image never built. `measure`: it built, and the run went wrong. */
+  stage: z.enum(["prepare", "measure"]),
+  phase: z.enum(["build", "run"]).nullable(),
+  /** Zero-based, as the harness counts. Absent when the image never built. */
+  round: z.number().int().nullable(),
+  error: z.string(),
+});
+
 export const campaignSchema = z.object({
   langbench_version: z.string(),
   timestamp: z.string(),
@@ -108,12 +134,15 @@ export const analysisSchema = z.object({
     }),
   ),
   backends: z.array(backendSchema),
+  /** Every backend the campaign lost. Empty on a campaign where everything worked. */
+  failures: z.array(failureSchema),
 });
 
 export type Summary = z.infer<typeof summarySchema>;
 export type FpMode = z.infer<typeof fpModeSchema>;
 export type Aggregate = z.infer<typeof aggregateSchema>;
 export type Backend = z.infer<typeof backendSchema>;
+export type Failure = z.infer<typeof failureSchema>;
 export type Campaign = z.infer<typeof campaignSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 export type AlgoAnalysis = Analysis["algos"][number];

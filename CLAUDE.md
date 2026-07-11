@@ -43,6 +43,16 @@ subject is **compiler and runtime backends**, not languages.
 - In `strict` mode the checksum is bit-identical across every compiler, language
   and ISA. One reference value. A divergence is a bug, never a rounding excuse.
 - Verify the checksum on **every** run. A wrong run never enters the statistics.
+- **A backend that fails is quarantined, not propagated.**
+  ([why](METHODOLOGY.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
+  that fails, a container that crashes or hangs past the timeout, unreadable
+  stdout, a diverging checksum: each takes out that one `(implementation, mode)`
+  unit, at the point it breaks, and never a second time — the campaign keeps
+  measuring the rest and exits 0. Only a campaign where *every* unit failed exits
+  non-zero: an empty table is a lie told quietly.
+- **A failure is published, never swallowed.** It is a `failure` record in
+  `samples.ndjson`, beside the samples, and every rendering shows it. A row missing
+  from a report reads exactly like a backend nobody wrote.
 
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 

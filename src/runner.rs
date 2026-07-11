@@ -3,20 +3,20 @@
 //! Deliberately sequential. Running two benchmarks concurrently would destroy
 //! the measurement, so there is no async here and no `tokio`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::cli::{Arch, RunArgs};
 use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
 use crate::mode::FpMode;
-use crate::sample::{Campaign, Phase, Sample, SampleWriter};
+use crate::sample::{Campaign, Failure, Phase, Sample, SampleWriter, Stage};
 use crate::shutdown;
 
 /// One (implementation, FP mode) pair: the atom of the schedule.
@@ -89,6 +89,8 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         writer,
         written: 0,
         strict_checksums: HashMap::new(),
+        quarantined: HashSet::new(),
+        failures: Vec::new(),
     };
 
     let campaign = (|| -> Result<()> {
@@ -100,24 +102,50 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     // The campaign produces the samples and stops there. The CSV and the report
     // are renderings, recomputed on demand from this file — including from a
     // campaign that was interrupted, which is exactly when you want them.
-    match campaign {
-        Ok(()) => info!(
-            samples = runner.written,
-            path = %args.output.display(),
-            "campaign complete; render it with `langbench csv` or `langbench md`",
-        ),
+    let interrupted = match campaign {
+        Ok(()) => {
+            info!(
+                samples = runner.written,
+                quarantined = runner.failures.len(),
+                path = %args.output.display(),
+                "campaign complete; render it with `langbench csv` or `langbench md`",
+            );
+            false
+        }
         // A signal is an answer, not a failure: exit 0, because the samples on
         // disk are as valid as they were a moment ago and the file renders. The
         // partial campaign is the user's to keep or discard — a non-zero exit
         // would say the harness broke, and it did not.
-        Err(error) if shutdown::was_interrupted(&error) => warn!(
-            samples = runner.written,
-            path = %args.output.display(),
-            "campaign interrupted; the samples written so far are intact and \
-             render with `langbench csv` or `langbench md`",
-        ),
+        Err(error) if shutdown::was_interrupted(&error) => {
+            warn!(
+                samples = runner.written,
+                path = %args.output.display(),
+                "campaign interrupted; the samples written so far are intact and \
+                 render with `langbench csv` or `langbench md`",
+            );
+            true
+        }
         Err(error) => return Err(error),
-    }
+    };
+
+    runner.report_failures();
+
+    // Every unit failed: there is no campaign, only a list of things that broke.
+    // That is the one unit failure the harness owns — a samples file with a header
+    // and nothing under it renders into an empty table, and an empty table is a lie
+    // told quietly. Anything short of that exits 0: the samples that *were*
+    // measured are as valid as the backend beside them was broken.
+    //
+    // An interrupted campaign is exempt, and not as a courtesy: it wrote no sample
+    // because it was told to stop, which is the one case where zero samples means
+    // the harness did exactly what it was asked.
+    ensure!(
+        interrupted || runner.written > 0,
+        "every unit of the campaign failed ({} of them); no sample was measured. The first \
+         failure is usually the only one worth reading — a daemon that is not running, or an \
+         image that does not build, fails identically for everyone.",
+        runner.failures.len(),
+    );
     Ok(())
 }
 
@@ -206,11 +234,26 @@ struct Runner<'a, E: ContainerEngine> {
     /// is a property of `(algo, grid size, max_iter)`, so a shared reference
     /// would abort the campaign on the first strict run of the second algorithm.
     strict_checksums: HashMap<String, u64>,
+    /// The images of the units that failed, by [`Unit::image`] — the one token
+    /// that is unique per `(implementation, mode)`.
+    ///
+    /// A unit is quarantined, never the campaign: a compiler that does not exist
+    /// for this ISA, a kernel that segfaults, a run that hangs past the timeout,
+    /// a checksum that diverges — each of those is one backend saying something
+    /// about itself, and none of them is a reason to throw away the fifty
+    /// measurements the other backends got right. A quarantined unit is dropped
+    /// from every remaining round *and phase*: whatever broke in round one breaks
+    /// in round nine too, and the campaign would spend an hour re-learning it.
+    quarantined: HashSet<String>,
+    failures: Vec<Failure>,
 }
 
 impl<E: ContainerEngine> Runner<'_, E> {
     /// Build every image. Never measured: this is where the network lives.
-    fn prepare(&self, units: &[Unit]) -> Result<()> {
+    ///
+    /// An image that does not build takes its unit out of the campaign, and
+    /// nothing else with it.
+    fn prepare(&mut self, units: &[Unit]) -> Result<()> {
         for unit in units {
             shutdown::checkpoint()?;
             info!(image = %unit.image, "preparing image");
@@ -221,11 +264,14 @@ impl<E: ContainerEngine> Runner<'_, E> {
             if !self.args.march.is_empty() {
                 build_args.push(("MARCH".to_owned(), self.args.march.clone()));
             }
-            self.engine.build(&BuildSpec {
+            let built = self.engine.build(&BuildSpec {
                 image: unit.image.clone(),
                 context: unit.implementation.context.clone(),
                 build_args,
-            })?;
+            });
+            if let Err(error) = built {
+                self.quarantine(unit, Stage::Prepare, None, None, error)?;
+            }
         }
         Ok(())
     }
@@ -234,22 +280,45 @@ impl<E: ContainerEngine> Runner<'_, E> {
     /// blocking by implementation turns ambient noise into bias.
     fn measure_phase(&mut self, units: &[Unit], phase: Phase, rounds: u32) -> Result<()> {
         let total = self.args.warmup_rounds + rounds;
+        let live = units
+            .iter()
+            .filter(|unit| !self.quarantined.contains(&unit.image))
+            .count();
         info!(
             phase = phase.as_str(),
             rounds = total,
-            units = units.len(),
+            units = live,
             "measuring",
         );
 
         for round in 0..total {
             let warmup = round < self.args.warmup_rounds;
             for unit in units {
+                if self.quarantined.contains(&unit.image) {
+                    continue;
+                }
                 // Between invocations, never inside one. A sample is written only
                 // once it has been verified, so an interruption costs the run in
                 // flight and nothing that came before it.
                 shutdown::checkpoint()?;
-                let sample = self.measure(unit, phase, round, warmup)?;
-                self.verify(&sample)?;
+
+                // A run that crashed, hung past the timeout, printed a record the
+                // harness cannot read, or returned a checksum the algorithm does
+                // not agree with, is a wrong run — and a wrong run never enters
+                // the statistics. It writes no sample; it retires its unit.
+                let measured = self
+                    .measure(unit, phase, round, warmup)
+                    .and_then(|sample| self.verify(&sample).map(|()| sample));
+                let sample = match measured {
+                    Ok(sample) => sample,
+                    Err(error) => {
+                        self.quarantine(unit, Stage::Measure, Some(phase), Some(round), error)?;
+                        continue;
+                    }
+                };
+
+                // The writer is the campaign's, not the unit's: a file that cannot
+                // be appended to is the one failure quarantine cannot contain.
                 self.writer.write_sample(&sample)?;
                 // One line per invocation: a campaign that prints nothing for an
                 // hour is indistinguishable from a campaign that has hung.
@@ -274,6 +343,83 @@ impl<E: ContainerEngine> Runner<'_, E> {
             }
         }
         Ok(())
+    }
+
+    /// Take one unit out of the campaign, loudly, and leave the rest alone.
+    ///
+    /// The failure is written to `samples.ndjson` beside the samples, because the
+    /// report and the website are pure functions of that file and this is the only
+    /// place they can learn that a backend broke. It is a record, not a sample: no
+    /// timing, nothing to aggregate.
+    ///
+    /// `Err` only for an interruption, which is nobody's fault and everybody's
+    /// business: a signal must not be mistaken for a backend that misbehaved and
+    /// quietly filed away as one — it stops the campaign.
+    fn quarantine(
+        &mut self,
+        unit: &Unit,
+        stage: Stage,
+        phase: Option<Phase>,
+        round: Option<u32>,
+        error: anyhow::Error,
+    ) -> Result<()> {
+        // Propagated as-is, type intact: `execute` recognises an interruption by
+        // the `Interrupted` in its chain, and a re-wrapped message would look
+        // like a crash and exit non-zero.
+        if shutdown::was_interrupted(&error) {
+            return Err(error);
+        }
+        let implementation = &unit.implementation;
+        let failure = Failure {
+            algo: implementation.algo.clone(),
+            language: implementation.language.clone(),
+            compiler: implementation.compiler.clone(),
+            interpreter: implementation.interpreter.clone(),
+            description: implementation.description.clone(),
+            comments: implementation.comments.clone(),
+            mode: unit.mode,
+            stage,
+            phase,
+            round,
+            // The full context chain: `docker run` failed *while* measuring *this*
+            // image, and the reader needs all three to know where to look.
+            error: format!("{error:#}"),
+        };
+        error!(
+            stage = stage.as_str(),
+            algo = %failure.algo,
+            language = %failure.language,
+            compiler = none_if_absent(failure.compiler.as_deref()),
+            interpreter = none_if_absent(failure.interpreter.as_deref()),
+            mode = %failure.mode,
+            error = %failure.error,
+            "quarantining this backend for the rest of the campaign; the others carry on",
+        );
+        self.writer.write_failure(&failure)?;
+        self.quarantined.insert(unit.image.clone());
+        self.failures.push(failure);
+        Ok(())
+    }
+
+    /// The quarantined units, once more, at the end.
+    ///
+    /// A failure logged an hour ago has scrolled off the terminal, and the report
+    /// that follows will not mention the backend at all — a row that is absent
+    /// looks exactly like a row that was never written. This is where the campaign
+    /// says which backends it lost, and to what.
+    fn report_failures(&self) {
+        for failure in &self.failures {
+            error!(
+                stage = failure.stage.as_str(),
+                algo = %failure.algo,
+                language = %failure.language,
+                compiler = none_if_absent(failure.compiler.as_deref()),
+                interpreter = none_if_absent(failure.interpreter.as_deref()),
+                mode = %failure.mode,
+                error = %failure.error,
+                "quarantined: this backend contributed no sample and is absent from the report",
+            );
+        }
     }
 
     fn measure(&self, unit: &Unit, phase: Phase, round: u32, warmup: bool) -> Result<Sample> {
@@ -588,17 +734,19 @@ mod tests {
         );
     }
 
+    /// A divergence is a bug in the backend, and the backend is what it costs:
+    /// the campaign keeps every other row it was measuring.
     #[test]
-    fn a_strict_mode_checksum_divergence_aborts_the_campaign() {
+    fn a_strict_mode_checksum_divergence_quarantines_the_backend_not_the_campaign() {
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks(root.path(), &["c-gcc", "c-clang"]);
 
-        let checksums = Arc::new(Mutex::new(vec![7, 9]));
         let mut engine = MockContainerEngine::new();
         engine.expect_build().returning(|_| Ok(()));
-        engine.expect_run().returning(move |_| {
-            let checksum = checksums.lock().unwrap().remove(0);
+        // gcc lands first and sets the reference; clang disagrees, every time.
+        engine.expect_run().returning(|spec| {
+            let checksum = if spec.image.contains("clang") { 9 } else { 7 };
             Ok(Execution {
                 wall_ns: 2_000,
                 record: record(Some(checksum)),
@@ -608,9 +756,32 @@ mod tests {
         let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
-        args.rounds = 1;
-        let err = execute(args, &engine).unwrap_err();
-        assert!(err.to_string().contains("checksum mismatch"), "{err}");
+        args.rounds = 3;
+        let output = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+
+        // Whichever of the two ran first is the reference — the harness cannot know
+        // which of two disagreeing compilers is the wrong one, and does not pretend
+        // to. What it *can* guarantee is that they never end up in the same table:
+        // three rounds of one backend, nothing at all from the other.
+        assert_eq!(recording.samples.len(), 3);
+        let survivor = recording.samples[0].backend();
+        assert!(
+            recording
+                .samples
+                .iter()
+                .all(|sample| sample.backend() == survivor),
+        );
+
+        // And the campaign says so, in the file — the report reads the reason from
+        // here, not from a log line that scrolled past an hour ago.
+        assert_eq!(recording.failures.len(), 1);
+        let failure = &recording.failures[0];
+        assert_ne!(failure.backend(), survivor);
+        assert_eq!(failure.stage, Stage::Measure);
+        assert!(failure.error.contains("checksum mismatch"), "{failure:?}");
     }
 
     #[test]
@@ -738,9 +909,160 @@ mod tests {
         assert_eq!(written.lines().count(), 3, "header + 2 samples");
     }
 
-    /// The interruption path must not become a way for real failures to exit 0.
+    /// One backend crashing is one backend's news. The campaign goes on, and the
+    /// rows it *could* measure are still worth the hour it spent measuring them.
     #[test]
-    fn an_ordinary_failure_still_fails_the_campaign() {
+    fn a_crashing_backend_is_quarantined_and_the_others_carry_on() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc", "rust-llvm"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(|spec| {
+            if spec.image.contains("rust") {
+                bail!(
+                    "`docker run` failed for {}:\nSegmentation fault",
+                    spec.image
+                );
+            }
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 4;
+        let output = args.output.clone();
+
+        // Exit 0: the harness did not break, one of the things it measures did.
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+        assert_eq!(recording.samples.len(), 4, "four rounds of the C backend");
+        assert_eq!(recording.failures.len(), 1, "the crash is recorded once");
+        assert_eq!(recording.failures[0].backend(), "rust-llvm");
+        assert_eq!(recording.failures[0].round, Some(0));
+    }
+
+    /// A quarantined unit is not retried: whatever broke in round one breaks in
+    /// round nine, and re-learning it costs the campaign an hour of wall-clock.
+    #[test]
+    fn a_quarantined_unit_is_never_run_again() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc", "rust-llvm"]);
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&seen);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(move |spec| {
+            recorded.lock().unwrap().push(spec.image.clone());
+            if spec.image.contains("rust") {
+                bail!("`docker run` failed");
+            }
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        // The build phase kills it, and the run phase must not resurrect it.
+        args.build_rounds = 2;
+        args.rounds = 2;
+        execute(args, &engine).unwrap();
+
+        let images = seen.lock().unwrap().clone();
+        let rust = images.iter().filter(|image| image.contains("rust")).count();
+        assert_eq!(rust, 1, "the broken unit is asked exactly once: {images:?}");
+    }
+
+    /// An image that does not build takes its unit out of the campaign, and only
+    /// its unit: the others are already queued behind it.
+    #[test]
+    fn an_image_that_does_not_build_is_quarantined_before_it_is_ever_run() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc", "rust-llvm"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|spec| {
+            if spec.image.contains("rust") {
+                bail!("`docker build` failed for {}", spec.image);
+            }
+            Ok(())
+        });
+        // Never run: the image does not exist. Only the C unit reaches the daemon.
+        engine.expect_run().times(2).returning(|spec| {
+            assert!(spec.image.contains("c-gcc"), "ran a unit that never built");
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 2;
+        let output = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+        assert_eq!(recording.failures.len(), 1);
+        assert_eq!(recording.failures[0].stage, Stage::Prepare);
+        // It never got a round: there was no round to fail in.
+        assert_eq!(recording.failures[0].round, None);
+    }
+
+    /// Quarantine is per `(implementation, mode)`, never per implementation: a
+    /// backend whose `fast` build is broken still has a `strict` one to publish.
+    #[test]
+    fn quarantine_takes_the_unit_and_not_the_whole_implementation() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|spec| {
+            if spec.image.ends_with(":fast") {
+                bail!("`docker build` failed: -ffast-math is not a flag this fixture likes");
+            }
+            Ok(())
+        });
+        engine.expect_run().returning(|_| {
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict, FpMode::Fast]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 1;
+        let output = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+        assert_eq!(recording.samples.len(), 1);
+        assert_eq!(recording.samples[0].mode, FpMode::Strict);
+        assert_eq!(recording.failures.len(), 1);
+        assert_eq!(recording.failures[0].mode, FpMode::Fast);
+    }
+
+    /// Quarantine is not a way to smile through a campaign that measured nothing.
+    /// A samples file with a header and no sample renders into an empty table, and
+    /// an empty table is a lie told quietly.
+    #[test]
+    fn a_campaign_where_every_unit_failed_still_fails() {
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks(root.path(), &["c-gcc"]);
@@ -756,6 +1078,6 @@ mod tests {
         args.build_rounds = 0;
         args.rounds = 1;
         let error = execute(args, &engine).unwrap_err();
-        assert!(error.to_string().contains("`docker run` failed"));
+        assert!(error.to_string().contains("every unit"), "{error}");
     }
 }

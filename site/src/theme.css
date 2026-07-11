@@ -523,3 +523,32 @@ td.numeric {
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
+
+/* What did not finish. A quarantined backend has no row in the tables, and a row
+   that is absent reads exactly like a backend nobody ever wrote. */
+.failures {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.failures th,
+.failures td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.failures th {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* A compiler's diagnostics are long and full of paths: let them wrap, and give
+   them the monospace they were written in. */
+.failure-error {
+  font-family: var(--mono);
+  color: var(--warning-text);
+  overflow-wrap: anywhere;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Aggregate, Analysis, FpMode } from "./analysis";
+import type { Aggregate, Analysis, Failure, FpMode } from "./analysis";
 import { fetchCampaigns } from "./analysis";
 import { BarChart, type ChartRow } from "./components/BarChart";
 import { ResultsTable, type Sort, type SortKey, sortRows } from "./components/ResultsTable";
@@ -252,6 +252,8 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
         <ResultsTable rows={visible} sort={state.sort} onSort={onSort} />
       </section>
 
+      <Failures failures={analysis.failures.filter((failure) => failure.algo === algo?.algo)} />
+
       <section className="card">
         <h2>Backends</h2>
         <div className="backends">
@@ -310,6 +312,72 @@ function Report({ analysis, campaigns, state, setState }: ReportProps) {
       </footer>
     </main>
   );
+}
+
+/**
+ * The backends that are *not* in the tables above.
+ *
+ * A benchmark that quietly drops what did not work flatters itself. A crashed
+ * backend has no row, and a missing row reads exactly like a backend nobody ever
+ * wrote — so the campaign says which ones it lost, and to what. Nothing here
+ * affects the rows that did finish: each is an independent run of an independent
+ * image.
+ */
+function Failures({ failures }: { failures: Failure[] }) {
+  if (failures.length === 0) {
+    return null;
+  }
+  return (
+    <section className="card">
+      <h2>What did not finish</h2>
+      <p>
+        {failures.length === 1
+          ? "One scheduled backend is"
+          : `${failures.length} scheduled backends are`}{" "}
+        absent from the charts and the table above. {failures.length === 1 ? "It was" : "Each was"}{" "}
+        quarantined at the point it broke — a build that failed, a run that crashed or hung, or a
+        checksum that disagreed with the <code>strict</code> reference. A wrong run never enters the
+        statistics, so{" "}
+        {failures.length === 1 ? "it contributed no timing" : "none of them contributed a timing"}{" "}
+        to anything.
+      </p>
+      <table className="failures">
+        <thead>
+          <tr>
+            <th>Backend</th>
+            <th>Mode</th>
+            <th>Where</th>
+            <th>What happened</th>
+          </tr>
+        </thead>
+        <tbody>
+          {failures.map((failure) => (
+            <tr key={`${failure.backend_id}-${failure.mode}-${failure.stage}`}>
+              <td>{failure.backend}</td>
+              <td>{failure.mode}</td>
+              <td>{where(failure)}</td>
+              <td className="failure-error">{failure.error}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/**
+ * Where a backend was when it went. `build` means the image never compiled, so
+ * there was nothing to run and no round to fail in; anything else names the phase
+ * and the round — counted from one, as the campaign log counts them.
+ */
+function where(failure: Failure): string {
+  if (failure.stage === "prepare") {
+    return "build";
+  }
+  if (failure.phase === null || failure.round === null) {
+    return "run";
+  }
+  return `${failure.phase} round ${failure.round + 1}`;
 }
 
 function Tiles({ rows, analysis }: { rows: Aggregate[]; analysis: Analysis }) {

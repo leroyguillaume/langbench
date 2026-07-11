@@ -20,7 +20,7 @@ use serde::{Serialize, Serializer};
 
 use crate::machine::Field;
 use crate::mode::FpMode;
-use crate::sample::{Campaign, Phase, Recording, Sample};
+use crate::sample::{Campaign, Phase, Recording, Sample, Stage};
 use crate::stats::{Summary, summarize};
 
 /// What the caller is allowed to vary about an analysis.
@@ -66,6 +66,38 @@ pub struct Analysis {
     /// Every backend the campaign measured, described once. The aggregates
     /// repeat a backend per FP mode; its identity card does not.
     pub backends: Vec<Backend>,
+    /// Every backend the campaign *lost*, and what it lost it to.
+    ///
+    /// It travels with the numbers for the same reason [`Self::warnings`] does: a
+    /// table cannot be read without knowing what is not in it. A quarantined
+    /// backend has no row, and a missing row is indistinguishable from a backend
+    /// nobody ever wrote — which is precisely the wrong thing for a reader to
+    /// conclude about a compiler that segfaulted.
+    pub failures: Vec<Failure>,
+}
+
+/// One quarantined `(backend, mode)`, as the renderers need it.
+///
+/// [`crate::sample::Failure`] with the derived slugs added — the same enrichment
+/// [`Aggregate`] gets, and for the same reason: a Liquid template and a browser
+/// cannot call `backend_slug`.
+#[derive(Clone, Debug, Serialize)]
+pub struct Failure {
+    pub algo: String,
+    pub backend: String,
+    pub backend_id: String,
+    pub language: String,
+    pub compiler: Option<String>,
+    pub interpreter: Option<String>,
+    pub description: String,
+    pub comments: Option<String>,
+    pub mode: FpMode,
+    /// `prepare` — the image never built — or `measure`: it built, and then the
+    /// run did not produce a valid record.
+    pub stage: Stage,
+    pub phase: Option<Phase>,
+    pub round: Option<u32>,
+    pub error: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -291,6 +323,27 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
         warnings: recording.machine.warnings(),
         algos,
         backends,
+        failures: recording.failures.iter().map(failure).collect(),
+    }
+}
+
+/// A recorded failure, with the slugs a renderer cannot derive for itself.
+fn failure(failure: &crate::sample::Failure) -> Failure {
+    let backend = failure.backend();
+    Failure {
+        backend_id: backend_id(&failure.algo, &backend),
+        algo: failure.algo.clone(),
+        backend,
+        language: failure.language.clone(),
+        compiler: failure.compiler.clone(),
+        interpreter: failure.interpreter.clone(),
+        description: failure.description.clone(),
+        comments: failure.comments.clone(),
+        mode: failure.mode,
+        stage: failure.stage,
+        phase: failure.phase,
+        round: failure.round,
+        error: failure.error.clone(),
     }
 }
 
@@ -354,6 +407,7 @@ mod tests {
             machine: Machine::default(),
             campaign: campaign(),
             samples,
+            failures: Vec::new(),
         }
     }
 

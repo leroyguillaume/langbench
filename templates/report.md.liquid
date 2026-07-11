@@ -67,8 +67,10 @@ Reference checksum in `strict` mode: `{{ algo.strict_checksum }}`.
 
 The checksum is a single 64-bit integer summarising the whole computed image. Every
 `strict` row below produced exactly this number, bit for bit, whatever the compiler
-or the language. That is the correctness gate: if one build had disagreed, the
-campaign would have stopped instead of publishing a timing for it.
+or the language. That is the correctness gate, and it is enforced by exclusion: a
+build that disagreed is not in this table at all. It was taken out of the campaign
+where it broke, it published no timing, and the campaign recorded what it produced
+instead of quietly averaging it in with the rest.
 
 Rows are sorted **fastest first**, on **Run min**. Mind two things before reading the
 order as a leaderboard: the sort mixes the FP modes together, and two rows in
@@ -81,6 +83,33 @@ different modes are different experiments (see **Mode**); and a gap smaller than
 | [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
+{% if failures.size > 0 %}
+## What did not finish
+
+{% if failures.size == 1 %}One backend this campaign scheduled is **not** in the tables above.
+It is not missing — an attempt was made, it went wrong, and the campaign took it out at
+the point it broke and carried on without it.{% else %}{{ failures.size }} of the backends this campaign scheduled are **not** in the tables above.
+They are not missing — an attempt was made on each, it went wrong, and the campaign took
+them out at the point they broke and carried on without them.{% endif %}
+
+That is the whole point of listing them here. A row that is absent from a benchmark
+table looks exactly like a backend nobody ever bothered to write, and it is not: it
+is a backend that crashed, hung, failed to compile, or computed the wrong answer.
+The first three are somebody's bug to fix. The last one is the correctness gate
+doing its job — a build that disagrees with the `strict` reference is not slow, it
+is *wrong*, and a wrong run never enters the statistics.
+
+Nothing about the rows that *did* finish is affected by what is here. Each is an
+independent run of an independent image.
+
+| Algo | Language | Compiler | Interpreter | Mode | Where | What happened |
+| --- | --- | --- | --- | --- | --- | --- |
+{% for failure in failures -%}
+| {{ failure.algo }} | {{ failure.language }} | {{ failure.compiler }} | {{ failure.interpreter }} | {{ failure.mode }} | {{ failure.stage }} | {{ failure.error }} |
+{% endfor %}
+**Where** is `build` when the image never compiled — there was nothing to run — and
+the phase and round otherwise, meaning the image was fine and the *run* was not.
+{% endif %}
 ## How to read a row in thirty seconds
 
 1. Look at **Dispersion** first. If it is above roughly 2%, the machine was noisy
@@ -318,9 +347,12 @@ On a `strict` row it is always `0`. That looks like a tautology, and it is not.
 As the **Mode** section explains, strict semantics leave the compilers no room to
 disagree — so the checksum stops being a numerical property of the computation and
 becomes an **equality test between implementations**. It is the correctness gate for
-the entire harness. A divergence aborts the campaign on the spot, and is never
-waved through as "just rounding": it means two kernels are not computing the same
-thing. Something was mistyped, a condition was flipped, a compiler flag leaked in.
+the entire harness. A divergence takes that backend out of the campaign on the spot
+— quarantined, no timing published, the reason recorded — and is never waved through
+as "just rounding": it means two kernels are not computing the same thing. Something
+was mistyped, a condition was flipped, a compiler flag leaked in. The other backends
+keep measuring; the broken one has nothing left to say, and a campaign that threw
+away forty good rows because one backend was wrong would be its own kind of bug.
 
 A real example from this repo: rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in the
 Python kernel — a reordering that looks like a harmless tidy-up — flips two pixels

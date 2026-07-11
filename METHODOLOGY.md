@@ -116,7 +116,7 @@ or in our understanding of them. Never a rounding excuse.
 This invariant catches the class of error that unit tests do not. Measured: C/gcc
 and CPython agree exactly, and rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in
 the Python kernel — a reassociation that looks like a harmless tidy-up — flips
-two pixels out of twelve million and aborts the campaign.
+two pixels out of twelve million and takes the backend out of the campaign.
 
 #### The languages that fuse behind your back
 
@@ -582,6 +582,55 @@ not the arithmetic.
   backend will be deleted — and the samples must still describe the campaign that
   actually ran. A foreign key into a file that changes underneath is not a
   record, it is a dangling pointer.
+
+### A backend that fails is not a campaign that fails
+
+Sixteen backends, three modes, an hour of wall-clock. One of them segfaults in
+round seven. Aborting there throws away fifteen backends' worth of correct
+measurement to report a fact about the sixteenth — and on a bench machine you
+booked for the evening, you find out about it in the morning.
+
+So a failure is **quarantined, never propagated**. The unit — one
+`(implementation, mode)` pair — is taken out of the campaign at the point it
+breaks, and the remaining rounds carry on without it. This covers every way a
+backend can fail us:
+
+- the image does not build,
+- the container crashes, or is killed for exceeding `--run-timeout`,
+- it prints a record the harness cannot parse,
+- its `strict` checksum disagrees with the reference.
+
+The last one is the interesting case, because it is not a crash: the run
+*succeeded*, and produced the wrong answer. It is quarantined for exactly the same
+reason as the segfault, and the reason is the one rule that governs this whole
+file — **a wrong run never enters the statistics**. A backend that is wrong is not
+slow, and giving it a row would be worse than giving it none.
+
+Three consequences, all deliberate:
+
+- **The unit is quarantined, not the implementation.** A backend whose `fast`
+  build is broken still has a `strict` row to publish, and that row is worth
+  having.
+- **It is never retried.** Whatever broke in round one breaks in round nine, and
+  a campaign that re-learns it every round pays for the lesson in wall-clock.
+- **The campaign still exits 0** — with one exception. If *every* unit failed there
+  is no campaign, only a list of things that broke, and a samples file with a
+  header and nothing under it renders into an empty table. An empty table is a lie
+  told quietly, so that, and only that, is a non-zero exit.
+
+And the failure is **published**. It goes into `samples.ndjson` as a `failure`
+record beside the samples, and every rendering shows it: `report.md` grows a *What
+did not finish* section, the website grows the same table. This is not
+bookkeeping. A benchmark that silently omits what did not work flatters itself —
+and a row that is missing from a table looks exactly like a backend nobody ever
+bothered to write, when in fact it is a backend that crashed. The reader has to be
+able to tell those two apart, and the only place they can learn the difference is
+the file.
+
+Quarantine changes nothing about the rows that *did* finish. Each is an
+independent run of an independent image; nothing about the C row is contaminated
+by the Rust one having died, and the sample count printed in each row (`Runs`)
+already says how many draws its minimum came from.
 
 ### Why min-of-N, not the median
 

@@ -11,9 +11,9 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::analysis::{Aggregate, Analysis, Options, analyze};
+use crate::analysis::{self, Aggregate, Analysis, Options, analyze};
 use crate::machine::Field;
-use crate::sample::{Campaign, Recording};
+use crate::sample::{Campaign, Recording, Stage};
 use crate::stats::Summary;
 
 /// Embedded, so the binary renders a report without a working directory. A
@@ -32,6 +32,32 @@ pub struct ReportData {
     /// numbers and the reader is a description in the way. Straight from the
     /// `bench.yaml` the samples carry.
     pub backends: Vec<Backend>,
+    /// Every backend the campaign lost, and to what. Empty on a clean campaign,
+    /// and Liquid tests it for size — the section does not exist when there is
+    /// nothing to confess.
+    pub failures: Vec<FailureRow>,
+}
+
+/// One quarantined `(backend, mode)`, formatted.
+///
+/// A failed backend has no row in the tables above, and a row that is absent
+/// reads exactly like a backend nobody ever wrote. This is where the report says
+/// which ones it lost — a benchmark that quietly omits what did not work is a
+/// benchmark that flatters itself.
+#[derive(Debug, Serialize)]
+pub struct FailureRow {
+    pub algo: String,
+    pub backend: String,
+    pub language: String,
+    pub compiler: String,
+    pub interpreter: String,
+    pub mode: String,
+    /// `build` — the image never built — or `round 3 of the run phase`: where it
+    /// was when it went.
+    pub stage: String,
+    /// The error and its full context chain, on one line: a Markdown table cell
+    /// has no room for the newlines a compiler is fond of.
+    pub error: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -126,7 +152,42 @@ fn format(analysis: Analysis) -> ReportData {
                 comments: backend.comments.unwrap_or_default(),
             })
             .collect(),
+        failures: analysis.failures.iter().map(failure_row).collect(),
     }
+}
+
+fn failure_row(failure: &analysis::Failure) -> FailureRow {
+    FailureRow {
+        algo: failure.algo.clone(),
+        backend: failure.backend.clone(),
+        language: failure.language.clone(),
+        compiler: opt(failure.compiler.as_deref()),
+        interpreter: opt(failure.interpreter.as_deref()),
+        mode: failure.mode.to_string(),
+        stage: match (failure.stage, failure.phase, failure.round) {
+            (Stage::Prepare, _, _) => "build".to_owned(),
+            (Stage::Measure, Some(phase), Some(round)) => {
+                // Rounds are counted from zero inside the harness and from one for
+                // a reader: the campaign log says "round 1 of 10", and this must
+                // agree with it.
+                format!("{} round {}", phase.as_str(), round + 1)
+            }
+            (Stage::Measure, _, _) => "run".to_owned(),
+        },
+        error: one_line(&failure.error),
+    }
+}
+
+/// A Markdown table cell is one line, and a compiler's diagnostics are not. The
+/// pipes go too — they would end the cell early and shear the row in half.
+fn one_line(error: &str) -> String {
+    error
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+        .replace('|', "\\|")
 }
 
 fn row(aggregate: &Aggregate) -> Row {
@@ -228,6 +289,7 @@ mod tests {
             machine: Machine::default(),
             campaign: campaign(),
             samples,
+            failures: Vec::new(),
         }
     }
 
@@ -368,6 +430,64 @@ mod tests {
         assert_eq!(data.algos[1].strict_checksum, "1000");
         assert_eq!(data.algos[1].rows[0].checksum_delta, "0");
         assert_eq!(data.algos[1].rows[1].checksum_delta, "-3");
+    }
+
+    /// A backend that broke has no row in the tables, and a row that is absent
+    /// reads exactly like a backend nobody ever wrote. The report says which ones
+    /// it lost, and to what.
+    #[test]
+    fn the_report_names_the_backends_the_campaign_lost() {
+        let mut recording = recording(vec![sample(
+            "c-gcc",
+            FpMode::Strict,
+            Phase::Run,
+            false,
+            2_000_000_000,
+        )]);
+        recording.failures = vec![crate::sample::Failure {
+            algo: "mandelbrot".to_owned(),
+            language: "rust".to_owned(),
+            compiler: Some("llvm".to_owned()),
+            interpreter: None,
+            description: "Rust, as the fixture declares it.".to_owned(),
+            comments: None,
+            mode: FpMode::Strict,
+            stage: Stage::Measure,
+            phase: Some(Phase::Run),
+            round: Some(2),
+            // Multi-line and full of pipes, like every real one: a Markdown cell is
+            // one line, and an unescaped pipe shears the row in half.
+            error: "`docker run` failed\nSegmentation fault | core dumped".to_owned(),
+        }];
+
+        let data = build(&recording);
+        assert_eq!(data.failures.len(), 1);
+        assert_eq!(data.failures[0].backend, "rust-llvm");
+        // Zero-based inside the harness, one-based for a reader — the campaign log
+        // says "round 3 of 10", and this has to agree with it.
+        assert_eq!(data.failures[0].stage, "run round 3");
+        assert_eq!(
+            data.failures[0].error,
+            "`docker run` failed · Segmentation fault \\| core dumped",
+        );
+
+        let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
+        assert!(markdown.contains("## What did not finish"), "{markdown}");
+        assert!(markdown.contains("rust"), "{markdown}");
+    }
+
+    /// A clean campaign does not get a section confessing to nothing.
+    #[test]
+    fn a_campaign_that_lost_nothing_has_no_failures_section() {
+        let data = build(&recording(vec![sample(
+            "c-gcc",
+            FpMode::Strict,
+            Phase::Run,
+            false,
+            2_000_000_000,
+        )]));
+        let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
+        assert!(!markdown.contains("What did not finish"), "{markdown}");
     }
 
     #[test]

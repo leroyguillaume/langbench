@@ -125,12 +125,33 @@ rounds can only ever lower it, and the dispersion printed beside it tells you
 whether N was large enough. A short campaign is pessimistic, never incorrect.
 
 The harness logs one line per invocation so you can watch this happen; if nothing
-has moved after `--run-timeout` seconds, the container is killed and the campaign
-fails rather than hanging.
+has moved after `--run-timeout` seconds, the container is killed and that backend
+is quarantined — a hung run is not a slow run, and the rest of the campaign is
+none of its business.
 
 Sizing for the slowest backend makes the fastest one's *wall-clock* mostly
 container startup — which is why the report also carries `Compute min`, timed
 inside the program and unaffected.
+
+### When a backend breaks
+
+It does not take the campaign with it. An image that fails to build, a kernel that
+segfaults, a run that hangs past `--run-timeout`, a `strict` checksum that
+disagrees with the reference — each of those takes out **that one
+`(backend, mode)` unit**, at the point it breaks, and the campaign carries on
+measuring the others. Nothing is retried: whatever broke in round one breaks in
+round nine.
+
+The failure is not swept up, either. It is written to `samples.ndjson` as a
+`failure` record, and every rendering shows it — `langbench md` grows a *What did
+not finish* section, and so does the website. A benchmark that silently drops what
+did not work flatters itself, and a missing row looks exactly like a backend nobody
+ever wrote.
+
+The one case that still fails the campaign is *everything* failing: a samples file
+with a header and no samples renders into an empty table, and an empty table is a
+lie told quietly. That exits non-zero — usually because the Docker daemon is not
+running, which fails identically for every backend.
 
 ### Stopping a campaign
 

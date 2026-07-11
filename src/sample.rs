@@ -141,6 +141,69 @@ pub struct Campaign {
     pub modes: Vec<String>,
 }
 
+/// Where a backend died. A backend that never built and a backend that built and
+/// then crashed are two different bugs, and the reader has to know which.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stage {
+    /// `docker build` failed: the image does not exist.
+    Prepare,
+    /// The container ran and did not produce a valid record: a crash, a hang past
+    /// the timeout, unreadable stdout, or a checksum that diverges from strict.
+    Measure,
+}
+
+impl Stage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Prepare => "prepare",
+            Self::Measure => "measure",
+        }
+    }
+}
+
+/// A backend that left the campaign, and what it left on.
+///
+/// A failure is **not** a sample: it carries no timing, and nothing aggregates
+/// it. It is written to the same file for the same reason the samples are — the
+/// renderings are pure functions of `samples.ndjson`, so a report that names the
+/// backends that broke can only get that fact from here. A row that is missing
+/// from a table looks exactly like a backend nobody wrote, and that is the one
+/// thing a benchmark must never let a reader believe.
+///
+/// Like a sample, it copies its manifest fields onto itself: it must say what
+/// broke without a second file to join against.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Failure {
+    pub algo: String,
+    pub language: String,
+    pub compiler: Option<String>,
+    pub interpreter: Option<String>,
+    pub description: String,
+    pub comments: Option<String>,
+    pub mode: FpMode,
+    pub stage: Stage,
+    pub phase: Option<Phase>,
+    /// The round it died in. `None` when the image never built — there was no
+    /// round yet.
+    pub round: Option<u32>,
+    /// The error, rendered with its full `anyhow` context chain. A string, and
+    /// deliberately so: it is a message for a human, and the harness never
+    /// branches on it.
+    pub error: String,
+}
+
+impl Failure {
+    /// This failure's backend, as one token. See `backend_slug`.
+    pub fn backend(&self) -> String {
+        backend_slug(
+            &self.language,
+            self.compiler.as_deref(),
+            self.interpreter.as_deref(),
+        )
+    }
+}
+
 /// A line of `samples.ndjson`, as written.
 #[derive(Serialize)]
 #[serde(tag = "record", rename_all = "lowercase")]
@@ -150,6 +213,7 @@ enum Record<'a> {
         campaign: &'a Campaign,
     },
     Sample(&'a Sample),
+    Failure(&'a Failure),
 }
 
 /// The same line, as read back. Owned, because nothing borrows the file.
@@ -164,9 +228,11 @@ enum OwnedRecord {
         campaign: Campaign,
     },
     Sample(Sample),
+    Failure(Failure),
 }
 
-/// Everything one campaign recorded: its context, and every measured invocation.
+/// Everything one campaign recorded: its context, every measured invocation, and
+/// every backend it lost on the way.
 ///
 /// This is what `langbench csv` and `langbench md` consume. Both are pure
 /// functions of this value, which is why the campaign never renders anything
@@ -176,6 +242,9 @@ pub struct Recording {
     pub machine: Machine,
     pub campaign: Campaign,
     pub samples: Vec<Sample>,
+    /// Empty on a campaign where everything worked, which is not the common case
+    /// the moment a new backend lands.
+    pub failures: Vec<Failure>,
 }
 
 /// Read back a `samples.ndjson` written by a campaign.
@@ -210,6 +279,7 @@ pub fn parse(raw: &str) -> Result<Recording> {
     };
 
     let mut samples = Vec::new();
+    let mut failures = Vec::new();
     let mut pending: Option<(usize, &str)> = None;
     for (index, line) in lines {
         // Only the *last* line can be a torn write: hold each one back until the
@@ -217,6 +287,7 @@ pub fn parse(raw: &str) -> Result<Recording> {
         if let Some((index, line)) = pending.take() {
             match parse_record(line, index + 1)? {
                 OwnedRecord::Sample(sample) => samples.push(sample),
+                OwnedRecord::Failure(failure) => failures.push(failure),
                 OwnedRecord::Header { .. } => anyhow::bail!(
                     "line {}: a second header record; two campaigns were appended to one file",
                     index + 1,
@@ -228,6 +299,7 @@ pub fn parse(raw: &str) -> Result<Recording> {
     if let Some((index, line)) = pending {
         match parse_record(line, index + 1) {
             Ok(OwnedRecord::Sample(sample)) => samples.push(sample),
+            Ok(OwnedRecord::Failure(failure)) => failures.push(failure),
             Ok(OwnedRecord::Header { .. }) => anyhow::bail!(
                 "line {}: a second header record; two campaigns were appended to one file",
                 index + 1,
@@ -243,6 +315,7 @@ pub fn parse(raw: &str) -> Result<Recording> {
         machine: *machine,
         campaign,
         samples,
+        failures,
     })
 }
 
@@ -358,6 +431,13 @@ impl SampleWriter {
 
     pub fn write_sample(&mut self, sample: &Sample) -> Result<()> {
         self.write_record(&Record::Sample(sample))
+    }
+
+    /// A backend that left the campaign. Written where it happened, flushed like
+    /// a sample: an interrupted campaign keeps the record of what had already
+    /// broken, and the renderings can name it.
+    pub fn write_failure(&mut self, failure: &Failure) -> Result<()> {
+        self.write_record(&Record::Failure(failure))
     }
 
     fn write_record(&mut self, record: &Record<'_>) -> Result<()> {
