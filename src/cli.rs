@@ -64,7 +64,7 @@ pub enum Command {
     Run(RunArgs),
 
     /// Render a campaign's samples as CSV, for a spreadsheet or a dataframe.
-    Csv(RenderArgs),
+    Csv(CsvArgs),
 
     /// Render a campaign's samples as a Markdown report.
     Md(MarkdownArgs),
@@ -76,25 +76,42 @@ pub enum Command {
     Machine,
 }
 
-/// The one file a campaign writes, and the one file a rendering reads. `OUTPUT`
-/// names it on both sides, so a `run` and the `md` that follows agree without
-/// being told twice.
-pub const DEFAULT_OUTPUT: &str = "samples.ndjson";
+/// The one file a campaign writes, and the one file a rendering reads.
+/// `SAMPLES_OUTPUT` names it on both sides, so a `run` and the `md` that follows
+/// agree without being told twice.
+pub const DEFAULT_SAMPLES_OUTPUT: &str = "samples.ndjson";
+
+/// Where `langbench csv` writes its table.
+pub const DEFAULT_CSV_OUTPUT: &str = "samples.csv";
+
+/// Where `langbench md` writes its report.
+pub const DEFAULT_MD_OUTPUT: &str = "report.md";
 
 /// Reading a campaign back. Rendering is never part of measuring: the samples
 /// are the source of truth, and every artifact is recomputed from them.
 ///
-/// Renderings go to stdout. Redirect them — `langbench md > report.md` — rather
-/// than growing a second, opposite meaning for `--output`.
+/// The samples are an *input* here, so they keep their own name —
+/// `SAMPLES_OUTPUT`, the value `run` wrote — and each rendering names its own
+/// destination separately.
 #[derive(Args, Debug)]
 pub struct RenderArgs {
     /// The `samples.ndjson` a campaign wrote.
     #[arg(
         value_name = "SAMPLES",
-        env = "OUTPUT",
-        default_value_os_t = PathBuf::from(DEFAULT_OUTPUT),
+        env = "SAMPLES_OUTPUT",
+        default_value_os_t = PathBuf::from(DEFAULT_SAMPLES_OUTPUT),
     )]
     pub samples: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct CsvArgs {
+    #[command(flatten)]
+    pub render: RenderArgs,
+
+    /// Path of the CSV to write. Missing parent directories are created.
+    #[arg(long, short, env = "CSV_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_CSV_OUTPUT))]
+    pub output: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -102,16 +119,16 @@ pub struct MarkdownArgs {
     #[command(flatten)]
     pub render: RenderArgs,
 
+    /// Path of the report to write. Missing parent directories are created.
+    #[arg(long, short, env = "MD_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_MD_OUTPUT))]
+    pub output: PathBuf,
+
     /// A Liquid template to render instead of the built-in one.
     ///
-    /// It receives exactly the same variables; `langbench md --print-template`
-    /// writes the built-in one out as a starting point.
-    #[arg(long, env = "TEMPLATE", conflicts_with = "print_template")]
+    /// It receives exactly the same variables. The built-in one lives at
+    /// `templates/report.md.liquid`; copy it as a starting point.
+    #[arg(long, env = "TEMPLATE")]
     pub template: Option<PathBuf>,
-
-    /// Print the built-in template on stdout and exit, measuring nothing.
-    #[arg(long)]
-    pub print_template: bool,
 }
 
 #[derive(Args, Debug)]
@@ -134,7 +151,7 @@ pub struct RunArgs {
     /// Path of the `samples.ndjson` this campaign writes: its only artifact.
     ///
     /// Missing parent directories are created.
-    #[arg(long, short, env = "OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_OUTPUT))]
+    #[arg(long, short, env = "SAMPLES_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_SAMPLES_OUTPUT))]
     pub output: PathBuf,
 
     /// Root of the `<algo>/<language>-<compiler>/Dockerfile` tree.

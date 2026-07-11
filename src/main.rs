@@ -18,8 +18,11 @@ use crate::machine::Machine;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Diagnostics on stderr. Stdout carries program output alone — the machine
+    // report, the built-in template — so it stays pipeable.
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(&cli.log_filter))
+        .with_writer(std::io::stderr)
         .init();
 
     match cli.command {

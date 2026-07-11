@@ -71,7 +71,7 @@ Common flags — every one of them also reads an environment variable:
 | `--algo` | `ALGO` | all discovered | Restrict to some algorithms |
 | `--mode` | `FP_MODE` | `strict,fma,fast` | Floating-point semantics |
 | `--cpu` | `CPUS` | machine parallelism | Threads for kernels *and* compilers |
-| `--output`, `-o` | `OUTPUT` | `samples.ndjson` | Path of the samples file the campaign writes |
+| `--output`, `-o` | `SAMPLES_OUTPUT` | `samples.ndjson` | Path of the samples file the campaign writes |
 | `--benchmarks-dir` | `BENCHMARKS_DIR` | `benchmarks` | Root of the benchmark tree |
 | `--grid-size` | `GRID_SIZE` | `2048` | Side of the N×N grid |
 | `--max-iter` | `MAX_ITER` | `1000` | Iteration ceiling |
@@ -157,25 +157,36 @@ compile-time one — inside a Linux container a compile-time check would report
 
 ## Output
 
-A campaign writes **one** file, the one `--output` (`OUTPUT`) names: a header
-record with the full machine description and campaign parameters, then one line
-per measured invocation, flushed as it is produced. It is the source of truth,
-and the only artifact that cannot be recomputed — an interrupted campaign keeps
-every sample it completed.
+A campaign writes **one** file, the one `--output` (`SAMPLES_OUTPUT`) names: a
+header record with the full machine description and campaign parameters, then one
+line per measured invocation, flushed as it is produced. It is the source of
+truth, and the only artifact that cannot be recomputed — an interrupted campaign
+keeps every sample it completed.
 
 Everything else is a *rendering*, produced afterwards by a separate command. That
 is the point: a report can only ever show what a run actually recorded, and the
 same file re-renders identically on any host, months later.
 
 ```sh
-langbench csv > samples.csv       # the samples, flat
-langbench md  > report.md         # the samples, as a report
+langbench csv       # the samples, flat, into samples.csv
+langbench md        # the samples, as a report, into report.md
 
-langbench md results/strict-4.ndjson   # any campaign, not just the default
+langbench md results/strict-4.ndjson --output results/strict-4.md
 ```
 
-Both read the same `OUTPUT` the campaign wrote unless you name another file, and
-both print to stdout — so they pipe, and `OUTPUT` keeps exactly one meaning.
+Each command reads the samples the campaign wrote and writes a file of its own.
+No rendering goes to stdout, so none is lost to a forgotten redirection; stdout
+carries only what has no file of its own, and logs go to stderr:
+
+| Command | Flag | Env | Default |
+| --- | --- | --- | --- |
+| `run` | `--output`, `-o` | `SAMPLES_OUTPUT` | `samples.ndjson` |
+| `csv` | `--output`, `-o` | `CSV_OUTPUT` | `samples.csv` |
+| `md` | `--output`, `-o` | `MD_OUTPUT` | `report.md` |
+
+The samples path is the positional argument of `csv` and `md`, and it defaults to
+the same `SAMPLES_OUTPUT` a `run` wrote — so a campaign and the report that
+follows agree without being told twice. Missing parent directories are created.
 
 **CSV.** The same records, flat, for a spreadsheet or a dataframe. Missing values
 are **empty fields**, never `n/a`: a numeric column that sometimes holds a word
@@ -185,7 +196,8 @@ source of truth.
 
 ```sh
 # Median run time per mode, straight from the samples.
-langbench csv | awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }'
+langbench csv
+awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
@@ -194,8 +206,8 @@ benchmark target. It renders `templates/report.md.liquid`, embedded in the binar
 the same variables:
 
 ```sh
-langbench md --print-template > mine.liquid   # the built-in one, as a starting point
-langbench md --template mine.liquid > report.md
+cp templates/report.md.liquid mine.liquid   # the built-in one, as a starting point
+langbench md --template mine.liquid         # renders into report.md
 ```
 
 [liquid]: https://shopify.github.io/liquid/
