@@ -191,8 +191,14 @@ the container with a monotonic clock. It excludes everything that happened befor
 
 ### Startup
 
-**Run min** minus **Compute min**: everything that happened before the real work
-began. Container creation, runtime initialisation, JIT warmup, interpreter boot.
+Everything that happened before the real work began: container creation, runtime
+initialisation, JIT warmup, interpreter boot.
+
+It is the smallest `wall − compute` gap *within a single run*, not **Run min**
+minus **Compute min**. Those two minima usually come from different rounds, so
+subtracting them would describe a run that never took place — and the arithmetic
+would not even close: on a noisy host the difference of the minima can exceed
+every gap actually observed.
 
 **This is a result, not overhead to subtract away.** It is where a JVM or a CPython
 pays its entry fee, and it is a real cost in any program that does not run for an
@@ -212,18 +218,37 @@ whose scheduler busy-waits (spinning in a loop while waiting instead of sleeping
 burns CPU without finishing a millisecond sooner — and the gap between these two
 columns is the only place you will ever see it.
 
-Rule of thumb: `CPU time / (Run min × threads)` gives you a parallel efficiency.
-Close to 1 means the threads were genuinely working; well below means they were
-waiting on each other.
+Rule of thumb: `CPU time / (Compute min × threads)` gives you a parallel
+efficiency. Close to 1 means the threads were genuinely working; well below means
+they were waiting on each other.
+
+Use **Compute min** here, never **Run min**. The threads do not exist during
+container creation and interpreter boot, but the stopwatch behind **Run min** is
+already running — divide by it and a perfectly parallel backend reports an
+efficiency well under 1, for no reason other than that Docker took its time.
 
 ### Build min
 
-The shortest wall-clock of a timed recompile, from a clean tmpfs (an in-memory
-filesystem, so no disk cache advantage) and with no network access.
+The shortest **compile time** of a timed recompile, from a clean tmpfs (an
+in-memory filesystem, so no disk cache advantage) and with no network access.
 
-Note the subtlety: `docker build` is *preparation* and is never timed — timing it
-would mostly measure Docker's layer cache. This column comes from a `docker run`
-that recompiles the source inside the container and throws the result away.
+This is the compiler's own elapsed time, reported from *inside* the container —
+the `docker run` wall-clock around it is discarded. Docker is here so that six
+toolchains need not be installed on the host; the less it shows up in a number,
+the better. Container creation costs on the order of a hundred milliseconds,
+which is *several times* what gcc spends on a single-file kernel. Timing the wall
+would charge every compiler the same large constant, flattering the slow ones and
+compressing the very ratios this column exists to show.
+
+There is no **Startup** analogue for this column, and that asymmetry is
+deliberate: a *runtime's* startup is a property of the backend and therefore a
+result, while a *container's* startup is an artefact of how we chose to isolate
+the build.
+
+Note the other subtlety: `docker build` is *preparation* and is never timed —
+timing it would mostly measure Docker's layer cache. This column comes from a
+`docker run` that recompiles the source inside the container and throws the
+result away.
 
 `n/a` means the backend has no build step at all.
 

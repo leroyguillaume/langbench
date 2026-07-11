@@ -65,6 +65,14 @@ subject is **compiler and runtime backends**, not languages.
   `rusage` of the `docker` client process, which measures argument parsing.
 - Record the external wall-clock *and* the program's self-reported `elapsed_ns`.
   The gap is runtime startup cost, and it is a result.
+- The **run** column headlines the external wall-clock; the **build** column
+  headlines the internal `elapsed_ns`. A runtime's startup is a property of the
+  backend; a container's startup is an artefact of our isolation choice, and it is
+  several times a `gcc` invocation on one file.
+  ([why](METHODOLOGY.md#the-build-column-reports-the-internal-clock-the-run-column-the-external-one))
+- `Startup` is the smallest `wall − elapsed` gap *within a single sample*, never
+  the difference of two minima drawn from different rounds — that would describe a
+  run that never happened.
 - Interleave round-robin: outer loop over rounds, inner loop over
   implementations. Never block by implementation.
 - **Write raw samples, never aggregates.** One NDJSON line per run, flushed as it

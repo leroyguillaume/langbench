@@ -266,7 +266,7 @@ expression in the Python kernel aborts the campaign.
 
 The two Python rows compile a byte-identical source (a test enforces it), so they
 are the clean "same source, different backend" experiment. The first result is
-counter-intuitive and worth the whole harness: **Cython is 1.5× slower than the
+counter-intuitive and worth the whole harness: **Cython is 1.3× slower than the
 CPython interpreter it compiles.** Without type annotations the generated C
 manipulates `PyFloat` objects through the C-API — its hot loop holds 142 call
 instructions and one `fadd`, where the C kernel has none and fourteen — while

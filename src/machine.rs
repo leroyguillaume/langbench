@@ -156,12 +156,7 @@ impl Machine {
         );
         push("OS", opt(self.os.as_deref()));
         push("Kernel", opt(self.kernel.as_deref()));
-        push(
-            "Virtualization",
-            self.virtualization
-                .clone()
-                .unwrap_or_else(|| "none detected".to_owned()),
-        );
+        push("Virtualization", self.virtualization_field());
         push("Harness containerized", self.containerized.to_string());
         push("CPU model", opt(self.cpu_model.as_deref()));
         push("CPU vendor", opt(self.cpu_vendor.as_deref()));
@@ -203,6 +198,22 @@ impl Machine {
             opt(self.docker_storage_driver.as_deref()),
         );
         fields
+    }
+
+    /// What the hypervisor probes actually established.
+    ///
+    /// Every probe reads a Linux path (`/sys/hypervisor`, DMI, the kernel
+    /// release, the CPU flags). Off Linux none of them exist, so the answer is
+    /// `None` because we could not look — not because we looked and found
+    /// nothing. Rendering that as "none detected" would state the opposite of
+    /// the warning printed above the very same table, on a host where the
+    /// containers demonstrably run inside a VM.
+    fn virtualization_field(&self) -> String {
+        match (&self.virtualization, self.linux) {
+            (Some(evidence), _) => evidence.clone(),
+            (None, true) => "none detected".to_owned(),
+            (None, false) => "unknown (the probes need Linux; see the warning above)".to_owned(),
+        }
     }
 
     /// A two-column table plus the host's warnings, for `langbench machine`.
@@ -496,6 +507,48 @@ mod tests {
     fn a_non_linux_host_is_flagged() {
         let machine = Machine::default();
         assert!(machine.warnings().iter().any(|w| w.contains("Linux")));
+    }
+
+    fn virtualization_of(machine: &Machine) -> String {
+        machine
+            .fields()
+            .into_iter()
+            .find(|field| field.label == "Virtualization")
+            .expect("the machine table has a Virtualization row")
+            .value
+    }
+
+    /// Every hypervisor probe reads a Linux path. Off Linux we did not look, and
+    /// saying "none detected" would contradict the warning printed above the very
+    /// same table — on a host whose containers demonstrably run inside a VM.
+    #[test]
+    fn a_host_we_cannot_probe_reports_unknown_not_none() {
+        let machine = Machine {
+            linux: false,
+            virtualization: None,
+            ..Machine::default()
+        };
+        assert!(virtualization_of(&machine).starts_with("unknown"));
+    }
+
+    #[test]
+    fn a_linux_host_with_no_hypervisor_evidence_reports_none_detected() {
+        let machine = Machine {
+            linux: true,
+            virtualization: None,
+            ..Machine::default()
+        };
+        assert_eq!(virtualization_of(&machine), "none detected");
+    }
+
+    #[test]
+    fn evidence_of_a_hypervisor_is_reported_verbatim() {
+        let machine = Machine {
+            linux: true,
+            virtualization: Some("DMI vendor is `QEMU`".to_owned()),
+            ..Machine::default()
+        };
+        assert_eq!(virtualization_of(&machine), "DMI vendor is `QEMU`");
     }
 
     #[test]

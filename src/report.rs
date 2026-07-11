@@ -67,7 +67,13 @@ struct Bucket {
     run_elapsed: Vec<u64>,
     run_startup: Vec<u64>,
     run_cpu_usec: Vec<u64>,
-    build_wall: Vec<u64>,
+    /// The compiler's own elapsed time, reported by the entrypoint from inside
+    /// the container — never the `docker run` wall-clock. Container creation
+    /// costs ~110 ms here, which is several times a `gcc` invocation on a
+    /// single kernel: timing the wall would rank Docker, not the compilers.
+    /// The run row keeps its wall-clock because a runtime's startup is a result;
+    /// a container's is an artefact of how we chose to isolate the build.
+    build_elapsed: Vec<u64>,
     checksum: Option<u64>,
     binary_bytes: Option<u64>,
     text_bytes: Option<u64>,
@@ -106,7 +112,7 @@ pub fn build(recording: &Recording) -> ReportData {
             continue;
         }
         match sample.phase {
-            Phase::Build => bucket.build_wall.push(sample.wall_ns),
+            Phase::Build => bucket.build_elapsed.push(sample.elapsed_ns),
             Phase::Run => {
                 bucket.run_wall.push(sample.wall_ns);
                 bucket.run_elapsed.push(sample.elapsed_ns);
@@ -136,8 +142,8 @@ pub fn build(recording: &Recording) -> ReportData {
                 || "n/a".to_owned(),
                 |summary| format!("{:.2} s", summary.median as f64 / 1e6),
             ),
-            build_min: min_ms(summarize(&bucket.build_wall)),
-            build_dispersion: dispersion(summarize(&bucket.build_wall)),
+            build_min: min_ms(summarize(&bucket.build_elapsed)),
+            build_dispersion: dispersion(summarize(&bucket.build_elapsed)),
             binary: bytes(bucket.binary_bytes),
             text: bytes(bucket.text_bytes),
             checksum_delta: delta(bucket.checksum, reference),
@@ -321,8 +327,26 @@ mod tests {
         ];
         let data = build(&recording(samples));
         let row = &data.algos[0].rows[0];
-        assert_eq!(row.build_min, "800.0 ms");
+        // `sample()` halves the wall to get the elapsed, and the build column
+        // reports the elapsed. See the next test.
+        assert_eq!(row.build_min, "400.0 ms");
         assert_eq!(row.run_min, "2000.0 ms");
+    }
+
+    /// The build column times the compiler, not Docker.
+    ///
+    /// A `docker run` costs ~110 ms of container creation here, several times a
+    /// `gcc` invocation on a single-file kernel. Reporting the wall-clock would
+    /// bury the compilers under a constant that says nothing about them, and
+    /// would flatter a slow compiler by the same 110 ms it charges a fast one.
+    #[test]
+    fn the_build_column_excludes_container_creation() {
+        let mut build_sample = sample("c-gcc", FpMode::Strict, Phase::Build, false, 0);
+        build_sample.wall_ns = 142_000_000; // what `docker run` took
+        build_sample.elapsed_ns = 30_000_000; // what gcc took
+
+        let data = build(&recording(vec![build_sample]));
+        assert_eq!(data.algos[0].rows[0].build_min, "30.0 ms");
     }
 
     #[test]
@@ -402,6 +426,27 @@ mod tests {
         let data = build(&recording(vec![]));
         let error = render(&data, "{% for %}").unwrap_err();
         assert!(error.to_string().contains("template"), "{error}");
+    }
+
+    /// Startup is a gap observed within one run, never the difference of two
+    /// minima drawn from different rounds — that describes a run that never
+    /// happened, and on a noisy host it can exceed every gap actually measured.
+    #[test]
+    fn startup_is_the_smallest_gap_of_a_single_run_not_the_difference_of_the_minima() {
+        let mut fast_wall = sample("c-gcc", FpMode::Strict, Phase::Run, false, 0);
+        fast_wall.wall_ns = 350_000_000;
+        fast_wall.elapsed_ns = 240_000_000; // gap: 110 ms
+
+        let mut fast_compute = sample("c-gcc", FpMode::Strict, Phase::Run, false, 0);
+        fast_compute.wall_ns = 400_000_000;
+        fast_compute.elapsed_ns = 230_000_000; // gap: 170 ms
+
+        let data = build(&recording(vec![fast_wall, fast_compute]));
+        let row = &data.algos[0].rows[0];
+        assert_eq!(row.run_min, "350.0 ms");
+        assert_eq!(row.compute_min, "230.0 ms");
+        // The difference of the two minima would be 120 ms, a run nobody observed.
+        assert_eq!(row.startup, "110.0 ms");
     }
 
     #[test]

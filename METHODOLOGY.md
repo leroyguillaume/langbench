@@ -332,6 +332,28 @@ Build time is a **headline result**, not a footnote. The canonical
 compile-versus-runtime trade-off — cranelift compiles much faster and emits
 slower code — is half the story of a compiler benchmark.
 
+### The build column reports the internal clock, the run column the external one
+
+Both phases record both clocks — the sample carries `wall_ns` and `elapsed_ns`
+either way — but the report headlines a different one for each, and the asymmetry
+is deliberate.
+
+The run row headlines the **external** clock, because what sits between the two is
+the runtime's startup: a JVM booting, an interpreter loading. That is a property
+of the backend, and therefore a result.
+
+The build row headlines the **internal** clock, because what sits between the two
+is Docker creating a container. That is a property of *our* isolation choice, and
+therefore an artefact. Docker is in this project so that six toolchains need not be
+installed on the host; the less it appears in a measurement, the better. It is not
+a small constant either: container creation runs to ~110 ms on the reference host,
+while gcc compiles a single-file kernel in ~30 ms. Headlining the wall-clock would
+charge every compiler the same large tax, flatter the slow ones, and compress a
+4.7× ratio into 1.3×. Publishing that as "build time" would be publishing Docker.
+
+The wall-clock of a build is still written to `samples.ndjson`, like everything
+else. It is simply not what the column reports.
+
 ### Binary size
 
 Three numbers, all cheap, recorded once per implementation in the `build` record
