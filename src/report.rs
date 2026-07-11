@@ -23,6 +23,12 @@ pub struct ReportData {
     pub machine_fields: Vec<Field>,
     pub warnings: Vec<String>,
     pub algos: Vec<AlgoReport>,
+    /// Every backend the campaign measured, described once, at the end of the
+    /// report. The tables repeat a backend per FP mode; a description repeated
+    /// three times is a description nobody reads, and one sitting between the
+    /// numbers and the reader is a description in the way. Straight from the
+    /// `bench.yaml` the samples carry.
+    pub backends: Vec<Backend>,
 }
 
 #[derive(Debug, Serialize)]
@@ -34,6 +40,32 @@ pub struct AlgoReport {
     pub rows: Vec<Row>,
 }
 
+/// One backend's identity card, as its manifest declared it.
+#[derive(Debug, Serialize)]
+pub struct Backend {
+    /// `mandelbrot-python-cython-cpython`: the heading of this backend's section,
+    /// and therefore the anchor every row of the tables links to. Computed here
+    /// rather than in the template, so the link and its target cannot disagree.
+    pub id: String,
+    pub algo: String,
+    pub backend: String,
+    pub language: String,
+    pub compiler: String,
+    pub interpreter: String,
+    pub description: String,
+    /// Empty when the manifest declared none — Liquid tests it for truthiness.
+    pub comments: String,
+}
+
+/// The anchor of a backend's section, and the heading it is generated from.
+///
+/// Markdown renderers derive an anchor from the heading text, and they do not all
+/// derive it the same way. So the heading *is* the anchor: lowercase, no spaces,
+/// no punctuation — nothing for a renderer to reinterpret.
+fn backend_id(algo: &str, backend: &str) -> String {
+    format!("{algo}-{backend}")
+}
+
 #[derive(Debug, Serialize)]
 pub struct Row {
     /// The value `run_min` was formatted from, kept to sort rows fastest-first.
@@ -41,9 +73,18 @@ pub struct Row {
     /// no measured run — sorts last, having no speed to be ranked on.
     #[serde(skip)]
     pub run_min_ns: Option<u64>,
-    pub implementation: String,
+    /// The (language, compiler, interpreter) triple as one token. Not a column:
+    /// the table spells the three out.
+    pub backend: String,
+    /// Anchor of this row's entry in **Backends**, so a reader who does not know
+    /// what `cython` is can find out without leaving the report.
+    pub backend_id: String,
     pub language: String,
+    /// `n/a` when the backend compiles nothing ahead of the run — a fact about
+    /// it, not a hole in the data.
     pub compiler: String,
+    /// `n/a` when the backend ships machine code and no runtime.
+    pub interpreter: String,
     pub mode: String,
     pub run_min: String,
     pub run_dispersion: String,
@@ -58,11 +99,14 @@ pub struct Row {
     pub checksum_delta: String,
 }
 
-/// Samples grouped by (algorithm, implementation, FP mode).
+/// Samples grouped by (algorithm, backend, FP mode).
 #[derive(Default)]
 struct Bucket {
     language: String,
-    compiler: String,
+    compiler: Option<String>,
+    interpreter: Option<String>,
+    description: String,
+    comments: Option<String>,
     run_wall: Vec<u64>,
     run_elapsed: Vec<u64>,
     run_startup: Vec<u64>,
@@ -90,7 +134,7 @@ pub fn build(recording: &Recording) -> ReportData {
     for sample in samples {
         let key = (
             sample.algo.clone(),
-            sample.implementation.clone(),
+            sample.backend(),
             sample.mode.to_string(),
         );
         let bucket = buckets.entry(key.clone()).or_insert_with(|| {
@@ -98,6 +142,9 @@ pub fn build(recording: &Recording) -> ReportData {
             Bucket {
                 language: sample.language.clone(),
                 compiler: sample.compiler.clone(),
+                interpreter: sample.interpreter.clone(),
+                description: sample.description.clone(),
+                comments: sample.comments.clone(),
                 ..Bucket::default()
             }
         });
@@ -123,15 +170,18 @@ pub fn build(recording: &Recording) -> ReportData {
     }
 
     let mut algos: Vec<AlgoReport> = Vec::new();
+    let mut backends: Vec<Backend> = Vec::new();
     for key in &order {
-        let (algo, implementation, mode) = key;
+        let (algo, backend, mode) = key;
         let bucket = &buckets[key];
         let reference = references.get(algo).copied();
         let row = Row {
             run_min_ns: summarize(&bucket.run_wall).map(|summary| summary.min),
-            implementation: implementation.clone(),
+            backend: backend.clone(),
+            backend_id: backend_id(algo, backend),
             language: bucket.language.clone(),
-            compiler: bucket.compiler.clone(),
+            compiler: opt(bucket.compiler.as_deref()),
+            interpreter: opt(bucket.interpreter.as_deref()),
             mode: mode.clone(),
             run_min: min_ms(summarize(&bucket.run_wall)),
             run_dispersion: dispersion(summarize(&bucket.run_wall)),
@@ -148,6 +198,23 @@ pub fn build(recording: &Recording) -> ReportData {
             text: bytes(bucket.text_bytes),
             checksum_delta: delta(bucket.checksum, reference),
         };
+
+        // One card per backend, not one per (backend, mode): the three modes are
+        // three experiments on the same thing, and the thing is what a card
+        // describes.
+        let id = backend_id(algo, backend);
+        if !backends.iter().any(|known: &Backend| known.id == id) {
+            backends.push(Backend {
+                id,
+                algo: algo.clone(),
+                backend: backend.clone(),
+                language: bucket.language.clone(),
+                compiler: opt(bucket.compiler.as_deref()),
+                interpreter: opt(bucket.interpreter.as_deref()),
+                description: bucket.description.clone(),
+                comments: bucket.comments.clone().unwrap_or_default(),
+            });
+        }
 
         match algos.iter_mut().find(|report| &report.algo == algo) {
             Some(report) => report.rows.push(row),
@@ -175,6 +242,7 @@ pub fn build(recording: &Recording) -> ReportData {
         machine_fields: recording.machine.fields(),
         warnings: recording.machine.warnings(),
         algos,
+        backends,
     }
 }
 
@@ -208,6 +276,13 @@ pub fn render(data: &ReportData, template: &str) -> Result<String> {
         .context("parsing the report template")?;
     let globals = liquid::to_object(data).context("serializing the report data")?;
     template.render(&globals).context("rendering the report")
+}
+
+/// An absent half of the triple is a fact about the backend — a compiled binary
+/// has no interpreter — so it is rendered, never blanked. A blank cell reads as a
+/// rendering bug.
+fn opt(value: Option<&str>) -> String {
+    value.unwrap_or("n/a").to_owned()
 }
 
 /// The unit belongs to the value, not to the template: `n/a ms` is nonsense.
@@ -258,7 +333,7 @@ mod tests {
         data.algos[0]
             .rows
             .iter()
-            .map(|row| row.implementation.as_str())
+            .map(|row| row.backend.as_str())
             .collect()
     }
 
@@ -270,12 +345,17 @@ mod tests {
         }
     }
 
-    fn sample(implementation: &str, mode: FpMode, phase: Phase, warmup: bool, wall: u64) -> Sample {
+    /// `backend` is spelled as its slug — `c-gcc`, `python-cpython` — and split
+    /// back into the triple the sample actually carries.
+    fn sample(backend: &str, mode: FpMode, phase: Phase, warmup: bool, wall: u64) -> Sample {
+        let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
             algo: "mandelbrot".to_owned(),
-            implementation: implementation.to_owned(),
-            language: "c".to_owned(),
-            compiler: "gcc".to_owned(),
+            language: language.to_owned(),
+            compiler: Some(compiler.to_owned()),
+            interpreter: None,
+            description: format!("{backend}, as the fixture declares it"),
+            comments: None,
             mode,
             phase,
             round: 0,
@@ -486,6 +566,43 @@ mod tests {
         assert_eq!(implementations(&data), ["c-gcc", "rust-llvm"]);
     }
 
+    /// A backend is described once, at the end, however many modes it was built
+    /// under — and every row's link lands on a heading that exists. A dead anchor
+    /// is worse than no link: it looks like the explanation is missing rather
+    /// than misfiled.
+    #[test]
+    fn every_row_links_to_a_backend_section_that_exists() {
+        let samples = vec![
+            sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000),
+            sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000),
+            sample(
+                "python-cpython",
+                FpMode::Strict,
+                Phase::Run,
+                false,
+                9_000_000,
+            ),
+        ];
+        let data = build(&recording(samples));
+
+        // Once per backend, not once per (backend, mode): `c-gcc` has two rows.
+        assert_eq!(data.backends.len(), 2);
+
+        let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
+        for row in &data.algos[0].rows {
+            assert!(
+                markdown.contains(&format!("](#{})", row.backend_id)),
+                "row `{}` has no link",
+                row.backend,
+            );
+            assert!(
+                markdown.contains(&format!("### {}\n", row.backend_id)),
+                "`{}` links to a heading that does not exist",
+                row.backend_id,
+            );
+        }
+    }
+
     #[test]
     fn rows_are_sorted_fastest_first() {
         let samples = vec![
@@ -561,7 +678,7 @@ mod tests {
 
         let header = markdown
             .lines()
-            .find(|line| line.starts_with("| Implementation |"))
+            .find(|line| line.starts_with("| Language |"))
             .expect("the results table has a header row");
         let columns: Vec<&str> = header
             .split('|')

@@ -3,14 +3,18 @@ use std::path::PathBuf;
 use std::thread::available_parallelism;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Floating-point semantics the kernels are compiled under.
 ///
 /// The axis is FP semantics, not "optimization on/off": every mode is `-O3`.
 /// See `METHODOLOGY.md#floating-point-modes`.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ValueEnum)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize, ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
+#[schemars(rename_all = "lowercase")]
 pub enum FpMode {
     /// `-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.
     Strict,
@@ -31,7 +35,7 @@ impl FpMode {
         }
     }
 
-    /// Parse a mode as it is spelled in a `langbench.fp_modes` label.
+    /// Parse a mode as a `bench.yaml` spells it.
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|mode| mode.as_str() == value)
     }
@@ -69,6 +73,20 @@ pub enum Command {
     /// Render a campaign's samples as a Markdown report.
     Md(MarkdownArgs),
 
+    /// Check every `bench.yaml` on disk, and report all of them at once.
+    ///
+    /// Every failure a campaign would hit at discovery time — a misspelled key,
+    /// an unknown FP mode, a backend that neither compiles nor interprets, two
+    /// manifests declaring the same identity — without building anything.
+    Validate(ValidateArgs),
+
+    /// Write the JSON Schema of a `bench.yaml`.
+    ///
+    /// Generated from the struct the harness deserializes, so it cannot drift
+    /// from what the campaign actually accepts. Point an editor at it and get
+    /// completion and validation as you type a manifest.
+    Jsonschema(JsonSchemaArgs),
+
     /// Describe this machine, and why it may be a poor benchmark target.
     ///
     /// Prints exactly what a campaign would record in its header, so you can
@@ -86,6 +104,32 @@ pub const DEFAULT_CSV_OUTPUT: &str = "samples.csv";
 
 /// Where `langbench md` writes its report.
 pub const DEFAULT_MD_OUTPUT: &str = "report.md";
+
+/// Where `langbench jsonschema` writes the manifest schema. At the repo root,
+/// because that is where an editor's `yaml.schemas` mapping looks for it, and a
+/// pre-commit hook keeps it honest.
+pub const DEFAULT_SCHEMA_OUTPUT: &str = "bench.schema.json";
+
+#[derive(Args, Debug)]
+pub struct ValidateArgs {
+    /// Manifests to check, or directories to walk. Defaults to the whole tree.
+    ///
+    /// Give it directories, not a hand-picked list of changed files: the
+    /// duplicate-identity check can only see a collision if it sees both halves.
+    #[arg(
+        value_name = "PATHS",
+        env = "BENCHMARKS_DIR",
+        default_values_os_t = vec![PathBuf::from("benchmarks")],
+    )]
+    pub paths: Vec<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct JsonSchemaArgs {
+    /// Path of the schema to write. Missing parent directories are created.
+    #[arg(long, short, env = "SCHEMA_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_SCHEMA_OUTPUT))]
+    pub output: PathBuf,
+}
 
 /// Reading a campaign back. Rendering is never part of measuring: the samples
 /// are the source of truth, and every artifact is recomputed from them.
@@ -154,7 +198,7 @@ pub struct RunArgs {
     #[arg(long, short, env = "SAMPLES_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_SAMPLES_OUTPUT))]
     pub output: PathBuf,
 
-    /// Root of the `<algo>/<language>-<compiler>/Dockerfile` tree.
+    /// Root of the tree to walk for `bench.yaml` manifests.
     #[arg(long, env = "BENCHMARKS_DIR", default_value_os_t = PathBuf::from("benchmarks"))]
     pub benchmarks_dir: PathBuf,
 

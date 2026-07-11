@@ -1,0 +1,19 @@
+algo: mandelbrot
+language: python
+# Nothing is compiled ahead of the run. CPython compiles to bytecode, but that is
+# the interpreter's own loading step, not a separate backend: `compileall` is
+# what the timed build phase measures.
+compiler: ~
+interpreter: cpython
+# One floating-point semantics, and no flag to change it: the interpreter never
+# contracts a multiply-add and never reassociates. An `fma` image would be the
+# same run under another tag.
+modes:
+  - strict
+description: >-
+  The kernel as written, executed by the CPython interpreter. Parallelism comes
+  from multiprocessing with the fork start method, because the GIL serialises
+  CPU-bound bytecode -- threading here would measure the GIL, not the machine.
+comments: >-
+  Forking the pool is inside the timer on purpose: what a parallel runtime costs
+  to start is part of what that runtime costs.

@@ -59,8 +59,8 @@ langbench run
 ```
 
 By default that discovers everything under `benchmarks/`, builds each
-implementation in every floating-point mode it declares it distinguishes (all
-three unless its Dockerfile says otherwise), and measures with the machine's
+implementation in every floating-point mode its `bench.yaml` declares it
+distinguishes (all three unless it says otherwise), and measures with the machine's
 thread count. It writes `samples.ndjson` and nothing else; `langbench csv` and
 `langbench md` turn that file into a table or a report, whenever you like.
 
@@ -214,11 +214,41 @@ langbench md --template mine.liquid         # renders into report.md
 
 ## Adding an implementation
 
-Convention over configuration. There is no manifest:
+Drop a `bench.yaml` next to a `Dockerfile`, anywhere under `benchmarks/`:
 
+```yaml
+algo: mandelbrot
+language: python
+compiler: cython      # omit if nothing is compiled ahead of the run
+interpreter: cpython  # omit if the binary runs on the bare CPU
+modes:
+  - strict            # or `modes: all`
+description: >-
+  The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
+  a C extension module instead of interpreted.
+comments: >-
+  It is slower than the interpreter it compiles, and that is a result, not a bug.
 ```
-benchmarks/<algo>/<language>-<compiler>/Dockerfile
-```
+
+**The manifest is the only thing the harness reads.** Discovery walks the tree
+for `bench.yaml` files — the directory layout is yours to choose, and the
+directory *name* means nothing. An implementation is identified by what it is:
+`(algo, language, compiler, interpreter)`. Declare the same tuple twice and the
+campaign refuses to start.
+
+`compiler` and `interpreter` are each optional, and each absence is a published
+fact rather than a gap: gcc compiles and nothing interprets, CPython interprets
+and nothing compiles ahead of the run, Cython does both. That last case is why
+there is no single "compiler" field — `python-cython` and `python-cpython` share
+a language *and an interpreter*, and differ only in the compiler. That is the
+clean experiment, and a directory name could not have expressed it.
+
+`modes: all` — the normal case for a compiled backend — or the list of modes the
+backend actually distinguishes. An interpreter has one floating-point semantics,
+so `fma` and `fast` would be the same image under another tag; declare `strict`
+alone and the harness measures that one, warning about each mode it skips. A
+misspelled mode fails the campaign rather than quietly building something nobody
+asked for.
 
 The image must expose an `ENTRYPOINT` taking either `build <threads>` or
 `run <n> <max_iter> <threads>`, and print **exactly one JSON object on stdout**
@@ -231,21 +261,41 @@ The image must expose an `ENTRYPOINT` taking either `build <threads>` or
 The floating-point mode, the `-march` baseline and the job count arrive as build
 args (`FP_MODE`, `MARCH`, `JOBS`), so one Dockerfile covers every mode.
 
-An implementation that does not *distinguish* every mode says so with a label:
-
-```dockerfile
-LABEL langbench.fp_modes="strict"
-```
-
-An interpreter has one floating-point semantics, so `fma` and `fast` would be
-the same image under another tag. The harness reads the label before it builds
-anything, measures only the declared modes, and warns about each one it skips.
-Leave the label out — the normal case for a compiled backend — and you get all
-three.
+Docker `LABEL`s are still welcome — `langbench.version`, `langbench.flags` — but
+they are provenance for `docker inspect`, and the harness never reads them. Two
+sources of truth is one source of drift.
 
 Read [METHODOLOGY.md#container-contract](METHODOLOGY.md#container-contract) for
 the full contract, including why the checksum must be an integer and why the
 build directory is a tmpfs.
+
+### Checking a manifest before you spend an hour on it
+
+```sh
+langbench validate            # every failure a campaign would hit at discovery
+```
+
+It parses every `bench.yaml` on disk and reports **all** the problems at once —
+a misspelled key, an unknown FP mode, a backend that neither compiles nor
+interprets, two manifests claiming the same identity — without building a single
+image. Point it at a file or a directory; it defaults to the whole tree.
+
+`bench.schema.json`, at the repo root, is the manifest's JSON Schema. It is
+generated from the Rust struct the harness actually deserializes, never written
+by hand:
+
+```sh
+langbench jsonschema          # rewrites bench.schema.json
+```
+
+A pre-commit hook regenerates it and fails if the checked-in copy has drifted, so
+the schema your editor completes from cannot disagree with what the campaign
+accepts. To get that completion, point your editor at it — for VS Code's YAML
+extension:
+
+```json
+{"yaml.schemas": {"./bench.schema.json": "**/bench.yaml"}}
+```
 
 ## Development
 
@@ -254,7 +304,9 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 
-pre-commit install   # runs the three above, plus hadolint and actionlint
+pre-commit install   # the three above, plus hadolint, actionlint, and the two
+                     # manifest hooks: `validate` runs whenever a bench.yaml
+                     # moves, and bench.schema.json is checked for drift
 ```
 
 ## Status

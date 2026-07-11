@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "langbench benchmark manifest",
+  "description": "What `bench.yaml` declares, as written on disk.\n\n`deny_unknown_fields` on purpose: a misspelled key must fail the campaign, not\nbe quietly ignored. A manifest that is half-read is worse than no manifest,\nbecause the numbers still come out — they are just wrong about what produced\nthem.",
+  "type": "object",
+  "properties": {
+    "algo": {
+      "description": "The algorithm this implementation computes. Implementations of the same\nalgorithm are comparable; implementations of different ones are not.",
+      "type": "string"
+    },
+    "comments": {
+      "description": "Free-form caveats: what a reader needs to know before quoting this row.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "compiler": {
+      "description": "The compiler, when something is compiled ahead of the run.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "description": {
+      "description": "What this backend is, in one paragraph. It is printed beside its rows.",
+      "type": "string"
+    },
+    "interpreter": {
+      "description": "The interpreter or runtime that executes the result, when there is one.\nA backend can have both: Cython compiles, CPython then executes.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "language": {
+      "description": "The language the kernel is written in.",
+      "type": "string"
+    },
+    "modes": {
+      "description": "The FP modes this backend distinguishes: `all`, or an explicit list.",
+      "$ref": "#/$defs/Modes"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "algo",
+    "language",
+    "modes",
+    "description"
+  ],
+  "$defs": {
+    "FpMode": {
+      "description": "Floating-point semantics the kernels are compiled under.\n\nThe axis is FP semantics, not \"optimization on/off\": every mode is `-O3`.\nSee `METHODOLOGY.md#floating-point-modes`.",
+      "oneOf": [
+        {
+          "description": "`-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.",
+          "type": "string",
+          "const": "strict"
+        },
+        {
+          "description": "FMA contraction allowed: bit-different, but more accurate.",
+          "type": "string",
+          "const": "fma"
+        },
+        {
+          "description": "`-ffast-math`: reassociation allowed, precision sold for speed.",
+          "type": "string",
+          "const": "fast"
+        }
+      ]
+    },
+    "Modes": {
+      "description": "`modes: all`, or `modes: [strict, fma]`.\n\nThe list holds *strings*, and the modes are parsed out of them by hand, for\none reason: serde's `untagged` reports a failure as \"data did not match any\nvariant of untagged enum Modes\", which tells the author of a typo neither\nwhat they typed nor what was expected. The schema, meanwhile, is told the\nlist really holds `FpMode`s — so an editor completes the three modes and\nflags a fourth, while the harness keeps a message a human can act on.",
+      "anyOf": [
+        {
+          "description": "Every mode the harness knows.",
+          "type": "string",
+          "enum": [
+            "all"
+          ]
+        },
+        {
+          "description": "The modes this backend actually distinguishes, e.g. `[strict]`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FpMode"
+          }
+        }
+      ]
+    }
+  }
+}

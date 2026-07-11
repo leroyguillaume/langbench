@@ -183,51 +183,95 @@ nothing.
 
 ## Repository layout
 
-Convention over configuration. There is no YAML manifest: templating Dockerfiles
-would badly reinvent the thing Dockerfiles already are, and per-implementation
-variance (cargo-chef, `CGO_ENABLED=0`, `uv sync`, `native-image`) lives exactly
-where templates are worst.
+Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
 
-```
-benchmarks/<algo>/<language>-<compiler>/Dockerfile
-```
-
-e.g. `benchmarks/mandelbrot/c-gcc/`, `c-clang/`, `rust-llvm/`, `rust-cranelift/`.
-
-The FP mode, the `-march` baseline and the toolchain version are **build args**,
-not directories — they do not change the Dockerfile's structure. Four
-Dockerfiles, not twenty-four. This is Docker's own parameterization, not a
-codegen layer of our own invention.
-
-Metadata lives in Docker **labels**, so it sits where it is true and
-`docker inspect` can read it back:
-
-```dockerfile
-LABEL langbench.language="c" \
-      langbench.compiler="gcc" \
-      langbench.version="14.2" \
-      langbench.flags="-O3 -march=x86-64-v3 -ffp-contract=off"
+```yaml
+algo: mandelbrot
+language: python
+compiler: cython
+interpreter: cpython
+modes:
+  - strict
+description: >-
+  The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
+  a C extension module instead of interpreted.
+comments: >-
+  It is slower than the interpreter it compiles, and that is a result, not a bug.
 ```
 
-One label is the exception to `docker inspect`, and deliberately so:
+**The manifest is the only thing the harness reads.** Discovery is a walk for
+`bench.yaml` files: no manifest, no benchmark. Everything else about a directory
+is inert.
 
-```dockerfile
-LABEL langbench.fp_modes="strict"
-```
+### The path is not metadata
 
-`langbench.fp_modes` names the FP modes an implementation actually
-distinguishes. Absent — the normal case, for any compiled backend — it means all
-three. An interpreter declares `strict` alone: CPython has one floating-point
-semantics, with no `-ffp-contract` to turn off and no `-ffast-math` to turn on,
-so `fma` and `fast` would be the *same image under another tag*. Building them
-would put three rows in the report whose only difference is noise, and someone
-would eventually read that noise as an effect of the FP mode.
+An earlier design inferred the language and the compiler from the directory name
+(`benchmarks/<algo>/<language>-<compiler>/`) and read the rest back out of Docker
+labels. Both are gone, for the same reason: they encode facts in places that
+cannot hold them.
 
-Because this label decides *which images to build*, the harness reads it from
-the Dockerfile source rather than from `docker inspect`: there is no image to
-inspect yet. That is why it is a constant in the file and never a build arg. A
-mode that is requested but not declared is skipped with a warning — a row
-missing from a report with no explanation is worse than a redundant one.
+A path is a two-field record with no room for a third. `python-cython` is a
+directory name that *cannot say* that CPython also runs the result — and that
+omission is not cosmetic, because the whole value of that row is that it shares a
+language **and an interpreter** with `python-cpython` and differs only in the
+compiler. A naming convention had no slot for the fact that makes the experiment
+clean.
+
+So the tree is now free-form. Move a directory, nest it, rename it: the campaign
+is unchanged, because nothing reads it.
+
+### Identity is what a backend *is*
+
+An implementation is `(algo, language, compiler, interpreter)`. There is no name,
+because a name is a second thing to keep in sync with the first. Two manifests
+declaring the same tuple are one implementation declared twice, and the campaign
+refuses to run — they would build the same image tag and collapse into a single
+row, and which of the two descriptions the report printed would be a coin toss.
+
+Either half of the backend may be absent, and the absence is a fact worth
+publishing: gcc compiles and nothing interprets; CPython interprets and nothing
+compiles ahead of the run; Cython does both. The report prints all three columns,
+`n/a` included.
+
+### Labels are provenance, never input
+
+Docker labels stay on the images — `langbench.version`, `langbench.flags` — but
+the harness does not read them. They describe the artifact for whoever runs
+`docker inspect` on it. Anything the harness *acts* on lives in the manifest,
+because two sources of truth are one source of truth and one source of drift.
+
+There is a hard reason as well as an aesthetic one: `modes` decides **which
+images to build**, so it has to be known before an image exists to inspect. A
+build-time label cannot answer a question asked at schedule time.
+
+### Modes
+
+`modes: all` — the normal case for a compiled backend — or an explicit list. An
+interpreter declares `strict` alone: CPython has one floating-point semantics,
+with no `-ffp-contract` to turn off and no `-ffast-math` to turn on, so `fma` and
+`fast` would be the *same image under another tag*. Building them would put three
+rows in the report whose only difference is noise, and someone would eventually
+read that noise as an effect of the FP mode.
+
+A mode that is requested but not declared is skipped with a warning — a row
+missing from a report with no explanation is worse than a redundant one. A mode
+that is *misspelled* fails the campaign: under labels we fell back to building
+everything, on the grounds that a redundant campaign beats a wrong one, but a
+manifest is a deliberate statement and building three images where the author
+asked for one is not "redundant" — it is a table carrying rows nobody meant to
+publish.
+
+### What stays as it was
+
+One Dockerfile per implementation, no templating: templating Dockerfiles would
+badly reinvent the thing Dockerfiles already are, and per-implementation variance
+(cargo-chef, `CGO_ENABLED=0`, `uv sync`, `native-image`) lives exactly where
+templates are worst. The manifest describes a backend; it does not generate one.
+
+The FP mode, the `-march` baseline and the toolchain version remain **build
+args**, not directories — they do not change the Dockerfile's structure. Four
+Dockerfiles, not twenty-four. This is Docker's own parameterization, not a codegen
+layer of our own invention.
 
 Every base image is pinned **by digest** (`FROM gcc@sha256:…`), never by tag. A
 benchmark that silently changes when upstream pushes is not a benchmark.
@@ -419,9 +463,16 @@ not the arithmetic.
 - **Verify the checksum on every run**, not once. A run with the wrong value is
   not a slow run, it is a wrong run, and it must never enter the statistics.
 - **Store raw samples, never aggregates.** One NDJSON line per run, with the
-  machine metadata and image labels in a header record. Aggregates are recomputed
-  at report time; a discarded sample is gone forever. This is the
+  machine metadata and the campaign's parameters in a header record. Aggregates
+  are recomputed at report time; a discarded sample is gone forever. This is the
   highest-return rule in the protocol, and the one most regretted later.
+- **Every sample carries its backend's manifest**: language, compiler,
+  interpreter, description, comments, copied onto each line. It is deliberate
+  repetition. A sample has to say what produced it *without a second file to join
+  against*: the manifest will be edited, the directory will be renamed, the
+  backend will be deleted — and the samples must still describe the campaign that
+  actually ran. A foreign key into a file that changes underneath is not a
+  record, it is a dangling pointer.
 
 ### Why min-of-N, not the median
 

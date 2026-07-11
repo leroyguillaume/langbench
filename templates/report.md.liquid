@@ -75,10 +75,10 @@ order as a leaderboard: the sort mixes the FP modes together, and two rows in
 different modes are different experiments (see **Mode**); and a gap smaller than
 **Dispersion** is not a gap at all, it is noise that happened to land in that order.
 
-| Implementation | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Δ strict |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Δ strict |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
+| [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
 ## How to read a row in thirty seconds
@@ -97,13 +97,38 @@ different modes are different experiments (see **Mode**); and a gap smaller than
 
 ## The columns
 
-### Implementation
+### Language
 
-The directory the container image was built from, named `<language>-<compiler>`.
+The language the kernel is written in — and the *least* interesting third of a
+row's identity. Two rows in the same language can differ by an order of magnitude,
+and the reason is never the language.
 
-What a row actually identifies is the tuple *(compiler, compiler version, flags,
-target CPU)*. The language is along for the ride. Keep that in mind before you
-quote a row as "language X vs language Y".
+Keep that in mind before quoting a row as "language X vs language Y": what a row
+actually identifies is the tuple *(compiler, interpreter, compiler version, flags,
+target CPU)*. The language is along for the ride.
+
+The cell is a **link to the backend** it belongs to, at the bottom of this report:
+that is where the thing being measured describes itself, in its own words.
+
+### Compiler
+
+What turns the source into instructions ahead of the run — `gcc`, `cython`,
+`gc` — and the axis this project exists to compare.
+
+`n/a` means nothing is compiled ahead of time. That is a property of the backend,
+not a hole in the data.
+
+### Interpreter
+
+What executes the result — `cpython`, a JVM, nothing at all.
+
+A backend can have **both** a compiler and an interpreter, and that is not a
+curiosity: `python` / `cython` / `cpython` compiles the kernel to a native
+extension module that CPython then loads and calls. Its row and the pure-CPython
+row share a language and an interpreter, and differ only in the compiler. That is
+the clean experiment — the one place in this table where a single column changes.
+
+`n/a` means the backend ships machine code and runs it directly.
 
 ### Mode
 
@@ -331,3 +356,21 @@ the distance is the whole story.
   timings do not travel across instruction sets; only within-ISA ratios do.
 - **That a small difference is real**, unless **Dispersion** says it can be. When in
   doubt, run more rounds.
+
+## Backends
+
+What each row of the tables above *is*, in the words of its own `bench.yaml` — the
+same file the harness read to build it. Every **Language** cell links here.
+
+A backend appears once, however many rows it has: the FP modes are three
+experiments on the same thing, and what follows describes the thing.
+{% for backend in backends %}
+### {{ backend.id }}
+
+*{{ backend.algo }}* — language `{{ backend.language }}`, compiler `{{ backend.compiler }}`, interpreter `{{ backend.interpreter }}`.
+
+{{ backend.description }}
+{% if backend.comments %}
+> {{ backend.comments }}
+{% endif %}
+{%- endfor %}

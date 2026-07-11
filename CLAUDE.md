@@ -46,15 +46,31 @@ subject is **compiler and runtime backends**, not languages.
 
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
-- `benchmarks/<algo>/<language>-<compiler>/Dockerfile`. No YAML manifest, no
-  Dockerfile templating.
-- Metadata in Docker `LABEL`s (`langbench.language`, `.compiler`, `.version`,
-  `.flags`), read back with `docker inspect`. One exception: `.fp_modes` decides
-  *which images to build*, so discovery reads it from the Dockerfile source —
-  there is no image to inspect yet. It is a constant in the file, never a build
-  arg. Absent means every mode; an interpreter declares `strict` alone.
-- Base images pinned by digest, never by tag.
-- Non-root `USER` in every benchmark Dockerfile.
+- Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
+  `algo`, `language`, `compiler`, `interpreter`, `modes`, `description`,
+  `comments`. **Discovery is a walk for `bench.yaml`; nothing else is read.**
+- **The path is not metadata.** Never parse a directory name. The tree is
+  free-form: move a benchmark, nest it, rename it — the campaign is unchanged.
+- **An implementation is `(algo, language, compiler, interpreter)`.** No name, no
+  slug in the data. `compiler` and `interpreter` are each optional — but not both,
+  and an absence is a published fact, not a hole. The same tuple declared twice is
+  an error.
+- `modes: all`, or an explicit list. A misspelled mode fails the campaign; a mode
+  that is requested but not declared is skipped with a warning.
+- Docker `LABEL`s are image provenance for `docker inspect` (`.version`,
+  `.flags`). **The harness never reads them** — two sources of truth is one source
+  of drift. Anything the harness acts on lives in the manifest.
+- Every sample carries its backend's manifest fields (language, compiler,
+  interpreter, description, comments). Deliberate repetition: a sample must
+  describe itself without joining against a file that will change.
+- In telemetry, emit `language`, `compiler`, `interpreter` as separate fields —
+  never a slug. A log line is filtered by field.
+- `bench.schema.json` (repo root) is **generated** by `langbench jsonschema` from
+  the struct the harness deserializes. Never edit it by hand; a pre-commit hook
+  fails on drift. `langbench validate` reports every invalid manifest at once,
+  and a hook runs it whenever a `bench.yaml` moves.
+- One Dockerfile per implementation. No templating. Base images pinned by digest,
+  never by tag. Non-root `USER` in every benchmark Dockerfile.
 
 **Measurement** ([why](METHODOLOGY.md#measurement-protocol))
 
@@ -107,7 +123,7 @@ subject is **compiler and runtime backends**, not languages.
 
 ## Testing
 
-- Unit tests for discovery, label parsing, statistics and command construction.
+- Unit tests for discovery, manifest parsing, statistics and command construction.
 - The kernels themselves are verified by the strict-mode checksum invariant, not
   by unit tests.
 

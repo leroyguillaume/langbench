@@ -32,14 +32,11 @@ RUN pip install --no-cache-dir \
       "cython==${CYTHON_VERSION}" \
       "setuptools==${SETUPTOOLS_VERSION}"
 
-# `fp_modes` declares that only `strict` is meaningful: the generated C goes
-# through the `PyFloat` C-API, so there is no raw double for gcc to contract or
-# reassociate. The harness reads it out of this file (not from `docker inspect`:
-# it decides what to build) and skips the other two modes, loudly.
-LABEL langbench.language="python" \
-      langbench.compiler="cython" \
-      langbench.version="3.2.8" \
-      langbench.fp_modes="strict" \
+# Provenance of the *image*, for `docker inspect`. What this backend IS -- its
+# language, its compiler, its interpreter, the FP modes it distinguishes -- lives
+# in `bench.yaml`, which is the only thing the harness reads. A label the harness
+# consumed would be a second source of truth, and two sources of truth drift.
+LABEL langbench.version="3.2.8" \
       langbench.flags="-O3 -march=${MARCH} fp=${FP_MODE}"
 
 ENV FP_MODE=${FP_MODE} \

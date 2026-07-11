@@ -17,14 +17,11 @@ ARG FP_MODE=strict
 ARG MARCH
 ARG JOBS
 
-# `fp_modes` declares that only `strict` is meaningful: the interpreter has one
-# floating-point semantics, so `fma` and `fast` are the same run under another
-# name. The harness reads it out of this file (not from `docker inspect`: it
-# decides what to build) and skips the other two modes, loudly.
-LABEL langbench.language="python" \
-      langbench.compiler="cpython" \
-      langbench.version="3.13" \
-      langbench.fp_modes="strict" \
+# Provenance of the *image*, for `docker inspect`. What this backend IS -- its
+# language, its interpreter, the FP modes it distinguishes -- lives in
+# `bench.yaml`, which is the only thing the harness reads. A label the harness
+# consumed would be a second source of truth, and two sources of truth drift.
+LABEL langbench.version="3.13" \
       langbench.flags="fp=${FP_MODE}"
 
 ENV FP_MODE=${FP_MODE} \

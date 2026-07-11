@@ -60,3 +60,29 @@ repos:
         types:
           - rust
         pass_filenames: false
+
+      # The schema is generated, never edited. This hook rewrites it in place, so
+      # pre-commit fails the commit exactly when the checked-in copy had drifted
+      # from the struct the harness parses -- and leaves the corrected file in the
+      # working tree, ready to stage.
+      - id: bench-schema
+        name: bench.schema.json is up to date
+        entry: cargo run --quiet -- jsonschema
+        language: system
+        files: ^(src/discovery\.rs|src/cli\.rs|bench\.schema\.json)$
+        pass_filenames: false
+
+      # Every failure a campaign would hit at discovery time, without building
+      # anything -- an hour of measurement is a long way to travel to find out a
+      # key was misspelled.
+      #
+      # `pass_filenames: false` on purpose: the hook only *runs* when a manifest
+      # moved (`files:` below), but it then checks the whole tree. Handing it the
+      # changed files alone would blind the duplicate-identity rule, which needs
+      # to see both halves of a collision -- and the second half never changed.
+      - id: bench-validate
+        name: validate bench.yaml manifests
+        entry: cargo run --quiet -- validate
+        language: system
+        files: (^|/)bench\.yaml$
+        pass_filenames: false

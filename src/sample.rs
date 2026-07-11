@@ -58,9 +58,20 @@ pub struct ContainerRecord {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Sample {
     pub algo: String,
-    pub implementation: String,
+    /// The implementation is its (language, compiler, interpreter) triple —
+    /// there is no separate name, and no directory path, to stand in for it.
+    ///
+    /// All of it is copied from `bench.yaml` onto every line. That is repetition,
+    /// and it is the point: a sample must say what produced it without a second
+    /// file to join against. The manifest can be edited, the directory renamed,
+    /// the backend deleted — these lines still describe the campaign that ran.
     pub language: String,
-    pub compiler: String,
+    /// `None` for a backend that compiles nothing ahead of the run.
+    pub compiler: Option<String>,
+    /// `None` for a backend that ships machine code and no runtime.
+    pub interpreter: Option<String>,
+    pub description: String,
+    pub comments: Option<String>,
     pub mode: FpMode,
     pub phase: Phase,
     pub round: u32,
@@ -79,7 +90,30 @@ pub struct Sample {
     pub text_bytes: Option<u64>,
 }
 
+/// The identity of a backend, flattened into one token: `c-gcc`,
+/// `python-cpython`, `python-cython-cpython`.
+///
+/// Derived from the triple and never declared, so it cannot drift from it. It is
+/// what tags an image and what names a row; two backends collide here exactly
+/// when they *are* the same backend.
+pub fn backend_slug(language: &str, compiler: Option<&str>, interpreter: Option<&str>) -> String {
+    [Some(language), compiler, interpreter]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 impl Sample {
+    /// This sample's backend, as one token. See `backend_slug`.
+    pub fn backend(&self) -> String {
+        backend_slug(
+            &self.language,
+            self.compiler.as_deref(),
+            self.interpreter.as_deref(),
+        )
+    }
+
     /// Container startup plus runtime init: the tax the JVM and CPython pay.
     /// Saturating, because the two clocks are independent and a fast run can
     /// report a few nanoseconds more than the wall-clock resolution allows.
@@ -214,9 +248,11 @@ fn parse_record(line: &str, number: usize, path: &Path) -> Result<OwnedRecord> {
 /// Columns of the CSV rendering, in the order `Sample` declares them.
 const CSV_COLUMNS: &[&str] = &[
     "algo",
-    "implementation",
     "language",
     "compiler",
+    "interpreter",
+    "description",
+    "comments",
     "mode",
     "phase",
     "round",
@@ -256,9 +292,11 @@ impl Sample {
     fn csv_row(&self) -> String {
         let columns = [
             escape(&self.algo),
-            escape(&self.implementation),
             escape(&self.language),
-            escape(&self.compiler),
+            escape(self.compiler.as_deref().unwrap_or_default()),
+            escape(self.interpreter.as_deref().unwrap_or_default()),
+            escape(&self.description),
+            escape(self.comments.as_deref().unwrap_or_default()),
             self.mode.to_string(),
             self.phase.as_str().to_owned(),
             self.round.to_string(),
@@ -394,9 +432,11 @@ mod tests {
     fn sample(phase: Phase, checksum: Option<u64>) -> Sample {
         Sample {
             algo: "mandelbrot".to_owned(),
-            implementation: "c-gcc".to_owned(),
             language: "c".to_owned(),
-            compiler: "gcc".to_owned(),
+            compiler: Some("gcc".to_owned()),
+            interpreter: None,
+            description: "The reference C kernel.".to_owned(),
+            comments: None,
             mode: FpMode::Strict,
             phase,
             round: 3,
@@ -551,8 +591,8 @@ mod tests {
         let row = sample(Phase::Run, Some(448_356_792)).csv_row();
         assert_eq!(
             row,
-            "mandelbrot,c-gcc,c,gcc,strict,run,3,false,8,313600000,213300000,860000,4000,\
-             448356792,70984,67568,1340",
+            "mandelbrot,c,gcc,,The reference C kernel.,,strict,run,3,false,8,313600000,\
+             213300000,860000,4000,448356792,70984,67568,1340",
         );
     }
 
@@ -566,11 +606,13 @@ mod tests {
         assert_eq!(row.split(',').count(), CSV_COLUMNS.len());
     }
 
+    /// Not hypothetical: `description` and `comments` are prose lifted out of a
+    /// `bench.yaml`, and prose has commas in it.
     #[test]
     fn a_field_containing_a_separator_is_quoted() {
         let mut awkward = sample(Phase::Run, Some(1));
-        awkward.implementation = "c-gcc,-O2".to_owned();
-        assert!(awkward.csv_row().contains("\"c-gcc,-O2\""));
+        awkward.description = "Fast, in theory.".to_owned();
+        assert!(awkward.csv_row().contains("\"Fast, in theory.\""));
     }
 
     #[test]
@@ -583,9 +625,11 @@ mod tests {
     fn startup_is_the_gap_between_the_two_clocks() {
         let sample = Sample {
             algo: "mandelbrot".to_owned(),
-            implementation: "c-gcc".to_owned(),
             language: "c".to_owned(),
-            compiler: "gcc".to_owned(),
+            compiler: Some("gcc".to_owned()),
+            interpreter: None,
+            description: "The reference C kernel.".to_owned(),
+            comments: None,
             mode: FpMode::Strict,
             phase: Phase::Run,
             round: 0,

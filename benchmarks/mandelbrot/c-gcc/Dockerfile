@@ -12,9 +12,10 @@ ARG FP_MODE=strict
 ARG MARCH=x86-64-v3
 ARG JOBS=1
 
-LABEL langbench.language="c" \
-      langbench.compiler="gcc" \
-      langbench.version="15" \
+# Provenance of the *image*, for `docker inspect`. What this backend IS lives in
+# `bench.yaml`, which is the only thing the harness reads: a label the harness
+# consumed would be a second source of truth, and two sources of truth drift.
+LABEL langbench.version="15" \
       langbench.flags="-O3 -march=${MARCH} fp=${FP_MODE}"
 
 # The entrypoint reads these at run time to rebuild with exactly the flags the

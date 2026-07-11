@@ -1,51 +1,52 @@
 //! Two backends of the same language must compile the *same* kernel.
 //!
-//! `python-cpython` and `python-cython` differ only in their compiler; if their
-//! sources drifted apart, the row-to-row comparison would silently stop being
-//! the "same source, different backend" experiment and become the confounded one.
+//! `python` / `cython` / `cpython` and `python` / `cpython` differ only in their
+//! compiler; if their sources drifted apart, the row-to-row comparison would
+//! silently stop being the "same source, different backend" experiment and become
+//! the confounded one.
 //! See `METHODOLOGY.md#two-axes-two-tables-never-merged`.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Files that describe how to build and run, not what to compute.
-const NOT_KERNEL_SOURCE: &[&str] = &["Dockerfile", "entrypoint.sh"];
+/// Files that describe how to build, run and declare a backend — not what it
+/// computes. `bench.yaml` differs between two backends *by construction*: that is
+/// what makes them two backends.
+const NOT_KERNEL_SOURCE: &[&str] = &["Dockerfile", "entrypoint.sh", "bench.yaml"];
 
 #[test]
 fn implementations_of_one_language_share_their_kernel_source() {
     let benchmarks = Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmarks");
     let mut compared = 0usize;
 
-    for algo in directories(&benchmarks) {
-        let mut by_language: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        for implementation in directories(&algo) {
-            let name = implementation.file_name().unwrap().to_string_lossy();
-            let Some((language, _compiler)) = name.split_once('-') else {
-                continue;
-            };
-            by_language
-                .entry(language.to_owned())
-                .or_default()
-                .push(implementation.clone());
-        }
+    // Keyed on (algo, language) out of the *manifests*. The directory name is not
+    // evidence of anything — the harness does not read it, and neither does this.
+    let mut by_language: BTreeMap<(String, String), Vec<PathBuf>> = BTreeMap::new();
+    for manifest in manifests(&benchmarks) {
+        let dir = manifest.parent().expect("a manifest sits in a directory");
+        let text = fs::read_to_string(&manifest).expect("the manifest is readable");
+        by_language
+            .entry((declared(&text, "algo"), declared(&text, "language")))
+            .or_default()
+            .push(dir.to_path_buf());
+    }
 
-        for (language, implementations) in by_language {
-            let Some((reference, others)) = implementations.split_first() else {
-                continue;
-            };
-            for other in others {
-                assert_eq!(
-                    kernel_source(reference),
-                    kernel_source(other),
-                    "`{}` and `{}` are both {language} backends, so they must compile a \
-                     byte-identical kernel; otherwise their rows compare two programs, not \
-                     two backends",
-                    reference.display(),
-                    other.display(),
-                );
-                compared += 1;
-            }
+    for ((algo, language), implementations) in by_language {
+        let Some((reference, others)) = implementations.split_first() else {
+            continue;
+        };
+        for other in others {
+            assert_eq!(
+                kernel_source(reference),
+                kernel_source(other),
+                "`{}` and `{}` are both {language} backends of {algo}, so they must compile a \
+                 byte-identical kernel; otherwise their rows compare two programs, not two \
+                 backends",
+                reference.display(),
+                other.display(),
+            );
+            compared += 1;
         }
     }
 
@@ -56,7 +57,17 @@ fn implementations_of_one_language_share_their_kernel_source() {
     );
 }
 
-/// Every file of an implementation except the container plumbing, keyed by name.
+/// The value of a top-level scalar key, as the manifest spells it.
+fn declared(manifest: &str, key: &str) -> String {
+    manifest
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{key}: ")))
+        .unwrap_or_else(|| panic!("every manifest declares `{key}`"))
+        .trim()
+        .to_owned()
+}
+
+/// Every file of an implementation except the plumbing, keyed by name.
 fn kernel_source(implementation: &Path) -> BTreeMap<String, String> {
     fs::read_dir(implementation)
         .expect("implementation directory is readable")
@@ -73,13 +84,23 @@ fn kernel_source(implementation: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn directories(root: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = fs::read_dir(root)
+/// Every `bench.yaml` under `root`, at any depth: the same criterion the harness
+/// discovers by.
+fn manifests(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let manifest = root.join("bench.yaml");
+    if manifest.is_file() {
+        found.push(manifest);
+    }
+    let mut children: Vec<PathBuf> = fs::read_dir(root)
         .unwrap_or_else(|error| panic!("reading {}: {error}", root.display()))
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .collect();
-    dirs.sort();
-    dirs
+    children.sort();
+    for child in children {
+        found.extend(manifests(&child));
+    }
+    found
 }

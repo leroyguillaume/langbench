@@ -1,0 +1,22 @@
+algo: mandelbrot
+language: python
+compiler: cython
+# Both, and this is the whole point of the row: Cython compiles the kernel to a
+# native extension module, which CPython then loads and calls. Same language,
+# same interpreter, same source byte for byte as `python-cpython` -- only the
+# compiler column differs. That is the clean experiment.
+interpreter: cpython
+# The generated C goes through the PyFloat C-API, never a raw double, so there is
+# no multiply-add for gcc to contract and nothing to reassociate. The three modes
+# would produce the same machine code.
+modes:
+  - strict
+description: >-
+  The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
+  a C extension module instead of interpreted. Cython is the compiler here,
+  exactly as gcc is for the C kernel -- not a library the kernel imports.
+comments: >-
+  It is slower than the interpreter it compiles, and that is a result, not a bug.
+  Without type annotations the generated C manipulates PyFloat objects through
+  the C-API -- its hot loop holds 142 call instructions -- while CPython's
+  specializing interpreter takes a fast path for float arithmetic.

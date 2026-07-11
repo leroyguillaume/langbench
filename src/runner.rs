@@ -41,7 +41,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     ensure!(
         !units.is_empty(),
         "no implementation supports any of the requested modes ({}). Every discovered \
-         implementation declares a narrower `langbench.fp_modes` label.",
+         implementation declares a narrower `modes` list in its `bench.yaml`.",
         args.mode
             .iter()
             .map(FpMode::to_string)
@@ -114,7 +114,10 @@ fn schedule(implementations: &[Implementation], requested: &[FpMode]) -> Vec<Uni
                 });
             } else {
                 warn!(
-                    implementation = %implementation.name,
+                    algo = %implementation.algo,
+                    language = %implementation.language,
+                    compiler = none_if_absent(implementation.compiler.as_deref()),
+                    interpreter = none_if_absent(implementation.interpreter.as_deref()),
                     %mode,
                     declares = %implementation
                         .fp_modes
@@ -128,6 +131,12 @@ fn schedule(implementations: &[Implementation], requested: &[FpMode]) -> Vec<Uni
         }
     }
     units
+}
+
+/// A backend that compiles nothing, or interprets nothing, says so — a log field
+/// that is sometimes absent cannot be filtered on.
+fn none_if_absent(value: Option<&str>) -> &str {
+    value.unwrap_or("none")
 }
 
 struct Runner<'a, E: ContainerEngine> {
@@ -184,11 +193,19 @@ impl<E: ContainerEngine> Runner<'_, E> {
                 self.writer.write_sample(&sample)?;
                 // One line per invocation: a campaign that prints nothing for an
                 // hour is indistinguishable from a campaign that has hung.
+                // The identity goes out as the three fields it is made of, never
+                // as a slug: a log line is queried by field, and `compiler=gcc`
+                // is a filter where `c-gcc` is a substring match waiting to
+                // match `c-gcc-lto` too.
                 info!(
                     phase = phase.as_str(),
                     round = round + 1,
                     of = total,
-                    image = %unit.image,
+                    algo = %sample.algo,
+                    language = %sample.language,
+                    compiler = none_if_absent(sample.compiler.as_deref()),
+                    interpreter = none_if_absent(sample.interpreter.as_deref()),
+                    mode = %unit.mode,
                     warmup,
                     wall_ms = sample.wall_ns / 1_000_000,
                     "measured",
@@ -209,9 +226,11 @@ impl<E: ContainerEngine> Runner<'_, E> {
         let record = execution.record;
         Ok(Sample {
             algo: unit.implementation.algo.clone(),
-            implementation: unit.implementation.name.clone(),
             language: unit.implementation.language.clone(),
             compiler: unit.implementation.compiler.clone(),
+            interpreter: unit.implementation.interpreter.clone(),
+            description: unit.implementation.description.clone(),
+            comments: unit.implementation.comments.clone(),
             mode: unit.mode,
             phase,
             round,
@@ -260,7 +279,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
                  for bit; a divergence is a bug in the code or the flags, never a rounding \
                  difference.",
                 sample.algo,
-                sample.implementation,
+                sample.backend(),
             ),
         }
     }
@@ -294,21 +313,38 @@ mod tests {
         benchmarks_for(root, "mandelbrot", names);
     }
 
+    /// Backends are spelled as their slug — `c-gcc` — and written out as the
+    /// manifest the harness actually reads.
     fn benchmarks_for(root: &Path, algo: &str, names: &[&str]) {
         for name in names {
-            let dir = root.join(algo).join(name);
-            create_dir_all(&dir).unwrap();
-            File::create(dir.join("Dockerfile")).unwrap();
+            benchmark_declaring_for(root, algo, name, "all");
         }
     }
 
-    /// An implementation whose Dockerfile declares a narrower `langbench.fp_modes`.
     fn benchmark_declaring(root: &Path, name: &str, modes: &str) {
-        let dir = root.join("mandelbrot").join(name);
+        benchmark_declaring_for(root, "mandelbrot", name, modes);
+    }
+
+    /// `modes` is `all`, or the modes a manifest would list.
+    fn benchmark_declaring_for(root: &Path, algo: &str, name: &str, modes: &str) {
+        let (language, compiler) = name.split_once('-').expect("<language>-<compiler>");
+        let modes = if modes == "all" {
+            modes.to_owned()
+        } else {
+            format!("[{modes}]")
+        };
+        let dir = root.join(algo).join(name);
         create_dir_all(&dir).unwrap();
+        File::create(dir.join("Dockerfile")).unwrap();
         std::fs::write(
-            dir.join("Dockerfile"),
-            format!("LABEL langbench.fp_modes=\"{modes}\"\n"),
+            dir.join(crate::discovery::MANIFEST),
+            format!(
+                "algo: {algo}\n\
+                 language: {language}\n\
+                 compiler: {compiler}\n\
+                 modes: {modes}\n\
+                 description: {name}, as the fixture declares it.\n",
+            ),
         )
         .unwrap();
     }

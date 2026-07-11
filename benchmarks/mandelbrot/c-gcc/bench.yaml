@@ -1,0 +1,17 @@
+# What this backend is. The harness reads this file and nothing else: not the
+# directory name, not the image labels. See METHODOLOGY.md#repository-layout.
+algo: mandelbrot
+language: c
+compiler: gcc
+# Nothing executes the binary but the CPU.
+interpreter: ~
+# gcc distinguishes all three: `-ffp-contract=off`, `-ffp-contract=fast` and
+# `-ffast-math` are three different code generators over the same source.
+modes: all
+description: >-
+  The reference kernel. Hand-written C, compiled by gcc at -O3 against a pinned
+  ISA baseline, with std threads and an atomic work queue. Every other row in
+  this table is read against this one.
+comments: >-
+  gcc links libc dynamically, so the Binary column looks small: the code is still
+  there, in libc.so, outside the file we measured. Compare `.text`, never Binary.

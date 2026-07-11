@@ -14,7 +14,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::cli::{CsvArgs, MarkdownArgs};
+use crate::cli::{CsvArgs, JsonSchemaArgs, MarkdownArgs};
+use crate::discovery;
 use crate::report;
 use crate::sample;
 
@@ -34,6 +35,15 @@ pub fn markdown(args: &MarkdownArgs) -> Result<()> {
         &args.output,
         &report::render(&report::build(&recording), &template)?,
     )
+}
+
+/// The manifest schema, written where an editor and the pre-commit hook expect
+/// it. Not a rendering of a campaign, but the same contract: a pure function of
+/// the code, on stdout-free output.
+pub fn jsonschema(args: &JsonSchemaArgs) -> Result<()> {
+    // Trailing newline: the file is checked in, and `end-of-file-fixer` would
+    // otherwise rewrite what this command just wrote, failing the hook forever.
+    write(&args.output, &format!("{}\n", discovery::schema()?))
 }
 
 /// Write a rendering, creating the directories it is addressed into.
@@ -79,9 +89,11 @@ mod tests {
         writer
             .write_sample(&Sample {
                 algo: "mandelbrot".to_owned(),
-                implementation: "c-gcc".to_owned(),
                 language: "c".to_owned(),
-                compiler: "gcc".to_owned(),
+                compiler: Some("gcc".to_owned()),
+                interpreter: None,
+                description: "The reference C kernel.".to_owned(),
+                comments: None,
                 mode: FpMode::Strict,
                 phase: Phase::Run,
                 round: 1,
@@ -112,7 +124,7 @@ mod tests {
 
         let rendered = fs::read_to_string(&output).unwrap();
         assert!(rendered.starts_with("algo,"), "{rendered}");
-        assert!(rendered.contains("mandelbrot,c-gcc"), "{rendered}");
+        assert!(rendered.contains("mandelbrot,c,gcc,"), "{rendered}");
     }
 
     #[test]

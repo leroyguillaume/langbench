@@ -29,6 +29,8 @@ fn main() -> Result<()> {
         Command::Run(args) => runner::execute(args, &DockerEngine),
         Command::Csv(args) => output::csv(&args),
         Command::Md(args) => output::markdown(&args),
+        Command::Validate(args) => discovery::validate(&args.paths).map(|_| ()),
+        Command::Jsonschema(args) => output::jsonschema(&args),
         Command::Machine => {
             // Program output, not a diagnostic: stdout, not `tracing`.
             print!("{}", Machine::collect().console_report());
