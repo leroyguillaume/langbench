@@ -88,8 +88,13 @@ pub struct RunArgs {
     #[arg(long, env = "BENCHMARKS_DIR", default_value_os_t = PathBuf::from("benchmarks"))]
     pub benchmarks_dir: PathBuf,
 
-    /// Side of the N x N grid. Size it so a run lasts 2-5 seconds.
-    #[arg(long, env = "GRID_SIZE", default_value_t = 4096)]
+    /// Side of the N x N grid.
+    ///
+    /// The default is sized for iteration speed, not for a final campaign: the
+    /// work scales as `grid_size^2 * max_iter`, and the slowest backend
+    /// (CPython) is what a campaign actually waits on. Raise it to `4096` when
+    /// publishing numbers.
+    #[arg(long, env = "GRID_SIZE", default_value_t = 2048)]
     pub grid_size: u32,
 
     /// Iteration ceiling before a pixel is declared inside the set.
@@ -97,15 +102,19 @@ pub struct RunArgs {
     pub max_iter: u32,
 
     /// Measured rounds of the run phase.
-    #[arg(long, env = "ROUNDS", default_value_t = 30)]
+    ///
+    /// The estimate is a min-of-N: more rounds only ever lower it, so a small N
+    /// is a faster but slightly pessimistic campaign, never a wrong one. The
+    /// dispersion published beside it says whether N was large enough.
+    #[arg(long, env = "ROUNDS", default_value_t = 10)]
     pub rounds: u32,
 
     /// Measured rounds of the build phase. Builds are slow; fewer suffice.
-    #[arg(long, env = "BUILD_ROUNDS", default_value_t = 5)]
+    #[arg(long, env = "BUILD_ROUNDS", default_value_t = 3)]
     pub build_rounds: u32,
 
     /// Rounds recorded but flagged as warmup, for both phases.
-    #[arg(long, env = "WARMUP_ROUNDS", default_value_t = 2)]
+    #[arg(long, env = "WARMUP_ROUNDS", default_value_t = 1)]
     pub warmup_rounds: u32,
 
     /// ISA baseline passed to the compilers as `-march`. Never `native`.

@@ -71,11 +71,11 @@ Common flags — every one of them also reads an environment variable:
 | `--cpu` | `CPUS` | machine parallelism | Threads for kernels *and* compilers |
 | `--output-dir` | `OUTPUT_DIR` | `results` | Where samples and report land |
 | `--benchmarks-dir` | `BENCHMARKS_DIR` | `benchmarks` | Root of the benchmark tree |
-| `--grid-size` | `GRID_SIZE` | `4096` | Side of the N×N grid |
+| `--grid-size` | `GRID_SIZE` | `2048` | Side of the N×N grid |
 | `--max-iter` | `MAX_ITER` | `1000` | Iteration ceiling |
-| `--rounds` | `ROUNDS` | `30` | Measured run rounds |
-| `--build-rounds` | `BUILD_ROUNDS` | `5` | Measured build rounds |
-| `--warmup-rounds` | `WARMUP_ROUNDS` | `2` | Rounds recorded but flagged |
+| `--rounds` | `ROUNDS` | `10` | Measured run rounds |
+| `--build-rounds` | `BUILD_ROUNDS` | `3` | Measured build rounds |
+| `--warmup-rounds` | `WARMUP_ROUNDS` | `1` | Rounds recorded but flagged |
 | `--march` | `MARCH` | per-ISA baseline | ISA baseline. `native` is rejected |
 | `--run-timeout` | `RUN_TIMEOUT` | `600` | Seconds before a container is killed |
 | `--log-filter` | `LOG_FILTER` | `info` | [`tracing` filter directive][directives] |
@@ -94,11 +94,26 @@ langbench run --algo mandelbrot --mode strict --cpu 4 --output-dir results/stric
 have to be: the strict-mode checksum is a function of both, so a campaign cannot
 give each backend its own grid without giving up the correctness gate.
 
-**Size for the slowest backend.** At the defaults (`4096` / `1000`) a C run takes
-about a second and a CPython run takes forty. Multiply by the rounds and the
-modes and you get an hour of CPython. The harness logs one line per invocation so
-you can see this happening; if nothing has moved after `--run-timeout` seconds,
-the container is killed and the campaign fails rather than hanging.
+**Size for the slowest backend.** The work scales as `grid_size² × max_iter`, and
+what a campaign actually waits on is CPython, not C. At `4096` / `1000` a C run
+takes about a second and a CPython run takes forty; multiply by the rounds and
+the modes and you get an hour of CPython for a single campaign.
+
+The defaults above are therefore sized for **iteration speed** — a quarter-grid,
+ten rounds, one warmup — which puts a full three-mode campaign in the minutes. For
+numbers you intend to publish, buy back the resolution:
+
+```sh
+langbench run --grid-size 4096 --rounds 30 --warmup-rounds 2 --build-rounds 5
+```
+
+Nothing about the smaller default is *wrong*: the estimate is a min-of-N, so more
+rounds can only ever lower it, and the dispersion printed beside it tells you
+whether N was large enough. A short campaign is pessimistic, never incorrect.
+
+The harness logs one line per invocation so you can watch this happen; if nothing
+has moved after `--run-timeout` seconds, the container is killed and the campaign
+fails rather than hanging.
 
 Sizing for the slowest backend makes the fastest one's *wall-clock* mostly
 container startup — which is why the report also carries `Compute min`, timed
