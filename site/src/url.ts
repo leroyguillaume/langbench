@@ -27,6 +27,8 @@ const sortKeySchema = z.enum([
 ]);
 
 export interface UrlState {
+  /** The ISA whose campaign is on screen. `null` — whichever one sorts first. */
+  arch: string | null;
   algo: string | null;
   language: string | null;
   search: string;
@@ -49,6 +51,7 @@ export function readUrl(): UrlState {
   const sortKey = sortKeySchema.safeParse(params.get("sort"));
 
   return {
+    arch: params.get("arch"),
     algo: params.get("algo"),
     language: params.get("language"),
     search: params.get("q") ?? "",
@@ -62,6 +65,9 @@ export function readUrl(): UrlState {
 
 export function writeUrl(state: UrlState): void {
   const params = new URLSearchParams();
+  if (state.arch !== null) {
+    params.set("arch", state.arch);
+  }
   if (state.algo !== null) {
     params.set("algo", state.algo);
   }

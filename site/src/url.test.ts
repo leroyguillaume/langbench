@@ -12,6 +12,7 @@ describe("reading the view out of the URL", () => {
 
   it("defaults to every mode, fastest first — the order the report ranks in", () => {
     const state = readUrl();
+    expect(state.arch).toBeNull();
     expect(state.modes).toStrictEqual(["strict", "fma", "fast"]);
     expect(state.sort).toStrictEqual({ key: "run", descending: false });
     expect(state.includeWarmup).toBe(false);
@@ -36,6 +37,7 @@ describe("reading the view out of the URL", () => {
 
   it("round-trips a view, so a filtered table is a link somebody else can open", () => {
     const state = {
+      arch: "x86_64",
       algo: "mandelbrot",
       language: "c",
       search: "gcc",
@@ -45,6 +47,7 @@ describe("reading the view out of the URL", () => {
     };
     writeUrl({ ...state, modes: [...state.modes], sort: { key: "binary", descending: true } });
     expect(readUrl()).toStrictEqual({
+      arch: "x86_64",
       algo: "mandelbrot",
       language: "c",
       search: "gcc",
@@ -56,6 +59,7 @@ describe("reading the view out of the URL", () => {
 
   it("leaves the default view out of the URL entirely", () => {
     writeUrl({
+      arch: null,
       algo: null,
       language: null,
       search: "",

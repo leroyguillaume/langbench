@@ -1,17 +1,23 @@
 name: bench
 
-# Runs a campaign, commits what it recorded, and publishes it.
+# Runs a campaign per ISA, commits what each recorded, and publishes them.
+#
+# Two architectures, two runners, **never QEMU**: emulation measures the emulator.
+# Each campaign stays whole and separate -- `samples-x86_64.ndjson` and
+# `samples-aarch64.ndjson`, side by side, never merged. An absolute timing does
+# not cross an ISA, and the site enforces that by showing one campaign at a time.
+# See `METHODOLOGY.md#the-isa-rule`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces
 # are *indicative*, and they say so themselves: `langbench` records the host in
 # the campaign header, and both the report and the website lead with every reason
 # it was a poor target. For a number worth publishing, run a campaign on a real
-# machine and commit its `samples.ndjson` -- the site is a pure function
-# of that file and will render it unchanged. See `METHODOLOGY.md#where-it-runs`.
+# machine and commit its `samples-<arch>.ndjson` -- the report and the site are
+# pure functions of that file and will render it unchanged.
 #
 # `workflow_dispatch` only. A campaign is a deliberate act, not a side effect of a
-# push: it costs minutes of runner time, it rewrites the two files this repository
+# push: it costs minutes of runner time, it rewrites the files this repository
 # publishes, and the moment it fires on every commit those files churn for reasons
 # that have nothing to do with the backends being measured.
 on:
@@ -41,9 +47,17 @@ concurrency:
 
 jobs:
   bench:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    strategy:
+      # One ISA failing does not invalidate the other: they are two experiments,
+      # and the one that finished is still a result.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: check out the repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -57,42 +71,65 @@ jobs:
       - name: build the harness
         run: cargo build --release
 
-      # `docker build` prepares, `docker run` measures. The campaign writes
-      # `samples.ndjson` at the repo root -- its default -- and nothing else.
+      # `docker build` prepares, `docker run` measures. The campaign writes its
+      # samples file and nothing else. The ISA in the name is a convenience for a
+      # human reading `ls`: the architecture of record is the one the machine
+      # reported into the campaign header, and that is what the site keys on.
       - name: run the campaign
-        run: ./target/release/langbench run
+        run: ./target/release/langbench run --output "samples-${{ matrix.arch }}.ndjson"
         env:
-          GRID_SIZE: ${{ inputs.grid_size || '2048' }}
-          MAX_ITER: ${{ inputs.max_iter || '1000' }}
-          ROUNDS: ${{ inputs.rounds || '10' }}
+          GRID_SIZE: ${{ inputs.grid_size }}
+          MAX_ITER: ${{ inputs.max_iter }}
+          ROUNDS: ${{ inputs.rounds }}
 
       # Rendering is not part of measuring: a separate command, a pure function of
       # the file above.
       - name: render the report
-        run: ./target/release/langbench md
-
-      # Both files, not just the report. `samples.ndjson` is the only artefact a
-      # campaign produces that cannot be recomputed -- the report and the website
-      # are both derived from it, and committing one without the other would
-      # publish a conclusion whose evidence is gone.
-      - name: commit the samples and the report
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add report.md samples.ndjson
-          if git diff --cached --quiet; then
-            echo 'the campaign reproduced the committed one, byte for byte; nothing to commit'
-            exit 0
-          fi
-          git commit -m 'bench: campaign of ${{ github.sha }}'
-          git push origin HEAD:main
+          ./target/release/langbench md "samples-${{ matrix.arch }}.ndjson" \
+            --output "report-${{ matrix.arch }}.md"
 
       - name: upload the campaign
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: campaign
-          path: samples.ndjson
+          name: campaign-${{ matrix.arch }}
+          path: |
+            samples-${{ matrix.arch }}.ndjson
+            report-${{ matrix.arch }}.md
           if-no-files-found: error
+
+  # One job, one push. Two matrix jobs committing to `main` would race, and the
+  # loser would have to rebase a file it holds the only copy of.
+  commit:
+    needs: bench
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: download every campaign
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: campaign-*
+          merge-multiple: true
+
+      # The samples with the report, never one without the other. A campaign's
+      # samples are the only artefact that cannot be recomputed -- the report and
+      # the website are both derived from them, and committing a conclusion
+      # without its evidence publishes something nobody can check.
+      - name: commit the samples and the reports
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add samples-*.ndjson report-*.md
+          if git diff --cached --quiet; then
+            echo 'the campaigns reproduced the committed ones, byte for byte; nothing to commit'
+            exit 0
+          fi
+          git commit -m 'bench: campaigns of ${{ github.sha }}'
+          git push origin HEAD:main
 
   site:
     needs: bench
@@ -101,12 +138,13 @@ jobs:
       - name: check out the repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # The campaign the job above just recorded -- not the one that happened to
-      # be committed when this run started.
-      - name: download the campaign
+      # The campaigns the matrix just recorded -- not the ones that happened to be
+      # committed when this run started.
+      - name: download every campaign
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: campaign
+          pattern: campaign-*
+          merge-multiple: true
 
       - name: set up the Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -132,7 +170,7 @@ jobs:
         run: npm ci
         working-directory: site
 
-      # Compiles `src/analysis.rs` to WebAssembly, copies the campaign in, and
+      # Compiles `src/analysis.rs` to WebAssembly, copies every campaign in, and
       # bundles the page. The site computes no statistic of its own: it calls the
       # harness. BASE_PATH is what Pages serves a project site under.
       - name: build the site

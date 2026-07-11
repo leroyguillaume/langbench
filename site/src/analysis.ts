@@ -90,6 +90,13 @@ export const campaignSchema = z.object({
 export const analysisSchema = z.object({
   campaign: campaignSchema,
   options: z.object({ include_warmup: z.boolean() }),
+  /**
+   * The ISA the campaign ran on, out of the machine record inside the file — never
+   * out of the name of the file. An absolute timing never crosses an ISA, and the
+   * check that enforces it cannot rest on what somebody called a file.
+   */
+  arch: z.string(),
+  hostname: z.string().nullable(),
   machine_fields: z.array(z.object({ label: z.string(), value: z.string() })),
   /** Every reason the host was a poor benchmark target. It travels with the numbers. */
   warnings: z.array(z.string()),
@@ -120,6 +127,9 @@ export interface Options {
   include_warmup: boolean;
 }
 
+/** The index `scripts/data.js` writes: the campaigns this build publishes. */
+const campaignsSchema = z.array(z.string());
+
 let ready: Promise<void> | undefined;
 
 /** Instantiate the WebAssembly module once, however many callers ask for it. */
@@ -142,7 +152,7 @@ export async function fetchAnalysis(campaignUrl: string, options: Options): Prom
 
   const response = await fetch(campaignUrl);
   if (!response.ok) {
-    throw new Error(`fetching the campaign: ${response.status} ${response.statusText}`);
+    throw new Error(`fetching ${campaignUrl}: ${response.status} ${response.statusText}`);
   }
   // `.text()`, deliberately. `.json()` would round every checksum past 2^53.
   const ndjson = await response.text();
@@ -151,10 +161,36 @@ export async function fetchAnalysis(campaignUrl: string, options: Options): Prom
   const raw: unknown = analyzeWasm(ndjson, options);
   const analysis = analysisSchema.parse(raw);
   logger.debug("campaign.analyzed", {
+    url: campaignUrl,
+    arch: analysis.arch,
     algos: analysis.algos.length,
     backends: analysis.backends.length,
     warnings: analysis.warnings.length,
     include_warmup: options.include_warmup,
   });
   return analysis;
+}
+
+/**
+ * Every campaign this build publishes, summarized — one per ISA.
+ *
+ * They are kept apart on purpose. **An absolute timing never crosses an ISA**
+ * (`METHODOLOGY.md#the-isa-rule`): an x86-64 millisecond and an aarch64
+ * millisecond are not the same claim, and a chart that puts them in one bar
+ * group invites exactly the comparison the methodology forbids. So the site
+ * loads them all and shows one at a time.
+ */
+export async function fetchCampaigns(baseUrl: string, options: Options): Promise<Analysis[]> {
+  const response = await fetch(`${baseUrl}campaigns.json`);
+  if (!response.ok) {
+    throw new Error(`fetching the campaign index: ${response.status} ${response.statusText}`);
+  }
+  const files = campaignsSchema.parse(await response.json());
+
+  const analyses = await Promise.all(
+    files.map((file) => fetchAnalysis(`${baseUrl}${file}`, options)),
+  );
+  // Deterministic order, and it is not the order the files were listed in: the
+  // ISA is what the reader picks between, so the ISA is what sorts them.
+  return analyses.sort((left, right) => left.arch.localeCompare(right.arch));
 }

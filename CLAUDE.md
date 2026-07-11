@@ -125,9 +125,15 @@ subject is **compiler and runtime backends**, not languages.
   integer, a JavaScript number is a double, and `JSON.parse` silently rounds past
   2^53. `samples.ndjson` is fetched as *text* and parsed in Rust; checksums cross
   the wire as **strings** and are never added, only displayed and compared.
-- The site's data file **is** `samples.ndjson` at the repo root, byte for byte. No export format,
-  no intermediate file: the raw samples are the only thing that cannot be
-  recomputed, so they are what gets published.
+- The site's data files **are** the campaigns' `samples-<arch>.ndjson`, at the
+  repo root, byte for byte. No export format, no intermediate file: the raw
+  samples are the only thing that cannot be recomputed, so they are what gets
+  published.
+- **One campaign per ISA, and the site shows one at a time.** An absolute timing
+  never crosses an ISA, so two architectures are never in one chart, one bar group
+  or one table. The site reads the ISA out of the machine record *inside* each
+  campaign — never out of the filename, which is a label somebody typed. `bench`
+  runs the matrix on native runners; never QEMU.
 - `src/lib.rs` carves the crate in two: the `cli` feature owns everything that
   touches the machine (Docker, discovery, the campaign, Liquid); what is left is
   data and arithmetic, and it compiles to `wasm32-unknown-unknown`. Nothing that

@@ -511,3 +511,15 @@ td.numeric {
   padding: 2rem;
   color: var(--text-secondary);
 }
+
+/* The ISA rule, said out loud. Not a dismissible toast: a reader who misses it
+ * will compare an x86-64 millisecond with an aarch64 one. */
+.isa-note {
+  background: var(--surface-2);
+  border-left: 3px solid var(--series-1);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}

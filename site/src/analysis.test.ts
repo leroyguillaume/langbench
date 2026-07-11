@@ -9,13 +9,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { analysisSchema } from "./analysis";
 import init, { analyze } from "./wasm/langbench.js";
 
 // Resolved from the project root, not from `import.meta.url`: under jsdom the
 // module URL is an `http://` one, and there is no file behind it.
-const CAMPAIGN = resolve(process.cwd(), "public/data/samples.ndjson");
+const DATA = resolve(process.cwd(), "public/data");
 const WASM = resolve(process.cwd(), "src/wasm/langbench_bg.wasm");
+
+/** The campaigns this build publishes, exactly as the site discovers them. */
+const published = (): string[] =>
+  z.array(z.string()).parse(JSON.parse(readFileSync(resolve(DATA, "campaigns.json"), "utf8")));
 
 let ndjson: string;
 
@@ -23,7 +28,12 @@ beforeAll(async () => {
   // The browser fetches the module over HTTP; here we hand it the bytes. Same
   // module, same code — `npm run build` produced both.
   await init({ module_or_path: readFileSync(WASM) });
-  ndjson = readFileSync(CAMPAIGN, "utf8");
+
+  const [first] = published();
+  if (first === undefined) {
+    throw new Error("this build publishes no campaign");
+  }
+  ndjson = readFileSync(resolve(DATA, first), "utf8");
 });
 
 describe("the WebAssembly boundary", () => {
@@ -84,5 +94,21 @@ describe("the WebAssembly boundary", () => {
 
   it("refuses a file that is not a campaign, rather than plotting nonsense", () => {
     expect(() => analyze("not ndjson at all", { include_warmup: false })).toThrow();
+  });
+
+  /// The ISA comes out of the machine record the campaign wrote, never out of the
+  /// filename. An absolute timing never crosses an ISA, and the site keeps two
+  /// campaigns apart on this field — so it had better be the machine's own word.
+  it("reports the ISA of every published campaign, from inside the file", () => {
+    for (const file of published()) {
+      const raw = readFileSync(resolve(DATA, file), "utf8");
+      const analysis = analysisSchema.parse(analyze(raw, { include_warmup: false }));
+
+      expect(analysis.arch).not.toBe("");
+      // The suffix is a convenience for a human reading `ls`. If it and the header
+      // ever disagree, the header is right -- but they should not disagree, and a
+      // campaign filed under the wrong ISA is worth catching here.
+      expect(file).toBe(`samples-${analysis.arch}.ndjson`);
+    }
   });
 });

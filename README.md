@@ -331,9 +331,10 @@ awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
-benchmark target. **The current one is [`report.md`](report.md)**, at the repo
-root — rewritten by the [`bench`](.github/workflows/bench.yaml) workflow every
-time a campaign runs, beside the samples it was rendered from. It renders
+benchmark target. **One per ISA, at the repo root** —
+[`report-aarch64.md`](report-aarch64.md), and `report-x86_64.md` once the
+[`bench`](.github/workflows/bench.yaml) workflow has run — each rewritten beside
+the samples it was rendered from. It renders
 `templates/report.md.liquid`, embedded in the binary; `--template` swaps in your
 own [Liquid][liquid] template, which receives exactly the same variables:
 
@@ -368,15 +369,23 @@ harness. So `samples.ndjson` is fetched as *text*, parsed in Rust by `serde_json
 and the checksums come back as strings. The page displays them and compares them;
 it never adds them.
 
-The data it publishes is the campaign's `samples.ndjson`, byte for byte — there
-is no export format and no intermediate file. The campaign it publishes is
-[`samples.ndjson`](samples.ndjson) at the repo root, which is where `langbench
-run` writes by default:
+**One campaign per ISA, never merged.** An absolute timing does not cross an ISA
+([`METHODOLOGY.md#the-isa-rule`](METHODOLOGY.md#the-isa-rule)): a millisecond on
+x86-64 and a millisecond on aarch64 are not the same claim. So the site loads
+every campaign and shows **one at a time**, behind an ISA selector — comparing
+backends *within* an architecture, which is what a ratio is for. The architecture
+it keys on is the one the machine recorded in the campaign header, never the one
+in the filename: a filename is a label somebody typed.
+
+The data it publishes is each campaign's samples, byte for byte — no export
+format, no intermediate file. They live at the repo root, one per ISA:
 
 ```sh
-langbench run
+langbench run --output samples-x86_64.ndjson
+langbench md samples-x86_64.ndjson --output report-x86_64.md
 ```
 
+Anything matching `samples-*.ndjson` at the root is picked up and published.
 Locally:
 
 ```sh
@@ -407,12 +416,13 @@ every `bench.yaml`, and the site's `biome`, `tsc` and `vitest`. Plus one check n
 hook covers — that the library still compiles to `wasm32-unknown-unknown` without
 the half of it that talks to Docker.
 
-**[`bench`](.github/workflows/bench.yaml)** — runs a campaign, commits
-[`samples.ndjson`](samples.ndjson) **and** [`report.md`](report.md) back to `main`, then
-builds the site from those very samples and deploys it to GitHub Pages. Both
-files, never one without the other: the samples are the only artefact that cannot
-be recomputed, and committing a report without its evidence publishes a conclusion
-nobody can check.
+**[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
+matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
+which measures the emulator). It commits every `samples-<arch>.ndjson` **and** its
+`report-<arch>.md` back to `main`, then builds the site from those very samples
+and deploys it to GitHub Pages. Both files, never one without the other: the
+samples are the only artefact that cannot be recomputed, and committing a report
+without its evidence publishes a conclusion nobody can check.
 
 **`workflow_dispatch` only** — it takes `grid_size`, `max_iter` and `rounds` as
 inputs. A campaign is a deliberate act, not a side effect of a push: it costs
@@ -425,8 +435,8 @@ reaches the page only when a campaign is next dispatched.
 runner is shared, virtualised and frequency-scaled — the worst benchmark target
 money can rent. It says so itself: the report and the page both lead with every
 reason the host was a poor target. For a number worth trusting, run a campaign on
-a real machine and commit its `samples.ndjson`; the report and the site are pure
-functions of that file and will render it unchanged.
+a real machine and commit its `samples-<arch>.ndjson`; the report and the site are
+pure functions of that file and will render it unchanged.
 
 ## Adding an implementation
 

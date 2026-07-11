@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, FpMode } from "./analysis";
-import { fetchAnalysis } from "./analysis";
+import { fetchCampaigns } from "./analysis";
 import { BarChart, type ChartRow } from "./components/BarChart";
 import { ResultsTable, type Sort, type SortKey, sortRows } from "./components/ResultsTable";
 import { bytes, dispersion, milliseconds, optional, ratio } from "./format";
@@ -8,24 +8,24 @@ import { logger } from "./logger";
 import { MODES, modeSeries, SEQUENTIAL, WALL_SERIES } from "./series";
 import { readUrl, type UrlState, writeUrl } from "./url";
 
-/** The campaign this site publishes. The raw samples — see `scripts/data.js`. */
-const CAMPAIGN_URL = `${import.meta.env.BASE_URL}data/samples.ndjson`;
+/** Where the campaigns this build publishes are served from. See `scripts/data.js`. */
+const DATA_URL = `${import.meta.env.BASE_URL}data/`;
 
 export function App() {
   const [state, setState] = useState<UrlState>(readUrl);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [campaigns, setCampaigns] = useState<Analysis[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // The whole analysis is recomputed by the WASM when `includeWarmup` changes:
-  // it is a different aggregation of the same file, not a filter over a result.
+  // Every campaign is re-analyzed by the WASM when `includeWarmup` changes: it is
+  // a different aggregation of the same files, not a filter over a result.
   // Everything else is a view, and is done here.
   useEffect(() => {
     let live = true;
     setError(null);
-    fetchAnalysis(CAMPAIGN_URL, { include_warmup: state.includeWarmup })
+    fetchCampaigns(DATA_URL, { include_warmup: state.includeWarmup })
       .then((next) => {
         if (live) {
-          setAnalysis(next);
+          setCampaigns(next);
         }
       })
       .catch((cause: unknown) => {
@@ -52,20 +52,41 @@ export function App() {
       </main>
     );
   }
-  if (analysis === null) {
-    return <p className="status">Reading the campaign…</p>;
+  if (campaigns === null) {
+    return <p className="status">Reading the campaigns…</p>;
   }
 
-  return <Report analysis={analysis} state={state} setState={setState} />;
+  // One ISA at a time, always. Two campaigns from two architectures are two
+  // experiments: an x86-64 millisecond and an aarch64 millisecond are not the
+  // same claim, and a chart that puts them in one bar group invites exactly the
+  // comparison `METHODOLOGY.md#the-isa-rule` forbids. The reader picks an ISA;
+  // the site never adds one to another.
+  const analysis = campaigns.find((entry) => entry.arch === state.arch) ?? campaigns[0];
+  if (analysis === undefined) {
+    return (
+      <main className="page">
+        <div className="warnings">
+          <h2>This build publishes no campaign</h2>
+          <p>
+            No <code>samples-&lt;arch&gt;.ndjson</code> was found at the repository root when the
+            site was built.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  return <Report analysis={analysis} campaigns={campaigns} state={state} setState={setState} />;
 }
 
 interface ReportProps {
   analysis: Analysis;
+  campaigns: Analysis[];
   state: UrlState;
   setState: (state: UrlState) => void;
 }
 
-function Report({ analysis, state, setState }: ReportProps) {
+function Report({ analysis, campaigns, state, setState }: ReportProps) {
   const { campaign } = analysis;
 
   const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
@@ -142,11 +163,22 @@ function Report({ analysis, state, setState }: ReportProps) {
       <header className="masthead">
         <h1>langbench</h1>
         <p>
-          Compiler and runtime backends, measured on one machine, on{" "}
+          Compiler and runtime backends, measured on <strong>{analysis.arch}</strong>
+          {analysis.hostname !== null && ` (${analysis.hostname})`} on{" "}
           {new Date(campaign.timestamp).toLocaleDateString()}. Every number below is derived from
           the raw samples by the harness itself — the site computes no statistic of its own.
         </p>
       </header>
+
+      {campaigns.length > 1 && (
+        <p className="isa-note">
+          This build publishes {campaigns.length} campaigns, one per ISA, and never shows them
+          together: an <strong>absolute timing does not cross an ISA</strong>. A millisecond here
+          and a millisecond on {campaigns.find((entry) => entry.arch !== analysis.arch)?.arch} are
+          not the same claim. Compare backends <em>within</em> one architecture — the ratio is what
+          travels.
+        </p>
+      )}
 
       {analysis.warnings.length > 0 && (
         <section className="warnings">
@@ -162,11 +194,12 @@ function Report({ analysis, state, setState }: ReportProps) {
       <Tiles rows={visible} analysis={analysis} />
 
       <Filters
-        analysis={analysis}
         state={state}
         setState={setState}
         languages={languages}
         algoKeys={analysis.algos.map((entry) => entry.algo)}
+        arches={campaigns.map((entry) => entry.arch)}
+        arch={analysis.arch}
       />
 
       <section className="card">
@@ -273,7 +306,8 @@ function Report({ analysis, state, setState }: ReportProps) {
 
       <footer className="footer">
         Read METHODOLOGY.md before trusting any number here. The samples this page is built from are{" "}
-        <a href={CAMPAIGN_URL}>samples.ndjson</a> — the campaign's only artefact.
+        <a href={`${DATA_URL}samples-${analysis.arch}.ndjson`}>samples-{analysis.arch}.ndjson</a> —
+        this campaign's only artefact.
       </footer>
     </main>
   );
@@ -339,14 +373,15 @@ function Tiles({ rows, analysis }: { rows: Aggregate[]; analysis: Analysis }) {
 }
 
 interface FiltersProps {
-  analysis: Analysis;
   state: UrlState;
   setState: (state: UrlState) => void;
   languages: string[];
   algoKeys: string[];
+  arches: string[];
+  arch: string;
 }
 
-function Filters({ state, setState, languages, algoKeys }: FiltersProps) {
+function Filters({ state, setState, languages, algoKeys, arches, arch }: FiltersProps) {
   const toggleMode = (mode: FpMode) => {
     const modes = state.modes.includes(mode)
       ? state.modes.filter((candidate) => candidate !== mode)
@@ -357,6 +392,24 @@ function Filters({ state, setState, languages, algoKeys }: FiltersProps) {
 
   return (
     <div className="filters">
+      {/* First, because it scopes everything below it. A campaign is not a filter
+          over the others: it is the experiment the rest of the page is about. */}
+      {arches.length > 1 && (
+        <label className="filter">
+          <span>ISA</span>
+          <select
+            value={arch}
+            onChange={(event) => setState({ ...state, arch: event.target.value })}
+          >
+            {arches.map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <label className="filter">
         <span>Algorithm</span>
         <select

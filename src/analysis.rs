@@ -47,6 +47,17 @@ pub struct Options {
 pub struct Analysis {
     pub campaign: Campaign,
     pub options: Options,
+    /// The ISA the campaign ran on, lifted out of the machine so a consumer can
+    /// key on it without scraping a label out of [`Self::machine_fields`].
+    ///
+    /// The website needs it for one reason: **an absolute timing never crosses an
+    /// ISA**. Two campaigns from two architectures are two experiments, and the
+    /// site has to be able to tell them apart structurally — from the header the
+    /// campaign recorded, never from the name of the file it was served under. A
+    /// filename is a label somebody types; this is what the machine said about
+    /// itself. See `METHODOLOGY.md#the-isa-rule`.
+    pub arch: String,
+    pub hostname: Option<String>,
     pub machine_fields: Vec<Field>,
     /// Every reason this host was a poor benchmark target. It travels with the
     /// numbers, so a chart cannot be read without the caveat that qualifies it.
@@ -274,6 +285,8 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     Analysis {
         campaign: recording.campaign.clone(),
         options,
+        arch: recording.machine.arch.clone(),
+        hostname: recording.machine.hostname.clone(),
         machine_fields: recording.machine.fields(),
         warnings: recording.machine.warnings(),
         algos,
@@ -449,6 +462,27 @@ mod tests {
             .find(|aggregate| aggregate.mode == FpMode::Fast)
             .unwrap();
         assert_eq!(fast.checksum_delta, Some(-6));
+    }
+
+    /// The ISA is read off the machine the campaign recorded, never off a
+    /// filename. Two campaigns from two architectures are two experiments, and
+    /// the consumer that has to keep their absolute timings apart cannot be asked
+    /// to trust what somebody called the file.
+    #[test]
+    fn the_analysis_carries_the_isa_the_campaign_ran_on() {
+        let mut recording = recording(vec![sample(
+            "c-gcc",
+            FpMode::Strict,
+            false,
+            2_000_000_000,
+            42,
+        )]);
+        recording.machine.arch = "x86_64".to_owned();
+        recording.machine.hostname = Some("bench-01".to_owned());
+
+        let analysis = analyze(&recording, Options::default());
+        assert_eq!(analysis.arch, "x86_64");
+        assert_eq!(analysis.hostname.as_deref(), Some("bench-01"));
     }
 
     /// The two clocks, and the gap between them, all come off the *same* sample.
