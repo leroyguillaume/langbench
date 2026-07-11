@@ -447,10 +447,19 @@ Two environment variables move the paths, and neither changes what is published:
 | `SAMPLES_DIR` | `samples` | Where the campaigns are **read from**. Relative to the repository root, or absolute. |
 | `BASE_PATH` | `/` | The URL prefix the built site is **served under** — `/langbench/` for a GitHub Pages project site. |
 
+`SAMPLES_DIR` is how you look at a campaign you ran here and are not committing.
+`samples.local/` is gitignored for exactly that — a laptop's numbers have no
+business in `samples/`, which is what the bench runners publish:
+
 ```sh
-SAMPLES_DIR=/mnt/bench/campaigns npm run dev
-SAMPLES_DIR=../scratch/samples BASE_PATH=/langbench/ npm run build
+langbench run --output samples.local/$(uname -m).ndjson
+cd site && SAMPLES_DIR=samples.local npm run dev   # serves your campaign, not the committed one
+SAMPLES_DIR=/mnt/bench/campaigns BASE_PATH=/langbench/ npm run build
 ```
+
+The default stays `samples/` whatever is lying around on disk, so the published
+site is built from the committed campaigns without anyone passing anything — and
+pointing the page at your own numbers is a thing you can see yourself typing.
 
 Whatever `SAMPLES_DIR` points at, the `.ndjson` files under it are copied into
 `public/data/` byte for byte and indexed in `campaigns.json`; the page still reads
