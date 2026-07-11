@@ -55,13 +55,11 @@ repos:
           - rust
         pass_filenames: false
 
-      - id: cargo-test
-        name: cargo test
-        entry: cargo test
-        language: system
-        types:
-          - rust
-        pass_filenames: false
+      # No `cargo test` and no `vitest` here. The suites are the `test` workflow's:
+      # they are the slowest thing either language has to offer, they run on every
+      # commit of a hook that is meant to be instant, and a runner is already
+      # running them in parallel with everything else. A hook checks what is cheap
+      # to check and expensive to get wrong -- formatting, lints, generated files.
 
       # The schema is generated, never edited. This hook rewrites it in place, so
       # pre-commit fails the commit exactly when the checked-in copy had drifted
@@ -99,28 +97,19 @@ repos:
         files: ^site/
         pass_filenames: false
 
-      # The site's other gates. `tsc` is not a formality here: the zod schema in
+      # The site's other gate. `tsc` is not a formality here: the zod schema in
       # `site/src/analysis.ts` is what the WebAssembly's output is validated
-      # against, and a field renamed in `src/analysis.rs` is caught by the site's
-      # tests -- which run the real module over the real campaign -- long before a
-      # reader sees an empty chart.
+      # against, so a field renamed in `src/analysis.rs` is caught here -- long
+      # before a reader sees an empty chart.
       #
-      # Both scripts build the WASM first, and that is not belt-and-braces:
-      # `site/src/wasm/` is a `wasm-pack` artefact, gitignored, and absent from
-      # every fresh clone. A `tsc` that does not build it type-checks against a
-      # module that is not there -- which is an error on a runner and, on a
-      # machine that happened to run `npm test` last week, silently against a
-      # stale one.
+      # It builds the WASM first, and that is not belt-and-braces: `site/src/wasm/`
+      # is a `wasm-pack` artefact, gitignored, and absent from every fresh clone. A
+      # `tsc` that does not build it type-checks against a module that is not there
+      # -- which is an error on a runner and, on a machine that happened to run
+      # `npm test` last week, silently against a stale one.
       - id: site-typecheck
         name: tsc --noEmit
         entry: npm --prefix site run typecheck
         language: system
         files: ^site/(src/|.*\.json$|.*\.ts$)
-        pass_filenames: false
-
-      - id: site-test
-        name: vitest
-        entry: npm --prefix site test
-        language: system
-        files: ^(site/src/|src/)
         pass_filenames: false

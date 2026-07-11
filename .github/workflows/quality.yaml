@@ -1,6 +1,9 @@
 name: quality
 
-# The single gate. Never path-filtered: it runs on everything, whatever changed.
+# Formatting, lints and the generated artefacts -- everything `pre-commit` checks.
+# The suites live next door, in `test`, and the compilers in `build`: three
+# workflows, three runners, one gate. Never path-filtered: it runs on everything,
+# whatever changed.
 on:
   push:
     branches:
@@ -58,13 +61,8 @@ jobs:
       - name: install pre-commit
         run: pip install pre-commit
 
-      # Every hook, on every file. `cargo test` and the site's `vitest` are hooks,
-      # so the test suite runs here too -- the gate is not split.
+      # Every hook, on every file. No suite among them: `cargo test` and `vitest`
+      # are the `test` workflow's, and they are a slow hook to pay on every commit
+      # for a check a runner makes in parallel anyway.
       - name: run pre-commit
         run: pre-commit run --all-files --show-diff-on-failure
-
-      # The one thing no hook covers: the library still has to compile *without*
-      # the machine half of it. A `std::process::Command` that creeps into
-      # `analysis.rs` breaks the website and nothing else would say so.
-      - name: check the WebAssembly build
-        run: cargo check --target wasm32-unknown-unknown --no-default-features --features wasm

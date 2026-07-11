@@ -1,0 +1,91 @@
+name: build
+
+# Everything this repository produces has to still compile: the harness, the
+# WebAssembly the site calls, and the bundle the site ships. Nothing here is
+# published -- `bench` is what deploys, and it is `workflow_dispatch` only.
+#
+# Never path-filtered, like `quality` and `test`. The three of them are one gate
+# split across three runners, and a gate that skips itself on the change that
+# happened to look harmless is not a gate.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # The binary `bench` runs -- release, and `--locked`, so a lockfile that
+      # disagrees with `Cargo.toml` is a failure here rather than a surprise on the
+      # bench machine.
+      - name: build the harness
+        run: cargo build --release --locked
+
+  site:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: set up wasm-pack
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+        with:
+          version: v0.13.1
+
+      - name: set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: install the site's dependencies
+        run: npm ci
+        working-directory: site
+
+      # `npm run build` is `wasm-pack` -> `data.js` -> `tsc --noEmit` -> `vite
+      # build`, in that order, and the first link is the one no other workflow
+      # covers: it compiles the crate to `wasm32-unknown-unknown` *without* the
+      # `cli` feature. A `std::process::Command` that creeps into `analysis.rs`
+      # breaks the website and nothing else would say so.
+      #
+      # It builds over the committed fixture, not over `samples/`. The site is a
+      # pure function of a campaign and CI is not allowed to produce one -- a
+      # shared, virtualised, frequency-scaled runner is the worst benchmark target
+      # money can rent -- so `main` may legitimately publish no campaign at all,
+      # and `data.js` rightly refuses to build a site with nothing to show. What
+      # this job asks is whether the bundle compiles, which needs *a* campaign, not
+      # *the* campaign. The one that deploys is `bench`, from the samples its own
+      # matrix just recorded.
+      - name: build the site
+        run: npm run build
+        working-directory: site
+        env:
+          SAMPLES_DIR: site/src/__fixtures__
+          BASE_PATH: /${{ github.event.repository.name }}/

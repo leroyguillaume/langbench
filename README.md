@@ -467,14 +467,29 @@ each campaign's ISA out of its own machine record, never out of a path.
 
 ## Continuous integration
 
-Two workflows, and they do different jobs.
+Four workflows. Three of them are one gate — every push to `main`, every pull
+request, **no path filter on any of them**: a gate that skips itself on the change
+that happened to look harmless is not a gate. The fourth measures, and it is the
+only one you have to ask for.
 
-**[`quality`](.github/workflows/quality.yaml)** — every push, every pull request,
-no path filter. It runs `pre-commit run --all-files`, which is where the whole
-gate lives: `cargo fmt`, `clippy`, `cargo test`, the generated `bench.schema.json`,
-every `bench.yaml`, and the site's `biome`, `tsc` and `vitest`. Plus one check no
-hook covers — that the library still compiles to `wasm32-unknown-unknown` without
-the half of it that talks to Docker.
+**[`quality`](.github/workflows/quality.yaml)** — `pre-commit run --all-files`:
+`cargo fmt`, `clippy`, `hadolint`, `actionlint`, `biome`, `tsc`, the generated
+`bench.schema.json`, every `bench.yaml`. What is cheap to check and expensive to
+get wrong.
+
+**[`test`](.github/workflows/test.yaml)** — `cargo test` and the site's `vitest`,
+one job each. The kernels are not among them: they are verified by the strict-mode
+checksum invariant, which only a campaign can check.
+
+**[`build`](.github/workflows/build.yaml)** — that everything still compiles:
+`cargo build --release --locked`, and the site's `npm run build`, which is
+`wasm-pack` → `tsc` → `vite`. That first link is the one nothing else covers — the
+crate has to compile to `wasm32-unknown-unknown` **without** the half of it that
+talks to Docker, and a `std::process::Command` that creeps into `analysis.rs`
+breaks the website and nothing else would say so. It builds over the committed
+fixture rather than `samples/`: `main` may legitimately publish no campaign, and
+the question this workflow asks is whether the bundle compiles — which needs *a*
+campaign, not *the* campaign. It publishes nothing.
 
 **[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
@@ -599,10 +614,16 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 
-pre-commit install   # the three above, plus hadolint, actionlint, and the two
-                     # manifest hooks: `validate` runs whenever a bench.yaml
+pre-commit install   # fmt and clippy, plus hadolint, actionlint, biome, tsc, and
+                     # the two manifest hooks: `validate` runs whenever a bench.yaml
                      # moves, and bench.schema.json is checked for drift
 ```
+
+**The suites are not hooks.** `cargo test` and `vitest` are the slowest thing
+either language has to offer, and a hook that is meant to be instant is the wrong
+place to pay for them — run them yourself, and the
+[`test`](.github/workflows/test.yaml) workflow runs them on every push anyway, in
+parallel with everything else.
 
 ## What ships
 
