@@ -2,6 +2,6 @@
 # report. `SAMPLES_OUTPUT` is the samples file itself — `run` writes it, `csv`
 # and `md` read it — and each rendering has its own destination.
 [env]
-SAMPLES_OUTPUT = "samples.local.ndjson"
+SAMPLES_OUTPUT = "samples.local/samples.ndjson"
 CSV_OUTPUT = "samples.local.csv"
 MD_OUTPUT = "report.local.md"
