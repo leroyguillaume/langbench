@@ -114,7 +114,13 @@ disasm)
     #
     # `work` and not `row_iterations`: at -O3 the latter is inlined and its
     # symbol is gone, so asking for it prints an empty listing and exits 0.
-    objdump --disassemble=work --no-show-raw-insn "${BINARY}"
+    listing=$(objdump --disassemble=work --no-show-raw-insn "${BINARY}")
+    # An empty listing is the silent failure this guard exists to catch.
+    if ! printf '%s\n' "${listing}" | grep -qE '^[[:space:]]+[0-9a-f]+:'; then
+        printf 'empty listing for work: the symbol is missing or is not code\n' >&2
+        exit 1
+    fi
+    printf '%s\n' "${listing}"
     ;;
 
 *)

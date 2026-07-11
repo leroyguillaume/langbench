@@ -340,6 +340,13 @@ bytes — and `.text` does not move at all. The column earns its keep on larger
 kernels, or when a backend vectorizes and another does not. For anything finer,
 read the disassembly; that is what we archive it for.
 
+**And never read `.text` as a proxy for speed.** Cython emits 50.5 KiB of machine
+code against C's 1.3 KiB — thirty-nine times more — and runs forty-two times
+slower. The disassembly says why in one line: Cython's hot loop is 142 `bl`
+instructions into the CPython C-API and a single `fadd`, where the C kernel has
+six `fadd`, five `fmul`, three `fsub` and no call at all. More code, doing less
+arithmetic. `.text` is the *cost* of an optimization, never its reward.
+
 Interpreted and JIT backends emit no artifact: the field is `null`, not zero.
 `native-image` does produce one, so "compiled" is a property of the backend, not
 of the language.

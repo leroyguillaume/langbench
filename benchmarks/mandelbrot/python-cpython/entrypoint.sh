@@ -87,9 +87,12 @@ build)
 
 run)
     [ "$#" -eq 4 ] || usage
-    # `-m` so the shipped __pycache__ is used; a script run by path is recompiled
-    # on every invocation, and that cost belongs to the build phase, not here.
-    output=$(cd "${SOURCE_DIR}" && python -m mandelbrot "$2" "$3" "$4")
+    # `import`, not `-m`: the shipped __pycache__ is used either way, but `-m`
+    # drags in `runpy`, and that cost would land in the Startup column. The
+    # `python-cython` backend imports too, so the two rows stay comparable.
+    # A script run by path would be recompiled on every invocation, and that
+    # cost belongs to the build phase, not here.
+    output=$(cd "${SOURCE_DIR}" && python -c 'import mandelbrot, sys; sys.exit(mandelbrot.main())' "$2" "$3" "$4")
     checksum=${output% *}
     elapsed_ns=${output#* }
 

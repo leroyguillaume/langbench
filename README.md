@@ -195,15 +195,22 @@ pre-commit install   # runs the three above, plus hadolint and actionlint
 
 ## Status
 
-Early, but the central claim is now demonstrated. Two implementations exist,
-`mandelbrot/c-gcc` and `mandelbrot/python-cpython`, and **they agree on the
-strict-mode checksum bit for bit** — a compiled C kernel and a bytecode
-interpreter, same value. The gate is not decorative: reassociating one expression
-in the Python kernel aborts the campaign.
+Early, but the central claims are demonstrated. Three implementations exist —
+`c-gcc`, `python-cpython` and `python-cython` — and **all three agree on the
+strict-mode checksum bit for bit**. The gate is not decorative: reassociating one
+expression in the Python kernel aborts the campaign.
+
+The two Python rows compile a byte-identical source (a test enforces it), so they
+are the clean "same source, different backend" experiment. The first result is
+counter-intuitive and worth the whole harness: **Cython is 1.5× slower than the
+CPython interpreter it compiles.** Without type annotations the generated C
+manipulates `PyFloat` objects through the C-API — its hot loop holds 142 call
+instructions and one `fadd`, where the C kernel has none and fourteen — while
+CPython 3.13's specializing interpreter takes a fast path for `float * float`.
 
 Next: measure the noise floor of the target machine — nothing else is
 trustworthy until that number exists — then C/clang and Rust/LLVM, to complete
-the first triangle of backends.
+the first triangle of compiled backends.
 
 ## License
 
