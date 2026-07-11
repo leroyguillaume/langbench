@@ -1,0 +1,100 @@
+name: pages
+
+# Builds the website and deploys it to GitHub Pages.
+#
+# The site is a *rendering*, beside `csv` and `md`, and it measures nothing: it is
+# a pure function of the campaigns committed under `samples/`. That is why this
+# workflow is separate from `bench` -- publishing a page and measuring a backend
+# have nothing to say to each other, and a page can be republished (a CSS fix, a
+# label, a new chart) without spending an hour of runner time re-measuring
+# backends that have not changed.
+#
+# `bench` calls it via `workflow_call` once the campaigns it recorded are
+# committed, passing the SHA of that commit as `ref`: the page then renders the
+# samples that were just measured, not the ones that happened to be on `main` when
+# the campaign started.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: the commit to render the site from
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: the commit to render the site from
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+# Never publish two pages at once: the later deploy would race the earlier one and
+# the winner is whichever `actions/deploy-pages` finishes last, which is not a
+# property anyone should depend on. Cancelling in flight is safe here -- unlike a
+# campaign, a build that dies costs nothing but a rebuild.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cache the compiled dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: set up wasm-pack
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+        with:
+          version: v0.13.1
+
+      - name: set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: install the site's dependencies
+        run: npm ci
+        working-directory: site
+
+      # Compiles `src/analysis.rs` to WebAssembly, copies every campaign in, and
+      # bundles the page. The site computes no statistic of its own: it calls the
+      # harness. BASE_PATH is what Pages serves a project site under.
+      - name: build the site
+        run: npm run build
+        working-directory: site
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: upload the page
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    needs: site
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
