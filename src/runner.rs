@@ -3,6 +3,7 @@
 //! Deliberately sequential. Running two benchmarks concurrently would destroy
 //! the measurement, so there is no async here and no `tokio`.
 
+use std::collections::HashMap;
 use std::fs;
 use std::time::Duration;
 
@@ -74,7 +75,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         args: &args,
         writer,
         written: 0,
-        strict_checksum: None,
+        strict_checksums: HashMap::new(),
     };
 
     runner.prepare(&units)?;
@@ -99,8 +100,11 @@ struct Runner<'a, E: ContainerEngine> {
     /// Samples are streamed to disk, never accumulated: the harness holds a
     /// count, and whoever renders reads them back.
     written: usize,
-    /// The one value every strict-mode run must agree on, bit for bit.
-    strict_checksum: Option<u64>,
+    /// The value every strict-mode run of an algorithm must agree on, bit for
+    /// bit, keyed by algorithm. Per algorithm and not per campaign: the checksum
+    /// is a property of `(algo, grid size, max_iter)`, so a shared reference
+    /// would abort the campaign on the first strict run of the second algorithm.
+    strict_checksums: HashMap<String, u64>,
 }
 
 impl<E: ContainerEngine> Runner<'_, E> {
@@ -207,17 +211,18 @@ impl<E: ContainerEngine> Runner<'_, E> {
         let Some(checksum) = sample.checksum else {
             return Ok(());
         };
-        match self.strict_checksum {
+        match self.strict_checksums.get(&sample.algo) {
             None => {
-                self.strict_checksum = Some(checksum);
+                self.strict_checksums.insert(sample.algo.clone(), checksum);
                 Ok(())
             }
-            Some(reference) if reference == checksum => Ok(()),
-            Some(reference) => bail!(
-                "strict-mode checksum mismatch: {} produced {checksum}, the reference is \
+            Some(&reference) if reference == checksum => Ok(()),
+            Some(&reference) => bail!(
+                "strict-mode checksum mismatch on {}: {} produced {checksum}, the reference is \
                  {reference}. In strict mode every compiler, language and ISA must agree bit \
                  for bit; a divergence is a bug in the code or the flags, never a rounding \
                  difference.",
+                sample.algo,
                 sample.implementation,
             ),
         }
@@ -249,8 +254,12 @@ mod tests {
     }
 
     fn benchmarks(root: &Path, names: &[&str]) {
+        benchmarks_for(root, "mandelbrot", names);
+    }
+
+    fn benchmarks_for(root: &Path, algo: &str, names: &[&str]) {
         for name in names {
-            let dir = root.join("mandelbrot").join(name);
+            let dir = root.join(algo).join(name);
             create_dir_all(&dir).unwrap();
             File::create(dir.join("Dockerfile")).unwrap();
         }
@@ -398,6 +407,33 @@ mod tests {
         args.rounds = 1;
         let err = execute(args, &engine).unwrap_err();
         assert!(err.to_string().contains("checksum mismatch"), "{err}");
+    }
+
+    #[test]
+    fn two_algorithms_are_each_verified_against_their_own_reference() {
+        // The checksum is a property of (algo, grid size, max_iter), so two
+        // algorithms legitimately disagree. A campaign-wide reference would abort
+        // on the first strict run of the second algorithm.
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks_for(root.path(), "mandelbrot", &["c-gcc"]);
+        benchmarks_for(root.path(), "nbody", &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(|spec| {
+            let checksum = if spec.image.contains("nbody") { 9 } else { 7 };
+            Ok(Execution {
+                wall_ns: 2_000,
+                record: record(Some(checksum)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 2;
+        execute(args, &engine).unwrap();
     }
 
     #[test]

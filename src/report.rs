@@ -22,13 +22,15 @@ pub struct ReportData {
     pub campaign: Campaign,
     pub machine_fields: Vec<Field>,
     pub warnings: Vec<String>,
-    pub strict_checksum: String,
     pub algos: Vec<AlgoReport>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AlgoReport {
     pub algo: String,
+    /// The reference every strict-mode row of *this* algorithm agreed on. It is
+    /// a property of `(algo, grid size, max_iter)`, never of the campaign.
+    pub strict_checksum: String,
     pub rows: Vec<Row>,
 }
 
@@ -48,7 +50,6 @@ pub struct Row {
     pub build_dispersion: String,
     pub binary: String,
     pub text: String,
-    pub checksum: String,
     pub checksum_delta: String,
 }
 
@@ -69,7 +70,7 @@ struct Bucket {
 
 pub fn build(recording: &Recording) -> ReportData {
     let samples = &recording.samples;
-    let strict_checksum = strict_reference(samples);
+    let references = strict_references(samples);
 
     // Insertion order comes from the first round, which is the schedule order.
     let mut order: Vec<(String, String, String)> = Vec::new();
@@ -114,6 +115,7 @@ pub fn build(recording: &Recording) -> ReportData {
     for key in &order {
         let (algo, implementation, mode) = key;
         let bucket = &buckets[key];
+        let reference = references.get(algo).copied();
         let row = Row {
             implementation: implementation.clone(),
             language: bucket.language.clone(),
@@ -132,16 +134,15 @@ pub fn build(recording: &Recording) -> ReportData {
             build_dispersion: dispersion(summarize(&bucket.build_wall)),
             binary: bytes(bucket.binary_bytes),
             text: bytes(bucket.text_bytes),
-            checksum: bucket
-                .checksum
-                .map_or_else(|| "n/a".to_owned(), |c| c.to_string()),
-            checksum_delta: delta(bucket.checksum, strict_checksum),
+            checksum_delta: delta(bucket.checksum, reference),
         };
 
         match algos.iter_mut().find(|report| &report.algo == algo) {
             Some(report) => report.rows.push(row),
             None => algos.push(AlgoReport {
                 algo: algo.clone(),
+                strict_checksum: reference
+                    .map_or_else(|| "n/a".to_owned(), |checksum| checksum.to_string()),
                 rows: vec![row],
             }),
         }
@@ -151,21 +152,30 @@ pub fn build(recording: &Recording) -> ReportData {
         campaign: recording.campaign.clone(),
         machine_fields: recording.machine.fields(),
         warnings: recording.machine.warnings(),
-        strict_checksum: strict_checksum.map_or_else(|| "n/a".to_owned(), |c| c.to_string()),
         algos,
     }
 }
 
-/// The one value every strict-mode run agreed on.
+/// The value every strict-mode run of a given algorithm agreed on, keyed by
+/// algorithm.
 ///
 /// The campaign already refused to record a divergent one — `Runner::verify`
-/// aborts on the spot — so any strict sample carries the reference and the first
-/// one is as good as the last. See `METHODOLOGY.md#the-strict-mode-invariant`.
-fn strict_reference(samples: &[Sample]) -> Option<u64> {
-    samples
-        .iter()
-        .filter(|sample| sample.mode == FpMode::Strict)
-        .find_map(|sample| sample.checksum)
+/// aborts on the spot — so any strict sample of an algorithm carries its
+/// reference and the first one is as good as the last. The reference is per
+/// algorithm because the checksum is a property of `(algo, grid size,
+/// max_iter)`: measuring one algorithm's delta against another's would be
+/// meaningless. See `METHODOLOGY.md#the-strict-mode-invariant`.
+fn strict_references(samples: &[Sample]) -> HashMap<String, u64> {
+    let mut references = HashMap::new();
+    for sample in samples {
+        if sample.mode != FpMode::Strict {
+            continue;
+        }
+        if let Some(checksum) = sample.checksum {
+            references.entry(sample.algo.clone()).or_insert(checksum);
+        }
+    }
+    references
 }
 
 pub fn render(data: &ReportData, template: &str) -> Result<String> {
@@ -320,8 +330,30 @@ mod tests {
         let mut relaxed = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
         relaxed.checksum = Some(40);
         let data = build(&recording(vec![relaxed]));
-        assert_eq!(data.strict_checksum, "n/a");
+        assert_eq!(data.algos[0].strict_checksum, "n/a");
         assert_eq!(data.algos[0].rows[0].checksum_delta, "n/a");
+    }
+
+    #[test]
+    fn each_algorithm_measures_its_delta_against_its_own_reference() {
+        // The checksum is a property of (algo, grid size, max_iter). Measuring
+        // the second algorithm against the first one's reference would report a
+        // huge bogus delta on the column that gates correctness.
+        let first = sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000);
+
+        let mut second = sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000);
+        second.algo = "nbody".to_owned();
+        second.checksum = Some(1_000);
+
+        let mut relaxed = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
+        relaxed.algo = "nbody".to_owned();
+        relaxed.checksum = Some(997);
+
+        let data = build(&recording(vec![first, second, relaxed]));
+        assert_eq!(data.algos[0].strict_checksum, "42");
+        assert_eq!(data.algos[1].strict_checksum, "1000");
+        assert_eq!(data.algos[1].rows[0].checksum_delta, "0");
+        assert_eq!(data.algos[1].rows[1].checksum_delta, "-3");
     }
 
     #[test]

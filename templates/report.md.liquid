@@ -26,7 +26,6 @@ magnitude, not points.
 | FP modes | {{ campaign.modes | join: ", " }} |
 | Run rounds | {{ campaign.rounds }} (+ {{ campaign.warmup_rounds }} warmup) |
 | Build rounds | {{ campaign.build_rounds }} (+ {{ campaign.warmup_rounds }} warmup) |
-| Strict-mode checksum | `{{ strict_checksum }}` |
 
 ## Machine
 
@@ -39,10 +38,14 @@ magnitude, not points.
 {% for algo in algos %}
 ### {{ algo.algo }}
 
-| Implementation | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Checksum | Δ strict |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+Strict-mode checksum: `{{ algo.strict_checksum }}`. Every strict row below agreed
+on it, bit for bit, whatever the compiler or the language — that is the invariant
+the campaign aborts on.
+
+| Implementation | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Δ strict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | `{{ row.checksum }}` | {{ row.checksum_delta }} |
+| {{ row.implementation }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
 ## The columns
@@ -52,11 +55,33 @@ magnitude, not points.
 flags, target ISA)*, not the language: two rows differing only in compiler are a
 clean experiment, two rows differing in language are not.
 
-**Mode** — the floating-point semantics the kernel was compiled under. Every mode
-is `-O3`; the axis is FP semantics, not optimization on or off. `strict` forbids
-FMA contraction and reassociation. `fma` allows contraction, which changes the
-last bit but *increases* accuracy — one rounding instead of two. `fast` is
-`-ffast-math`, where reassociation trades precision for speed.
+**Mode** — the floating-point semantics the kernel was compiled under, which is
+how much freedom the compiler was given to rewrite the arithmetic. Every mode is
+`-O3`: the axis is FP semantics, never optimization on or off.
+
+`strict` forbids FMA contraction and reassociation — for gcc, literally
+`-ffp-contract=off`. `fma` allows contraction: `a*b + c` becomes a single fused
+instruction that rounds **once** instead of twice, so it changes the last bit and
+*increases* accuracy. It is not a sloppier mode, it is a less reproducible one.
+`fast` is `-ffast-math`, which adds reassociation, and that is where precision is
+genuinely sold for speed.
+
+`strict` is not "the correct answer". It is the **reproducible** one, and it is
+what makes this whole table mean anything. The kernel uses only multiply, add,
+subtract and compare; IEEE 754 specifies all four to the bit, and both x86-64
+(on SSE2, not the old 80-bit x87) and AArch64 conform. So once no backend is
+allowed to fuse or reorder, every compiler, every language and both ISAs are
+*obliged* to compute the same doubles, hence the same iteration count per pixel,
+hence the same checksum. Tying every backend's hands the same way is the
+precondition for comparing their timings at all: a backend that reassociated the
+loop and one that did not are not running the same computation, and their run
+times are not comparable.
+
+That is why `strict` is the mode to read first, and why a row in `fma` or `fast`
+is a *different experiment*, not a faster version of the same one. It is also why
+some backends only ever appear in `strict`: an interpreter has one floating-point
+semantics and no flags to give it another, so `fma` would be the same run under a
+different name.
 
 **Runs** — how many measured samples feed this row. Warmup rounds are recorded in
 `samples.ndjson` and flagged, never deleted, but they never enter these numbers.
@@ -126,18 +151,40 @@ disassembly. `n/a` means the backend emits no artifact — a property of the
 backend, not of the language, since `native-image` produces one from the same
 Java source that a JIT does not.
 
-**Checksum** — the sum of every pixel's iteration count, a 64-bit integer. It is
-the **correctness gate for the whole harness**: for a given grid size, iteration
-ceiling and viewport, every compiler, every language and both ISAs must produce
-the same value in `strict` mode, bit for bit. A divergence aborts the campaign.
+**Δ strict** — the run's checksum minus the strict-mode reference printed above
+the table. The checksum is the sum of every pixel's iteration count, a 64-bit
+integer.
 
-It is not a universal constant: change `--grid-size` or `--max-iter` and it
-changes. The invariant is agreement between implementations, not a fixed number.
+On a `strict` row this column is always `0`, and that is the point rather than a
+tautology. As the **Mode** entry explains, strict semantics leave the backends no
+freedom to disagree, so the checksum stops being a numerical property of the
+computation and becomes an **equality test between implementations** — the
+correctness gate for the whole harness. A divergence aborts the campaign on the
+spot, and it is never excused as a rounding difference: it means two kernels are
+not computing the same thing. Something was mistyped, a condition was flipped, or
+a flag leaked. Measured here: rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in
+the Python kernel — a reassociation that reads like a harmless tidy-up — flips two
+pixels out of twelve million and stops the run. This is the class of bug unit
+tests do not catch.
 
-**Δ strict** — the checksum's distance from the strict-mode reference. Always `0`
-in `strict`, since anything else would have aborted the run. In `fma` and `fast`
-it is the precision sold for the speed gained, and it belongs beside the timing
-rather than in a footnote.
+It is a **necessary condition, not a sufficient one**. The gate only sees a
+perturbation that pushes some pixel across its iteration boundary, so a passing
+checksum means "no evidence of divergence at this resolution", never "provably
+identical". Sensitivity grows with `--grid-size` and `--max-iter`, since both
+increase the number of pixels sitting on a boundary.
+
+The reference is not a universal constant: it is a property of *(algorithm, grid
+size, iteration ceiling, viewport)*, which is why each algorithm's table carries
+its own and why the value moves when you change the campaign's parameters. The
+invariant is agreement between implementations, never a fixed number.
+
+In `fma` and `fast` we do not gate — those modes are *allowed* to diverge by
+construction — so the delta is reported instead: the precision sold for the speed
+gained, sitting beside the timing rather than buried in a footnote. Read the two
+columns together, and mind the sign of the trade: an `fma` row is typically *more*
+accurate than the strict reference it differs from. The absolute checksum of a
+relaxed row is not printed, because on its own it says nothing; the distance is
+the whole story.
 
 ## What this report does not say
 
