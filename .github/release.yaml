@@ -1,0 +1,30 @@
+# The release notes are generated from the labels on the merged pull requests.
+# These are the labels of the *change shipped*, not of a reported problem:
+# `bug` and `enhancement` classify issues, `fix` and `feature` classify the pull
+# requests that answer them.
+changelog:
+  categories:
+    - title: Features
+      labels:
+        - feature
+
+    - title: Bug fixes
+      labels:
+        - fix
+
+    - title: Documentation
+      labels:
+        - documentation
+
+    - title: Dependencies
+      labels:
+        - dependencies
+
+    - title: Maintenance
+      labels:
+        - chore
+
+    # A pull request nobody labelled is still a change that shipped.
+    - title: Other
+      labels:
+        - "*"
