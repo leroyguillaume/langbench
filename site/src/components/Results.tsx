@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, dispersion, milliseconds, optional, ratio } from "../format";
-import { label, labelWithMode } from "../identity";
+import { label, labelWithMode, toolchain } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
 import { BarChart, type ChartRow } from "./BarChart";
@@ -262,9 +262,20 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
       <section className="card">
         <h2>Every number</h2>
         <p>
-          Sort any column. The ratio is against the fastest row on screen — a within-campaign,
-          within-ISA number. Absolute timings never cross an ISA.{" "}
-          <a href={compareHref(scope)}>Put two languages head to head →</a>
+          Fifteen columns, and none of them mean what you would guess from the name alone. If this
+          is your first benchmark table, read <a href="#columns">what each column means</a> — it is
+          written for exactly that, and it starts with how to read a row in thirty seconds. The
+          short version: look at <strong>Dispersion</strong> first, because nothing else on a row
+          can be more trustworthy than it.
+        </p>
+        <p className="card-aside">
+          Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
+          how many times slower a row is than the fastest row <em>currently on screen</em> — filter
+          the table and the baseline moves, because a baseline you cannot see is not a baseline.{" "}
+          <strong>Δ strict</strong> is how far this row's answer landed from the <code>strict</code>{" "}
+          reference: <code>0</code> means the same answer to the bit, which every{" "}
+          <code>strict</code> row is obliged to produce. Click any header to sort; the charts above
+          keep their own order. <a href={compareHref(scope)}>Put two languages head to head →</a>
         </p>
         <ResultsTable rows={visible} sort={state.sort} onSort={onSort} />
       </section>
@@ -273,23 +284,42 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
 
       <section className="card">
         <h2>The implementations</h2>
-        <div className="backends">
+        <p>
+          One card per row of the table: what it is, and what the person who wrote it wanted you to
+          know. Three fields identify an implementation — the <strong>language</strong> the program
+          is written in, the <strong>compiler</strong> that turned it into machine code, and the{" "}
+          <strong>interpreter</strong> that executed it. Most implementations have only one of the
+          last two, and <code>n/a</code> is an answer rather than a gap: a compiled binary has no
+          interpreter, and an interpreted language has nothing compiled ahead of the run.
+        </p>
+        <div className="impls">
           {analysis.backends
             .filter((entry) => entry.algo === algo?.algo)
             .map((entry) => (
-              <div className="backend" key={entry.id}>
-                <h3>{label(entry)}</h3>
-                <p>{entry.description}</p>
-                {entry.comments !== null && <p>{entry.comments}</p>}
-                <dl>
-                  <dt>language</dt>
-                  <dd>{entry.language}</dd>
-                  <dt>compiler</dt>
-                  <dd>{optional(entry.compiler)}</dd>
-                  <dt>interpreter</dt>
-                  <dd>{optional(entry.interpreter)}</dd>
+              <article className="impl" key={entry.id}>
+                <header className="impl-head">
+                  <h3>{entry.language}</h3>
+                  <span className="impl-chain">{toolchain(entry)}</span>
+                </header>
+
+                <dl className="impl-triple">
+                  <div className="impl-field">
+                    <dt>compiler</dt>
+                    <dd>{optional(entry.compiler)}</dd>
+                  </div>
+                  <div className="impl-field">
+                    <dt>interpreter</dt>
+                    <dd>{optional(entry.interpreter)}</dd>
+                  </div>
                 </dl>
-              </div>
+
+                <p className="impl-desc">{entry.description}</p>
+
+                {/* The manifest's `comments`: a caveat, a pinned version, a warning about
+                    what this row does *not* say. It reads as a footnote, so it looks like
+                    one — never as a second paragraph of the description. */}
+                {entry.comments !== null && <p className="impl-note">{entry.comments}</p>}
+              </article>
             ))}
         </div>
       </section>

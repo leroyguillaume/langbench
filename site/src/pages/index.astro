@@ -2,7 +2,14 @@
 // The results of one campaign: the tiles, the charts, the table, and what the
 // campaign lost. An island, because there is nothing to render until a browser has
 // fetched a campaign and the WebAssembly has aggregated it.
+//
+// The column reference below it is *not* an island, and not a second explanation
+// either: it is `docs/columns.md`, the same file `langbench md` interpolates into
+// the report. A table of fifteen columns is unreadable without it if you have never
+// opened a benchmark before — and "why the minimum and not the average" deserves to
+// be answered once, in one place, rather than twice in two voices.
 
+import { Content as Columns } from "../generated/columns.md";
 import { Results } from "../components/Results";
 import Layout from "../layouts/Layout.astro";
 ---
@@ -12,4 +19,13 @@ import Layout from "../layouts/Layout.astro";
   description="Given the same source, how do different compiler and runtime backends compare? Raw samples, aggregated by the harness itself."
 >
   <Results client:only="react" />
+
+  {/* The prose lives *inside* a `.page`, never as one: `.page` is a flex column with
+      a gap sized for sections, and a Markdown document whose every paragraph is a
+      direct child of it comes out with a section's worth of air between each line. */}
+  <section class="page reference" id="columns">
+    <div class="prose">
+      <Columns />
+    </div>
+  </section>
 </Layout>

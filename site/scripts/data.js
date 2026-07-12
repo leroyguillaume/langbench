@@ -84,13 +84,25 @@ console.log(`published ${campaigns.length} campaign(s) from ${chosen}: ${campaig
 // `src/` — and a second, hand-maintained copy of it on the site would be a
 // methodology that drifts from the one the harness is written against, which is
 // the failure `bench.schema.json` is generated to avoid.
-const methodology = resolve(root, "METHODOLOGY.md");
+// The same goes for `docs/columns.md`: what every column of the results table means,
+// and how to read a row. `langbench md` interpolates that file into the report and
+// the site renders it under the same table — one explanation of why we report the
+// minimum and not the average, written once, for a reader who has never opened a
+// benchmark before, and improved in one place.
 const generated = resolve(here, "..", "src", "generated");
 mkdirSync(generated, { recursive: true });
-try {
-  copyFileSync(methodology, join(generated, "methodology.md"));
-} catch (error) {
-  console.error(`cannot read ${methodology}: ${error.message}`);
-  process.exit(1);
+
+const shared = [
+  { from: resolve(root, "METHODOLOGY.md"), to: "methodology.md" },
+  { from: resolve(root, "docs", "columns.md"), to: "columns.md" },
+];
+
+for (const { from, to } of shared) {
+  try {
+    copyFileSync(from, join(generated, to));
+  } catch (error) {
+    console.error(`cannot read ${from}: ${error.message}`);
+    process.exit(1);
+  }
+  console.log(`published ${from}`);
 }
-console.log(`published METHODOLOGY.md from ${methodology}`);

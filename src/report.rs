@@ -236,13 +236,27 @@ fn row(aggregate: &Aggregate) -> Row {
     }
 }
 
+/// What every column of the results table means, and how to read a row.
+///
+/// It lives in `docs/columns.md` rather than inside the template, because it is the
+/// same explanation the website owes its readers: two copies of "why the minimum and
+/// not the average" would answer the same question twice, and the day one of them
+/// was improved the other would start being wrong. The template interpolates it; the
+/// site renders the same file. Prose, and no Liquid: a `--template` of your own gets
+/// it by asking for `{{ column_reference }}`.
+pub const COLUMN_REFERENCE: &str = include_str!("../docs/columns.md");
+
 pub fn render(data: &ReportData, template: &str) -> Result<String> {
     let template = liquid::ParserBuilder::with_stdlib()
         .build()
         .context("building the Liquid parser")?
         .parse(template)
         .context("parsing the report template")?;
-    let globals = liquid::to_object(data).context("serializing the report data")?;
+    let mut globals = liquid::to_object(data).context("serializing the report data")?;
+    globals.insert(
+        "column_reference".into(),
+        liquid::model::Value::scalar(COLUMN_REFERENCE.trim_end()),
+    );
     let rendered = template.render(&globals).context("rendering the report")?;
 
     // A rendered report ends with exactly one newline. Where a Liquid loop happens

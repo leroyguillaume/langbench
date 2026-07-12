@@ -12,7 +12,16 @@
 // is worse than no table. The formatting happens on the way out.
 
 import type { Aggregate, FpMode, Summary } from "../analysis";
-import { bytes, delta, dispersion, milliseconds, optional, ratio, seconds } from "../format";
+import {
+  bytes,
+  delta,
+  dispersion,
+  milliseconds,
+  NOT_AVAILABLE,
+  optional,
+  ratio,
+  seconds,
+} from "../format";
 import { ABSENT, type Triple } from "../identity";
 import { MODE_COLOR } from "../series";
 import type { Filters } from "../url";
@@ -25,12 +34,14 @@ export type SortKey =
   | "compiler"
   | "interpreter"
   | "mode"
+  | "runs"
   | "run"
   | "dispersion"
   | "compute"
   | "startup"
   | "cpu"
   | "build"
+  | "build_dispersion"
   | "binary"
   | "text";
 
@@ -70,20 +81,30 @@ const COLUMNS: Column[] = [
     value: (row) => row.interpreter,
   },
   { key: "mode", label: "Mode", text: true, value: (row) => row.mode },
-  { key: "run", label: "Run (min)", value: (row) => min(row.run_wall) },
+  { key: "runs", label: "Runs", value: (row) => row.run_wall?.n ?? null },
+  { key: "run", label: "Run min", value: (row) => min(row.run_wall) },
   {
     key: "dispersion",
-    label: "±",
+    label: "Dispersion",
     value: (row) => row.run_wall?.mad_pct ?? null,
   },
-  { key: "compute", label: "Compute", value: (row) => min(row.run_elapsed) },
+  {
+    key: "compute",
+    label: "Compute min",
+    value: (row) => min(row.run_elapsed),
+  },
   { key: "startup", label: "Startup", value: (row) => min(row.run_startup) },
   {
     key: "cpu",
     label: "CPU time",
     value: (row) => row.run_cpu_usec?.median ?? null,
   },
-  { key: "build", label: "Build", value: (row) => min(row.build_elapsed) },
+  { key: "build", label: "Build min", value: (row) => min(row.build_elapsed) },
+  {
+    key: "build_dispersion",
+    label: "Build disp.",
+    value: (row) => row.build_elapsed?.mad_pct ?? null,
+  },
   { key: "binary", label: "Binary", value: (row) => row.binary_bytes },
   { key: "text", label: ".text", value: (row) => row.text_bytes },
 ];
@@ -204,8 +225,11 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 </span>
               </th>
             ))}
+            {/* Not in `report.md`, and so not in the shared column reference: the
+                ratio is against the fastest row *on screen*, and the report has no
+                screen. Explained where it appears, above the table. */}
             <th className="text">Ratio</th>
-            <th className="text">Δ checksum</th>
+            <th className="text">Δ strict</th>
           </tr>
         </thead>
         <tbody>
@@ -229,6 +253,9 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                     {row.mode}
                   </span>
                 </td>
+                {/* How many measured samples went into this row. The warmup rounds
+                    are in `samples.ndjson`, flagged, and out of these numbers. */}
+                <td className="numeric">{row.run_wall?.n ?? NOT_AVAILABLE}</td>
                 <td className="numeric">{milliseconds(run)}</td>
                 <td className="numeric">
                   {/* Above ~2% the campaign cannot defend a percentage-level claim.
@@ -248,6 +275,7 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 <td className="numeric">{milliseconds(min(row.run_startup))}</td>
                 <td className="numeric">{seconds(row.run_cpu_usec?.median ?? null)}</td>
                 <td className="numeric">{milliseconds(min(row.build_elapsed))}</td>
+                <td className="numeric">{dispersion(row.build_elapsed)}</td>
                 <td className="numeric">{bytes(row.binary_bytes)}</td>
                 <td className="numeric">{bytes(row.text_bytes)}</td>
                 <td className="numeric text">
