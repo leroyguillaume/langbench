@@ -28,8 +28,12 @@ const sortKeySchema = z.enum([
   "compute",
   "startup",
   "cpu",
+  "cores",
+  "memory",
+  "energy",
   "build",
   "build_dispersion",
+  "source",
   "binary",
   "text",
 ]);

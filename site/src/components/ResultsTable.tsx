@@ -14,8 +14,11 @@
 import type { Aggregate, FpMode, Summary } from "../analysis";
 import {
   bytes,
+  cores,
   delta,
   dispersion,
+  joules,
+  mebibytes,
   milliseconds,
   NOT_AVAILABLE,
   optional,
@@ -40,8 +43,12 @@ export type SortKey =
   | "compute"
   | "startup"
   | "cpu"
+  | "cores"
+  | "memory"
+  | "energy"
   | "build"
   | "build_dispersion"
+  | "source"
   | "binary"
   | "text";
 
@@ -99,12 +106,33 @@ const COLUMNS: Column[] = [
     label: "CPU time",
     value: (row) => row.run_cpu_usec?.median ?? null,
   },
+  // The median, and it sorts on the median: `run_cores` is the one number on this row
+  // that is not a min-of-N, and sorting it by anything else would rank the rows on a
+  // statistic the table does not print.
+  {
+    key: "cores",
+    label: "Cores",
+    value: (row) => row.run_cores?.median ?? null,
+  },
+  {
+    key: "memory",
+    label: "Memory",
+    value: (row) => min(row.run_peak_bytes),
+  },
+  {
+    key: "energy",
+    label: "Energy",
+    value: (row) => min(row.run_energy_uj),
+  },
   { key: "build", label: "Build min", value: (row) => min(row.build_elapsed) },
   {
     key: "build_dispersion",
     label: "Build disp.",
     value: (row) => row.build_elapsed?.mad_pct ?? null,
   },
+  // A property of the *language*, not of the backend: `c-gcc` and `c-clang` compile
+  // the same file and report the same number.
+  { key: "source", label: "Source", value: (row) => row.source_bytes },
   { key: "binary", label: "Binary", value: (row) => row.binary_bytes },
   { key: "text", label: ".text", value: (row) => row.text_bytes },
 ];
@@ -286,8 +314,12 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 <td className="numeric">{milliseconds(min(row.run_elapsed))}</td>
                 <td className="numeric">{milliseconds(min(row.run_startup))}</td>
                 <td className="numeric">{seconds(row.run_cpu_usec?.median ?? null)}</td>
+                <td className="numeric">{cores(row.run_cores, row.cpu)}</td>
+                <td className="numeric">{mebibytes(min(row.run_peak_bytes))}</td>
+                <td className="numeric">{joules(min(row.run_energy_uj))}</td>
                 <td className="numeric">{milliseconds(min(row.build_elapsed))}</td>
                 <td className="numeric">{dispersion(row.build_elapsed)}</td>
+                <td className="numeric">{bytes(row.source_bytes)}</td>
                 <td className="numeric">{bytes(row.binary_bytes)}</td>
                 <td className="numeric">{bytes(row.text_bytes)}</td>
                 <td className="numeric text">

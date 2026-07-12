@@ -54,6 +54,9 @@ pub enum Unit {
     Nanoseconds,
     Microseconds,
     Bytes,
+    /// Energy. On the wire since the site learned to spell it — see the note beside
+    /// `energy` in [`compare`], and the closed enum it is validated against.
+    Microjoules,
 }
 
 /// Which side of a metric the campaign is entitled to call better — smaller
@@ -233,20 +236,21 @@ pub fn compare_across(
                 left.run_peak_bytes,
                 right.run_peak_bytes,
             ),
-            // Also absent, and for a duller reason than the core count: **energy**.
+            // Energy. It was held back until the site could spell microjoules — a new
+            // unit on the wire ahead of the renderer that knows it would have failed
+            // the site's parse and taken the whole head-to-head down with it — and
+            // the site learned it in the same commit as this line.
             //
-            // It is a `run_energy_uj` on every aggregate, it has a column in the
-            // report and a field in the CSV, and it would slot in here in four lines
-            // — `smallest("energy", …, Unit::Microjoules, …)`. What stops it is that
-            // microjoules would be a *new unit on the wire*, and the site's schema
-            // validates the unit against a closed set. An unknown one does not
-            // degrade to an unformatted number: it fails the parse, and the whole
-            // head-to-head goes with it.
-            //
-            // So the metric waits for the renderer that can spell it. Adding
-            // `Unit::Microjoules` and the four lines below it is the entire change,
-            // and it belongs in the same commit as the site that learns the unit —
-            // never before it, which would break a page that is live today.
+            // `null` wherever the host exposes no counter, which is most laptops and
+            // every virtualised runner: an absent number, not a zero. A backend that
+            // spent no measurable energy would be a backend that did not run.
+            smallest(
+                "energy",
+                "Energy (the whole container)",
+                Unit::Microjoules,
+                left.run_energy_uj,
+                right.run_energy_uj,
+            ),
             timing(
                 "build",
                 "Compile (the compiler's own clock)",

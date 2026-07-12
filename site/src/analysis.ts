@@ -59,7 +59,29 @@ export const aggregateSchema = z.object({
   run_elapsed: summarySchema.nullable(),
   run_startup: summarySchema.nullable(),
   run_cpu_usec: summarySchema.nullable(),
+  /**
+   * Cores kept busy, in thousandths of a core — read against `cpu`, the thread count
+   * the harness handed this kernel.
+   *
+   * The **median**, and it is the one number on the row that is not a minimum.
+   * Contention inflates a spinning thread's CPU clock and the compute clock alike, in
+   * both directions, so there is no one-sided noise to argue from and no reason the
+   * extreme should be the estimate.
+   * See `METHODOLOGY.md#parallel-efficiency-is-a-median-not-a-minimum`.
+   */
+  run_cores: summarySchema.nullable(),
+  /** The container's peak memory, min-of-N. */
+  run_peak_bytes: summarySchema.nullable(),
+  /** Microjoules around the run, min-of-N — `null` where the host exposes no counter. */
+  run_energy_uj: summarySchema.nullable(),
   build_elapsed: summarySchema.nullable(),
+  build_cores: summarySchema.nullable(),
+  build_peak_bytes: summarySchema.nullable(),
+  build_energy_uj: summarySchema.nullable(),
+  /** The thread count this campaign handed every kernel. The denominator of `run_cores`. */
+  cpu: z.number().int(),
+  /** Bytes of the kernel's one source file — a property of the *language*, not of the backend. */
+  source_bytes: z.number().nullable(),
   binary_bytes: z.number().nullable(),
   binary_stripped_bytes: z.number().nullable(),
   text_bytes: z.number().nullable(),
@@ -153,8 +175,16 @@ export const analysisSchema = z.object({
 export const metricSchema = z.object({
   key: z.string(),
   label: z.string(),
-  /** What the two values are measured in. The site spells it; it never converts it. */
-  unit: z.enum(["nanoseconds", "microseconds", "bytes"]),
+  /**
+   * What the two values are measured in. The site spells it; it never converts it.
+   *
+   * A **closed set**, deliberately: an unknown unit fails the parse rather than
+   * degrading to an unformatted number. Which is why `Unit::Microjoules` and the
+   * energy metric that needs it land in the same change as this line — a new unit on
+   * the wire ahead of the renderer that can spell it would take the whole
+   * head-to-head down on a page that is live today.
+   */
+  unit: z.enum(["nanoseconds", "microseconds", "bytes", "microjoules"]),
   left: z.number().nullable(),
   right: z.number().nullable(),
   /** `right / left`. Below 1, the right-hand backend is the smaller one. */

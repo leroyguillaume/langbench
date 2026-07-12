@@ -8,7 +8,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
-import { bytes, dispersion, milliseconds, optional, ratio } from "../format";
+import { bytes, dispersion, joules, mebibytes, milliseconds, optional, ratio } from "../format";
 import { anchorId, label, labelWithMode, toolchain } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
@@ -180,6 +180,17 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .filter((row) => row.binary_bytes !== null)
     .map((row) => chartRow(row, [row.binary_bytes]));
 
+  const memoryRows: ChartRow[] = filtered
+    .filter((row) => row.run_peak_bytes !== null)
+    .map((row) => chartRow(row, [row.run_peak_bytes?.min ?? null]));
+
+  // A campaign recorded on a host with no energy counter has no energy, and that is
+  // an absence rather than a zero. The card is not drawn at all rather than drawn
+  // empty: a chart of nothing reads as a backend that spent nothing.
+  const energyRows: ChartRow[] = filtered
+    .filter((row) => row.run_energy_uj !== null)
+    .map((row) => chartRow(row, [row.run_energy_uj?.min ?? null]));
+
   const scope = {
     arch: analysis.arch,
     algo: algo?.algo ?? null,
@@ -290,6 +301,31 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         </p>
         <BarChart rows={buildRows} series={SEQUENTIAL} format={milliseconds} />
       </section>
+
+      {memoryRows.length > 0 && (
+        <section className="card">
+          <h2>Peak memory — the whole container, min of {campaign.rounds}</h2>
+          <p>
+            The high-water mark of everything inside the container, the runtime included. The
+            minimum, and here the argument is exact rather than statistical: page cache and a lazy
+            collector can only ever push a peak <em>up</em>, never below what the backend actually
+            had to allocate.
+          </p>
+          <BarChart rows={memoryRows} series={SEQUENTIAL} format={mebibytes} />
+        </section>
+      )}
+
+      {energyRows.length > 0 && (
+        <section className="card">
+          <h2>Energy — the whole container, min of {campaign.rounds}</h2>
+          <p>
+            What the run cost the wall socket, Docker's own overhead included. Absent on a host that
+            exposes no counter — which is most laptops and every virtualised runner — and an absence
+            is not a zero.
+          </p>
+          <BarChart rows={energyRows} series={SEQUENTIAL} format={joules} />
+        </section>
+      )}
 
       <section className="card">
         <h2>Binary size</h2>

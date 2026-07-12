@@ -197,4 +197,56 @@ describe("the WebAssembly boundary", () => {
       expect(file).toBe(`${analysis.arch}.ndjson`);
     }
   });
+
+  /// The metrics PR #16 added, crossing the boundary the schema guards.
+  ///
+  /// The fixture campaign predates them, so every one of them is `null` here — which
+  /// is the state of the committed campaigns until the runners finish, and exactly
+  /// the case that has to render rather than throw. An absence is not a zero.
+  it("carries the new metrics, and an old campaign reports them as absent rather than as zero", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const row = analysis.algos[0]?.aggregates[0];
+    if (row === undefined) {
+      throw new Error("the fixture campaign measured nothing");
+    }
+
+    // On the wire, and typed — a field the harness renamed would fail the parse above
+    // long before a reader saw an empty column.
+    expect(row).toHaveProperty("run_cores");
+    expect(row).toHaveProperty("run_peak_bytes");
+    expect(row).toHaveProperty("run_energy_uj");
+    expect(row).toHaveProperty("source_bytes");
+    // The denominator of `run_cores`: the threads this campaign handed every kernel.
+    expect(row.cpu).toBeGreaterThan(0);
+  });
+
+  /// `Unit::Microjoules` and the site that can spell it landed together, deliberately:
+  /// a new unit on the wire ahead of its renderer fails this closed enum, and takes
+  /// the whole head-to-head with it.
+  it("compares energy, in a unit the schema knows", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const algo = analysis.algos[0];
+    const [first, second] = algo?.aggregates ?? [];
+    if (algo === undefined || first === undefined || second === undefined) {
+      throw new Error("the fixture campaign measured fewer than two rows");
+    }
+
+    const comparison = comparisonSchema.parse(
+      compare(
+        ndjson,
+        { include_warmup: false },
+        {
+          algo: algo.algo,
+          left: { backend: first.backend, mode: first.mode },
+          right: { backend: second.backend, mode: second.mode },
+        },
+      ),
+    );
+
+    const energy = comparison.metrics.find((metric) => metric.key === "energy");
+    expect(energy?.unit).toBe("microjoules");
+    // This campaign carries none, so the harness declines to rank it — rather than
+    // calling a pair of absences a tie.
+    expect(energy?.verdict).toBe("unmeasured");
+  });
 });
