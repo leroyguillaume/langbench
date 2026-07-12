@@ -8,7 +8,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
-import { bytes, dispersion, joules, mebibytes, milliseconds, optional, ratio } from "../format";
+import { bytes, dispersion, mebibytes, milliseconds, optional, ratio } from "../format";
 import { anchorId, label, labelWithMode, toolchain } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
@@ -184,20 +184,6 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .filter((row) => row.run_peak_bytes !== null)
     .map((row) => chartRow(row, [row.run_peak_bytes?.min ?? null]));
 
-  // A campaign recorded on a host with no energy counter has no energy, and that is
-  // an absence rather than a zero. The card is not drawn at all rather than drawn
-  // empty: a chart of nothing reads as a backend that spent nothing.
-  const energyRows: ChartRow[] = filtered
-    .filter((row) => row.run_energy_uj !== null)
-    .map((row) => chartRow(row, [row.run_energy_uj?.min ?? null]));
-
-  // Why the Energy column is empty, in the machine's own words. A column of `n/a`
-  // with nothing beside it reads as a measurement that failed; this one is a
-  // *machine* that cannot be asked. "No counter on this host" and "this backend
-  // spent no energy" are opposite statements, and only one of them is true.
-  const energyCounters =
-    analysis.machine_fields.find((field) => field.label === "Energy counters")?.value ?? null;
-
   const scope = {
     arch: analysis.arch,
     algo: algo?.algo ?? null,
@@ -322,18 +308,6 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         </section>
       )}
 
-      {energyRows.length > 0 && (
-        <section className="card">
-          <h2>Energy — the whole container, min of {campaign.rounds}</h2>
-          <p>
-            What the run cost the wall socket, Docker's own overhead included. Absent on a host that
-            exposes no counter — which is most laptops and every virtualised runner — and an absence
-            is not a zero.
-          </p>
-          <BarChart rows={energyRows} series={SEQUENTIAL} format={joules} />
-        </section>
-      )}
-
       <section className="card">
         <h2>Binary size</h2>
         <p>
@@ -345,26 +319,12 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
       <section className="card">
         <h2>Every number</h2>
         <p>
-          Fifteen columns, and none of them mean what you would guess from the name alone. If this
+          Nineteen columns, and none of them mean what you would guess from the name alone. If this
           is your first benchmark table, read <a href="#columns">what each column means</a> — it is
           written for exactly that, and it starts with how to read a row in thirty seconds. The
           short version: look at <strong>Dispersion</strong> first, because nothing else on a row
           can be more trustworthy than it.
         </p>
-        {energyRows.length === 0 && (
-          <p className="card-aside">
-            <strong>
-              Energy is empty on this campaign, and that is the host's doing, not the backends'.
-            </strong>{" "}
-            {energyCounters === null
-              ? "This machine exposed no energy counter, so nothing was there to read."
-              : `The machine reported: ${energyCounters}`}{" "}
-            An absent number is not a zero — a backend that spent no measurable energy would be a
-            backend that did not run. Run a campaign on a bare-metal x86-64 host and the column
-            fills itself.
-          </p>
-        )}
-
         <p className="card-aside">
           Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
           how many times slower a row is than the fastest row <em>currently on screen</em> — filter

@@ -93,15 +93,6 @@ pub struct Sample {
     pub elapsed_ns: u64,
     pub user_usec: u64,
     pub system_usec: u64,
-    /// Microjoules the CPU package burned around this run — Docker's overhead
-    /// included. The energy twin of [`Self::wall_ns`], never of `elapsed_ns`: RAPL
-    /// counts sockets, not cgroups, so there is no inner clock to read and nothing
-    /// honest to subtract. See [`crate::energy`].
-    ///
-    /// `None` on a host with no readable counters: AArch64 has none, and since
-    /// PLATYPUS most distributions keep them root-only.
-    #[serde(default)]
-    pub energy_uj: Option<u64>,
     /// The container's peak memory, from its own cgroup. See
     /// [`ContainerRecord::peak_bytes`].
     #[serde(default)]
@@ -407,7 +398,6 @@ const CSV_COLUMNS: &[&str] = &[
     "elapsed_ns",
     "user_usec",
     "system_usec",
-    "energy_uj",
     "peak_bytes",
     "source_bytes",
     "checksum",
@@ -454,7 +444,6 @@ impl Sample {
             self.elapsed_ns.to_string(),
             self.user_usec.to_string(),
             self.system_usec.to_string(),
-            optional(self.energy_uj),
             optional(self.peak_bytes),
             optional(self.source_bytes),
             optional(self.checksum),
@@ -604,7 +593,6 @@ mod tests {
             elapsed_ns: 213_300_000,
             user_usec: 860_000,
             system_usec: 4_000,
-            energy_uj: Some(9_400_000),
             peak_bytes: Some(12_582_912),
             source_bytes: Some(2_048),
             checksum,
@@ -756,7 +744,7 @@ mod tests {
         assert_eq!(
             row,
             "mandelbrot,c,gcc,,The reference C kernel.,,strict,run,3,false,8,313600000,\
-             213300000,860000,4000,9400000,12582912,2048,448356792,70984,67568,1340",
+             213300000,860000,4000,12582912,2048,448356792,70984,67568,1340",
         );
     }
 
@@ -871,24 +859,35 @@ mod tests {
         assert_eq!(record.peak_bytes, None);
     }
 
-    /// The three fields a campaign recorded before they existed. An old
+    /// The two fields a campaign recorded before they existed. An old
     /// `samples.ndjson` still renders, and its new columns say `n/a` — which is
     /// the truth about it.
     #[test]
     fn a_campaign_recorded_before_these_metrics_existed_still_loads() {
         let mut old = sample(Phase::Run, Some(1));
-        old.energy_uj = None;
         old.peak_bytes = None;
         old.source_bytes = None;
         let mut line = serde_json::to_value(&old).unwrap();
         let object = line.as_object_mut().unwrap();
-        object.remove("energy_uj");
         object.remove("peak_bytes");
         object.remove("source_bytes");
 
         let reloaded: Sample = serde_json::from_value(line).unwrap();
-        assert_eq!(reloaded.energy_uj, None);
         assert_eq!(reloaded.peak_bytes, None);
         assert_eq!(reloaded.source_bytes, None);
+    }
+
+    /// A campaign written while the harness still recorded energy carries an
+    /// `energy_uj` the struct no longer has. Serde ignores it, and the campaign
+    /// loads: a field that left the harness must not take the samples with it.
+    #[test]
+    fn a_campaign_recorded_when_energy_existed_still_loads() {
+        let mut line = serde_json::to_value(sample(Phase::Run, Some(1))).unwrap();
+        let object = line.as_object_mut().unwrap();
+        object.insert("energy_uj".to_owned(), serde_json::json!(9_400_000u64));
+
+        let reloaded: Sample = serde_json::from_value(line).unwrap();
+        assert_eq!(reloaded.checksum, Some(1));
+        assert_eq!(reloaded.peak_bytes, Some(12_582_912));
     }
 }

@@ -103,13 +103,6 @@ subject is **compiler and runtime backends**, not languages.
   cgroup shows it, so an unpinned budget publishes a peak that describes the bench
   machine. Changing the budget changes the *timings* too — campaigns run under
   different budgets do not compare, on any column.
-- **Energy is read by the harness, on the host, around `docker run` — never inside
-  the container.** ([why](METHODOLOGY.md#energy-is-an-envelope)) RAPL counts a socket,
-  not a cgroup. The number therefore includes Docker's overhead, it is the twin of the
-  external wall-clock and never of `elapsed_ns`, and **nothing is subtracted from it**
-  because there is nothing honest to subtract. Publish it as a within-campaign ratio,
-  never as an absolute. No counter (AArch64, or non-root) means `null` and a stated
-  reason — never a zero.
 - **Parallel efficiency is a median, not a min-of-N.**
   ([why](METHODOLOGY.md#parallel-efficiency-is-a-median-not-a-minimum)) Min-of-N is
   licensed by one-sided noise; contention moves a core count in both directions. It is
@@ -145,6 +138,12 @@ subject is **compiler and runtime backends**, not languages.
 - Never publish an absolute cross-ISA timing. Within-ISA ratios only.
   ([why](METHODOLOGY.md#the-isa-rule))
 - Never run a benchmark under QEMU / `binfmt` emulation.
+- **Never measure energy.** ([why](METHODOLOGY.md#why-there-is-no-energy-column)) The
+  campaigns run on GitHub Actions runners, and RAPL is unreadable there: x86-only, and
+  root-only on most kernels since PLATYPUS. Every sample of every campaign came back
+  `null`. A column that is `n/a` on every row of every published campaign is not a
+  measurement, it is a promise the bench machine cannot keep — and the code that reads
+  it is code that has never once returned a number.
 
 **The website** (`site/`)
 

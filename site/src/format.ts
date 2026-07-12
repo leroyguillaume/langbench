@@ -84,17 +84,6 @@ export function mebibytes(value: number | null | undefined): string {
 }
 
 /**
- * Energy, in joules. `n/a` wherever the host exposes no counter — which is most
- * laptops and every virtualised runner, and is an absence rather than a zero.
- */
-export function joules(microjoules: number | null | undefined): string {
-  if (microjoules === null || microjoules === undefined) {
-    return NOT_AVAILABLE;
-  }
-  return `${(microjoules / 1e6).toFixed(1)} J`;
-}
-
-/**
  * Cores kept busy, against the cores the kernel was given: `7.8 / 8`.
  *
  * The denominator is what makes the number readable — `7.8` alone says nothing until

@@ -416,11 +416,9 @@ it is the correctness gate for the whole harness. Anything that rounds it —
 cgroup v1 file. `null`, never `0`: a backend that needed no memory would be a
 remarkable claim, and it is not the one being made.
 
-Almost all measurement originates inside the container. The CLI contributes the two
-numbers nothing inside the container can produce: the **external wall-clock** —
-nothing in there is alive to time its own creation — and the **energy**, because RAPL
-counts a socket rather than a cgroup and is invisible from inside the namespace. See
-[Energy is an envelope](#energy-is-an-envelope).
+Almost all measurement originates inside the container. The CLI contributes the one
+number nothing inside the container can produce: the **external wall-clock** — nothing
+in there is alive to time its own creation.
 
 ---
 
@@ -562,48 +560,38 @@ Swap is off (`--memory-swap` equals `--memory`). A container permitted to swap d
 not fail when it overruns its budget: it silently gets slower, and the timing absorbs
 a page-fault storm that no column explains.
 
-### Energy is an envelope
+### Why there is no energy column
 
-Joules are the metric that makes a language comparison worth reading, and they are the
-one measurement a container cannot take for itself.
+Joules would be the metric that makes a backend comparison worth reading. The harness
+measured them, briefly, and the column is gone. It is worth writing down why, because
+the argument for adding it back is very good and the reason it fails has nothing to do
+with the argument.
 
-`cpu.stat` and `memory.peak` are cgroup files: they are namespaced, so the entrypoint
-reads its own and reports it. RAPL is not. `/sys/class/powercap` describes a **socket**,
-not a cgroup, and it is invisible from inside a container. So the harness reads it, on
-the host, around the `docker run` — and what comes back is an **envelope**:
+Energy is the one measurement a container cannot take for itself. `cpu.stat` and
+`memory.peak` are cgroup files — namespaced, so the entrypoint reads its own and
+reports it. RAPL is not. `/sys/class/powercap` describes a **socket**, not a cgroup,
+and it is invisible from inside a container. So it has to be read on the *host*, around
+the `docker run`.
 
-- It is the energy the whole package burned while the container ran. That includes the
-  `docker` client, the daemon's work creating and reaping the container, and anything
-  else awake on the machine.
-- It is therefore the energy twin of the **external** clock, never of the internal one.
-  There is no inner counterpart and there cannot be one: the kernel has no per-cgroup
-  joule. **Nothing is subtracted, because there is nothing honest to subtract.**
+And on the machines this project actually runs on, it cannot be read at all:
 
-That is the same trade the wall-clock already makes, and it gets the same answer:
-publish the envelope, say exactly what is inside it, and read it as a **ratio between
-two rows of one campaign** — never as an absolute figure for what the algorithm costs.
+- **AArch64 has no counters.** RAPL is x86 (AMD drives the same `intel-rapl` powercap
+  zones, misleading name and all). There is no equivalent to fall back to.
+- **The x86 runner's counters are unreadable.** Since the PLATYPUS side-channel,
+  distributions ship `energy_uj` root-only, and a GitHub Actions runner does not hand
+  out the host's `/sys`.
 
-Two ways it comes back empty, and both are facts rather than bugs:
+The campaigns are run in CI, on those runners, and the result was not *some* missing
+rows. It was `energy_uj: null` on **every sample of every campaign, on both
+architectures** — 1140 nulls, and not one number. The bench machine is the CI runner;
+there is no other machine, and a column the bench machine can never fill is not a
+measurement. It is a promise.
 
-- The counters do not exist. RAPL is x86 (AMD drives the same `intel-rapl` powercap
-  zones, misleading name and all); an AArch64 host has no equivalent, so that campaign
-  publishes no energy at all.
-- They exist and are unreadable. Since the PLATYPUS side-channel, distributions ship
-  `energy_uj` root-only.
-
-In both cases the samples carry `null`, the machine record says which it was, and every
-rendering prints `n/a`. **An empty column must never be mistaken for a backend that
-burned nothing**, which is precisely what a zero would have claimed.
-
-Two implementation details that are not details:
-
-- **Only the top-level `intel-rapl:<n>` zones are summed.** The nested ones —
-  `intel-rapl:0:0` is the `core` sub-domain of package 0 — are *subsets* of their
-  parent. Adding a package to its own children counts the same joules twice.
-- **The counter wraps**, at `max_energy_range_uj`, roughly once an hour on a busy
-  socket. A plain subtraction across a wrap yields a colossal negative number, and on
-  an unsigned integer a colossal positive one: a run that appears to have used more
-  energy than the machine can produce. The wrap is corrected explicitly.
+A column that reads `n/a` on every row of every published campaign is worse than no
+column. It invites the reader to assume a future campaign will fill it, and it keeps a
+whole reading path alive — a meter, a wire format, a unit in a closed enum, a chart, a
+docs section — for a number that has never once been produced. When the machine that
+publishes changes, this section is the argument to re-open, not the code to un-delete.
 
 ### The build column reports the internal clock, the run column the external one
 

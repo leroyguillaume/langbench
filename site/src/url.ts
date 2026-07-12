@@ -30,7 +30,6 @@ const sortKeySchema = z.enum([
   "cpu",
   "cores",
   "memory",
-  "energy",
   "build",
   "build_dispersion",
   "source",

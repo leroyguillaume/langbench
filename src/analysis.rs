@@ -184,9 +184,6 @@ pub struct Aggregate {
     /// ever push the high-water mark *up*, never below what the backend actually
     /// had to allocate.
     pub run_peak_bytes: Option<Summary>,
-    /// Microjoules around the run, min-of-N, Docker's overhead included. See
-    /// [`crate::sample::Sample::energy_uj`].
-    pub run_energy_uj: Option<Summary>,
     /// The compiler's own elapsed time, from inside the container — never the
     /// `docker build` wall-clock. See
     /// `METHODOLOGY.md#the-build-column-reports-the-internal-clock-the-run-column-the-external-one`.
@@ -198,7 +195,6 @@ pub struct Aggregate {
     /// which is charged to the same cgroup — a compiler's output is memory it made
     /// the machine hold.
     pub build_peak_bytes: Option<Summary>,
-    pub build_energy_uj: Option<Summary>,
     /// The thread count the harness handed every kernel of this campaign. Carried
     /// on the row so a reader can size [`Self::run_cores`] against it without
     /// reaching back into the campaign header.
@@ -236,11 +232,9 @@ struct Bucket {
     run_cpu_usec: Vec<u64>,
     run_cores: Vec<u64>,
     run_peak_bytes: Vec<u64>,
-    run_energy_uj: Vec<u64>,
     build_elapsed: Vec<u64>,
     build_cores: Vec<u64>,
     build_peak_bytes: Vec<u64>,
-    build_energy_uj: Vec<u64>,
     cpu: usize,
     source_bytes: Option<u64>,
     checksum: Option<u64>,
@@ -286,17 +280,16 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
         if sample.warmup && !options.include_warmup {
             continue;
         }
-        // `peak_bytes`, `energy_uj` and the core count are each an `Option`: a
-        // kernel with no `memory.peak`, a host with no readable RAPL counter, a run
-        // that reported no compute time. An absent value is not pushed, so it never
-        // becomes a zero in a summary — and the metric ends up `None` for the whole
-        // row rather than reporting a backend that used no memory.
+        // `peak_bytes` and the core count are each an `Option`: a kernel with no
+        // `memory.peak`, a run that reported no compute time. An absent value is not
+        // pushed, so it never becomes a zero in a summary — and the metric ends up
+        // `None` for the whole row rather than reporting a backend that used no
+        // memory.
         match sample.phase {
             Phase::Build => {
                 bucket.build_elapsed.push(sample.elapsed_ns);
                 bucket.build_cores.extend(sample.cores_milli());
                 bucket.build_peak_bytes.extend(sample.peak_bytes);
-                bucket.build_energy_uj.extend(sample.energy_uj);
             }
             Phase::Run => {
                 bucket.run_wall.push(sample.wall_ns);
@@ -305,7 +298,6 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
                 bucket.run_cpu_usec.push(sample.cpu_usec());
                 bucket.run_cores.extend(sample.cores_milli());
                 bucket.run_peak_bytes.extend(sample.peak_bytes);
-                bucket.run_energy_uj.extend(sample.energy_uj);
             }
         }
     }
@@ -330,11 +322,9 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             run_cpu_usec: summarize(&bucket.run_cpu_usec),
             run_cores: summarize(&bucket.run_cores),
             run_peak_bytes: summarize(&bucket.run_peak_bytes),
-            run_energy_uj: summarize(&bucket.run_energy_uj),
             build_elapsed: summarize(&bucket.build_elapsed),
             build_cores: summarize(&bucket.build_cores),
             build_peak_bytes: summarize(&bucket.build_peak_bytes),
-            build_energy_uj: summarize(&bucket.build_energy_uj),
             cpu: bucket.cpu,
             source_bytes: bucket.source_bytes,
             binary_bytes: bucket.binary_bytes,
@@ -518,7 +508,6 @@ mod tests {
             elapsed_ns: wall / 2,
             user_usec: 1_000,
             system_usec: 0,
-            energy_uj: Some(9_400_000),
             peak_bytes: Some(12_582_912),
             source_bytes: Some(2_048),
             checksum: Some(checksum),
@@ -729,17 +718,15 @@ mod tests {
         );
     }
 
-    /// A host with no readable RAPL counter reports no energy — never zero joules,
-    /// which would read as the most efficient backend ever measured.
+    /// A kernel with no `memory.peak` reports no peak — never zero bytes, which
+    /// would read as the most frugal backend ever measured.
     #[test]
-    fn a_campaign_with_no_energy_counter_reports_an_absence_never_a_zero() {
+    fn a_campaign_with_no_memory_peak_reports_an_absence_never_a_zero() {
         let mut blind = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
-        blind.energy_uj = None;
         blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![blind]), Options::default());
         let aggregate = &analysis.algos[0].aggregates[0];
-        assert_eq!(aggregate.run_energy_uj, None);
         assert_eq!(aggregate.run_peak_bytes, None);
         // ... and the rest of the row is unharmed.
         assert_eq!(aggregate.run_wall.unwrap().min, 2_000_000_000);
@@ -748,15 +735,15 @@ mod tests {
     /// A single blind round must not drag a summary down: the samples that *do*
     /// carry a number are summarized on their own, and `n` says how many there were.
     #[test]
-    fn a_round_that_reported_no_energy_is_left_out_rather_than_counted_as_zero() {
+    fn a_round_that_reported_no_memory_peak_is_left_out_rather_than_counted_as_zero() {
         let measured = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
         let mut blind = sample("c-gcc", FpMode::Strict, false, 2_100_000_000, 42);
-        blind.energy_uj = None;
+        blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![measured, blind]), Options::default());
-        let energy = analysis.algos[0].aggregates[0].run_energy_uj.unwrap();
-        assert_eq!(energy.n, 1);
-        assert_eq!(energy.min, 9_400_000);
+        let peak = analysis.algos[0].aggregates[0].run_peak_bytes.unwrap();
+        assert_eq!(peak.n, 1);
+        assert_eq!(peak.min, 12_582_912);
     }
 
     /// The source is the language's, not the backend's: the same file compiled by

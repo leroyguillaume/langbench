@@ -18,16 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../analysis";
 import { compare, compareAcross } from "../analysis";
 import { useCampaigns } from "../campaigns";
-import {
-  joules,
-  milliseconds,
-  NOT_AVAILABLE,
-  optional,
-  percent,
-  seconds,
-  size,
-  times,
-} from "../format";
+import { milliseconds, NOT_AVAILABLE, optional, percent, seconds, size, times } from "../format";
 import { findByKey, type Identity, identityKey, label, toolchain, wasmRow } from "../identity";
 import { logger } from "../logger";
 import { MODE_COLOR, MODES } from "../series";
@@ -333,8 +324,6 @@ function value(metric: Metric, side: "left" | "right"): string {
     // costs nothing. See `size`.
     case "bytes":
       return size(raw);
-    case "microjoules":
-      return joules(raw);
   }
 }
 

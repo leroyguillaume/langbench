@@ -17,7 +17,6 @@ import {
   cores,
   delta,
   dispersion,
-  joules,
   mebibytes,
   milliseconds,
   NOT_AVAILABLE,
@@ -45,7 +44,6 @@ export type SortKey =
   | "cpu"
   | "cores"
   | "memory"
-  | "energy"
   | "build"
   | "build_dispersion"
   | "source"
@@ -118,11 +116,6 @@ const COLUMNS: Column[] = [
     key: "memory",
     label: "Memory",
     value: (row) => min(row.run_peak_bytes),
-  },
-  {
-    key: "energy",
-    label: "Energy",
-    value: (row) => min(row.run_energy_uj),
   },
   { key: "build", label: "Build min", value: (row) => min(row.build_elapsed) },
   {
@@ -316,7 +309,6 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 <td className="numeric">{seconds(row.run_cpu_usec?.median ?? null)}</td>
                 <td className="numeric">{cores(row.run_cores, row.cpu)}</td>
                 <td className="numeric">{mebibytes(min(row.run_peak_bytes))}</td>
-                <td className="numeric">{joules(min(row.run_energy_uj))}</td>
                 <td className="numeric">{milliseconds(min(row.build_elapsed))}</td>
                 <td className="numeric">{dispersion(row.build_elapsed)}</td>
                 <td className="numeric">{bytes(row.source_bytes)}</td>

@@ -214,25 +214,6 @@ budget would have let the *bench machine's* RAM decide how much memory a JVM dec
 it wanted, and this column would describe the host instead of the backend. It follows
 that two campaigns run under different budgets do not compare here.
 
-### Energy
-
-Microjoules burned by the CPU package around the run, from the kernel's RAPL counters,
-minimum over the measured samples — reported in joules.
-
-**Docker's own overhead is in this number.** RAPL counts a *socket*, not a cgroup: the
-counters are invisible from inside a container, so the harness reads them from the host
-around the `docker run`, and the span it brackets is the same one **Run min** measures.
-It is the energy twin of **Run min** and never of **Compute min**. There is no inner
-counterpart, and there cannot be one — the kernel has no per-cgroup joule — so there is
-nothing honest to subtract, and nothing is subtracted.
-
-Read it as a **ratio between two rows** of this table, exactly like a timing, and never
-as an absolute figure for what the algorithm costs.
-
-`n/a` down the whole column means this host exposed no readable counter — RAPL is
-x86-only, and root-only on most kernels since the PLATYPUS side-channel. The machine
-table above says which it was. It does not mean the backends burned no energy.
-
 ### Build min
 
 The shortest **compile time** of a timed recompile, from a clean tmpfs (an
