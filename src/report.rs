@@ -222,7 +222,14 @@ pub fn render(data: &ReportData, template: &str) -> Result<String> {
         .parse(template)
         .context("parsing the report template")?;
     let globals = liquid::to_object(data).context("serializing the report data")?;
-    template.render(&globals).context("rendering the report")
+    let rendered = template.render(&globals).context("rendering the report")?;
+
+    // A rendered report ends with exactly one newline. Where a Liquid loop happens
+    // to leave a blank line is an accident of the template, and a report the repo's
+    // own `end-of-file-fixer` wants to rewrite is a report the campaign cannot
+    // commit. Normalising here rather than in `report.md.liquid` means a
+    // `--template` of your own inherits the guarantee instead of rediscovering it.
+    Ok(format!("{}\n", rendered.trim_end()))
 }
 
 /// An absent half of the triple is a fact about the backend — a compiled binary
@@ -504,7 +511,9 @@ mod tests {
             "{% for algo in algos %}{{ algo.algo }}:{% for row in algo.rows %}{{ row.run_min }}{% endfor %}{% endfor %}",
         )
         .unwrap();
-        assert_eq!(markdown, "mandelbrot:2000.0 ms");
+        // The trailing newline is the renderer's, not the template's: a report is a
+        // text file, and a text file ends with one.
+        assert_eq!(markdown, "mandelbrot:2000.0 ms\n");
     }
 
     #[test]
@@ -708,5 +717,18 @@ mod tests {
         let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
         assert!(markdown.contains("Linux"));
         assert!(markdown.contains("n/a"));
+    }
+
+    // The campaign commits what this renders, and `pre-commit` gates that commit.
+    // A report that ends in a blank line is one the bot cannot push.
+    #[test]
+    fn a_rendered_report_ends_with_exactly_one_newline() {
+        let markdown = render(&build(&recording(vec![])), DEFAULT_TEMPLATE).unwrap();
+        assert!(markdown.ends_with('\n'));
+        assert!(!markdown.ends_with("\n\n"));
+
+        // Whatever slack a template leaves at its end, however much of it.
+        let sloppy = render(&build(&recording(vec![])), "# report  \n\n\n").unwrap();
+        assert_eq!(sloppy, "# report\n");
     }
 }

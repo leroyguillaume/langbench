@@ -7,8 +7,13 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        # A committed lockfile is legitimately large and must stay versioned.
-        exclude: ^site/package-lock\.json$
+        # A committed lockfile is legitimately large and must stay versioned. So is
+        # a campaign: `samples/<arch>.ndjson` is one line per run, and its size is a
+        # function of the matrix -- rounds, modes, backends. Today's sits at 498 kB
+        # against this hook's 500 kB default, so `--rounds 30` would trip a guard
+        # that exists to catch a stray binary, on the one file in this repository
+        # that cannot be recomputed and must be committed.
+        exclude: ^(site/package-lock\.json|samples/.*\.ndjson)$
       - id: check-merge-conflict
       - id: detect-private-key
 

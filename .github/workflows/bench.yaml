@@ -119,6 +119,33 @@ jobs:
           pattern: campaign-*
           merge-multiple: true
 
+      - name: set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: install pre-commit
+        run: pip install pre-commit
+
+      # `git commit` in a runner runs no hook: `pre-commit` installs one into a
+      # clone, and this clone never had it. Which makes the bot's the one commit in
+      # this repository that walks straight past the gate -- `quality` then says so
+      # afterwards, on `main`, about a file nobody wrote by hand.
+      #
+      # The hooks run here to *verify*, never to fix. A hook that wants to rewrite a
+      # campaign is a bug in whatever rendered it, and committing the rewritten file
+      # would publish samples that are not the ones that were measured: the artefact
+      # above and the commit below would disagree about what happened. So a hook that
+      # fails takes the push with it -- and the campaign survives as an artefact
+      # regardless, which is the whole point of uploading it before committing it.
+      #
+      # Only the hooks that match these paths run. No Rust, no Node: nothing that
+      # reads a `.ndjson` or a rendered `.md` needs a compiler.
+      - name: check the campaigns against the hooks
+        run: |
+          pre-commit run --show-diff-on-failure \
+            --files samples/*.ndjson reports/*.md
+
       # The samples with the report, never one without the other. A campaign's
       # samples are the only artefact that cannot be recomputed -- the report and
       # the website are both derived from them, and committing a conclusion
