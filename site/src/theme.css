@@ -970,3 +970,47 @@ td.muted-cell {
 .prose ol li {
   margin: 0.35rem 0;
 }
+
+/* ---------------------------------------------------------------------------
+   The warm-up rounds. Not a filter, and it does not sit with them: a filter
+   changes which rows you see, this changes what the numbers are.
+   --------------------------------------------------------------------------- */
+
+.warmup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+.warmup .toggle {
+  color: var(--text-primary);
+  padding-bottom: 0;
+  font-size: 0.95rem;
+}
+
+.warmup-note {
+  margin: 0;
+  max-width: 75ch;
+  line-height: 1.6;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* On the compare page the checkbox travels alone: the page has already said what a
+   campaign is, and the banner says the rest the moment it is ticked. */
+.warmup-compact {
+  padding: 0.6rem 1rem;
+}
+
+/* What you are looking at once it is on. The published figures are the other ones,
+   and a reader who quoted these without being told would be quoting something this
+   project does not stand behind. */
+.warmup-banner {
+  border-left-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}

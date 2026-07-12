@@ -218,15 +218,6 @@ export function FilterBar({
         </div>
       </div>
 
-      <label className="toggle">
-        <input
-          type="checkbox"
-          checked={scope.includeWarmup}
-          onChange={(event) => onScope({ ...scope, includeWarmup: event.target.checked })}
-        />
-        aggregate the warmup rounds
-      </label>
-
       {dirty && (
         <button
           type="button"

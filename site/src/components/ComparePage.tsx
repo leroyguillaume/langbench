@@ -23,6 +23,7 @@ import { findByKey, type Identity, identityKey, label, toolchain, wasmRow } from
 import { logger } from "../logger";
 import { MODE_COLOR, MODES } from "../series";
 import { type CompareState, readCompare, writeCompare } from "../url";
+import { Warmup, WarmupBanner } from "./Warmup";
 
 export function ComparePage() {
   const [state, setState] = useState<CompareState>(readCompare);
@@ -173,15 +174,18 @@ function Head2Head({ loaded, campaigns, state, setState }: Props) {
             ))}
           </select>
         </label>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={state.includeWarmup}
-            onChange={(event) => setState({ ...state, includeWarmup: event.target.checked })}
-          />
-          aggregate the warmup rounds
-        </label>
       </div>
+
+      <Warmup
+        rounds={analysis.campaign.warmup_rounds}
+        includeWarmup={state.includeWarmup}
+        onChange={(includeWarmup) => setState({ ...state, includeWarmup })}
+        compact
+      />
+
+      {state.includeWarmup && analysis.campaign.warmup_rounds > 0 && (
+        <WarmupBanner rounds={analysis.campaign.warmup_rounds} />
+      )}
 
       <div className="compare-pick">
         <Picker side="left" title="A" aggregates={aggregates} selected={left} onPick={pick} />

@@ -15,6 +15,7 @@ import { compareHref, type ResultsState, readResults, writeResults } from "../ur
 import { BarChart, type ChartRow } from "./BarChart";
 import { FilterBar } from "./FilterBar";
 import { filterRows, ResultsTable, type Sort, type SortKey, sortRows } from "./ResultsTable";
+import { Warmup, WarmupBanner } from "./Warmup";
 
 interface ResultsProps {
   /**
@@ -233,6 +234,19 @@ function Report({ loaded, campaigns, state, setState, columns }: ReportProps) {
         arches={campaigns.map((entry) => entry.analysis.arch)}
         arch={analysis.arch}
       />
+
+      {/* Not in the filter bar, deliberately: a filter changes which rows you are
+          looking at, and this changes what the numbers *are* — the harness aggregates
+          the campaign again. Different act, different place, and it says what it does. */}
+      <Warmup
+        rounds={campaign.warmup_rounds}
+        includeWarmup={state.includeWarmup}
+        onChange={(includeWarmup) => setState({ ...state, includeWarmup })}
+      />
+
+      {state.includeWarmup && campaign.warmup_rounds > 0 && (
+        <WarmupBanner rounds={campaign.warmup_rounds} />
+      )}
 
       <section className="card">
         <h2>Run — external wall-clock, min of {campaign.rounds}</h2>
