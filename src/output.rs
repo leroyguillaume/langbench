@@ -104,7 +104,6 @@ mod tests {
                 elapsed_ns: 213_300_000,
                 user_usec: 860_000,
                 system_usec: 4_000,
-                energy_uj: Some(9_400_000),
                 peak_bytes: Some(12_582_912),
                 source_bytes: Some(2_048),
                 checksum: Some(42),

@@ -83,13 +83,6 @@ pub struct Machine {
 
     pub memory_total_kb: Option<u64>,
     pub load_average: Option<[f64; 3]>,
-    /// How the CPU package energy counters were read, if they could be at all.
-    ///
-    /// `None` is the ordinary case off an x86 bench host, and it is why a
-    /// campaign's energy column can be empty. It travels in the header so a reader
-    /// of an energy-less report can tell "this machine has no counters" from "this
-    /// backend used no energy". See [`crate::energy`].
-    pub energy_source: Option<String>,
 
     pub cgroup_version: Option<u8>,
     pub docker_version: Option<String>,
@@ -132,7 +125,6 @@ impl Machine {
 
             memory_total_kb: memory_total_kb(),
             load_average: load_average(),
-            energy_source: energy_source(),
 
             cgroup_version: cgroup_version(),
             docker_version: docker_query(&["version", "--format", "{{.Server.Version}}"]),
@@ -199,7 +191,6 @@ impl Machine {
                 .map(|[a, b, c]| format!("{a:.2}, {b:.2}, {c:.2}"))
                 .unwrap_or_else(|| "n/a".to_owned()),
         );
-        push("Energy counters", self.energy_source_field());
         push("cgroup version", opt_num(self.cgroup_version));
         push("Docker version", opt(self.docker_version.as_deref()));
         push(
@@ -223,20 +214,6 @@ impl Machine {
             (None, true) => "none detected".to_owned(),
             (None, false) => "unknown (the probes need Linux; see the warning above)".to_owned(),
         }
-    }
-
-    /// Why the energy column of this campaign is populated, or why it is not.
-    ///
-    /// An empty column has two very different meanings — the backend burned no
-    /// joules, or nobody was counting — and a reader must never have to guess
-    /// which. So the absence says what would have had to be true for a number to
-    /// be there.
-    fn energy_source_field(&self) -> String {
-        self.energy_source.clone().unwrap_or_else(|| {
-            "n/a (no readable /sys/class/powercap: RAPL is x86-only, and root-only \
-             on most kernels since PLATYPUS)"
-                .to_owned()
-        })
     }
 
     /// A two-column table plus the host's warnings, for `langbench machine`.
@@ -500,23 +477,6 @@ fn cgroup_version() -> Option<u8> {
     } else if Path::new("/sys/fs/cgroup/memory").exists() {
         Some(1)
     } else {
-        None
-    }
-}
-
-/// How this host's CPU energy counters can be read, if at all.
-///
-/// Gated, unlike every other probe in this module: the counters are only ever
-/// *read* by the harness, around a `docker run`. A `wasm` build deserializes a
-/// machine that some bench host recorded — it never collects one — so it has no
-/// use for the meter and does not compile it in. See [`crate::energy`].
-fn energy_source() -> Option<String> {
-    #[cfg(feature = "cli")]
-    {
-        crate::energy::EnergyMeter::detect().source()
-    }
-    #[cfg(not(feature = "cli"))]
-    {
         None
     }
 }

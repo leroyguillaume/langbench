@@ -159,20 +159,16 @@ Swap is off. A container permitted to swap does not *fail* when it overruns its
 budget — it silently gets slower, and the timing quietly absorbs a page-fault storm
 that no column explains.
 
-### Energy, when the machine will tell you
+### There is no energy column
 
-The report carries an energy column when the host exposes readable RAPL counters. Two
-things to know before quoting it:
+`langbench` does not measure energy, and the reports carry no joules. The campaigns run
+on GitHub Actions runners, where the RAPL counters cannot be read at all — they are
+x86-only, so AArch64 has none, and root-only on most kernels since the PLATYPUS
+side-channel, so the x86 runner has none either. Every sample of every campaign came
+back empty.
 
-- **Docker's overhead is inside the number.** RAPL counts a CPU socket, not a cgroup,
-  so the container cannot read it and the harness reads it from the host, around the
-  `docker run`. It is the energy twin of the external wall-clock, never of the
-  program's own clock, and nothing is subtracted because there is nothing honest to
-  subtract. Read it as a ratio between two rows, never as an absolute.
-- **It is often absent, and absence is not zero.** RAPL is x86-only, and root-only on
-  most kernels since the PLATYPUS side-channel. `langbench machine` tells you whether
-  this host has counters before you spend an hour finding out; when it does not, the
-  column is `n/a` and the report says why.
+A column that is `n/a` on every row of every published campaign measures nothing. See
+[METHODOLOGY.md](METHODOLOGY.md#why-there-is-no-energy-column).
 
 ### When a backend breaks
 

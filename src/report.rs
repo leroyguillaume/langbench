@@ -112,9 +112,6 @@ pub struct Row {
     /// own clock never sees. See [`crate::sample::Sample::cores_milli`].
     pub cores: String,
     pub memory: String,
-    /// `n/a` on a host with no readable RAPL counter, which the machine table
-    /// above says in as many words.
-    pub energy: String,
     pub build_min: String,
     pub build_dispersion: String,
     pub source: String,
@@ -223,10 +220,6 @@ fn row(aggregate: &Aggregate) -> Row {
             |summary| format!("{:.1} / {}", summary.median as f64 / 1e3, aggregate.cpu),
         ),
         memory: mebibytes(aggregate.run_peak_bytes.map(|summary| summary.min)),
-        energy: aggregate.run_energy_uj.map_or_else(
-            || "n/a".to_owned(),
-            |summary| format!("{:.1} J", summary.min as f64 / 1e6),
-        ),
         build_min: min_ms(aggregate.build_elapsed),
         build_dispersion: dispersion(aggregate.build_elapsed),
         source: bytes(aggregate.source_bytes),
@@ -364,7 +357,6 @@ mod tests {
             elapsed_ns: wall / 2,
             user_usec: 1_000,
             system_usec: 0,
-            energy_uj: Some(9_400_000),
             peak_bytes: Some(12_582_912),
             source_bytes: Some(2_048),
             checksum: Some(42),

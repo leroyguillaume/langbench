@@ -77,10 +77,10 @@ order as a leaderboard: the sort mixes the FP modes together, and two rows in
 different modes are different experiments (see **Mode**); and a gap smaller than
 **Dispersion** is not a gap at all, it is noise that happened to land in that order.
 
-| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Energy | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.cores }} | {{ row.memory }} | {{ row.energy }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.source }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
+| [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.cores }} | {{ row.memory }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.source }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
 {% if failures.size > 0 %}

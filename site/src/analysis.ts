@@ -72,12 +72,9 @@ export const aggregateSchema = z.object({
   run_cores: summarySchema.nullable(),
   /** The container's peak memory, min-of-N. */
   run_peak_bytes: summarySchema.nullable(),
-  /** Microjoules around the run, min-of-N — `null` where the host exposes no counter. */
-  run_energy_uj: summarySchema.nullable(),
   build_elapsed: summarySchema.nullable(),
   build_cores: summarySchema.nullable(),
   build_peak_bytes: summarySchema.nullable(),
-  build_energy_uj: summarySchema.nullable(),
   /** The thread count this campaign handed every kernel. The denominator of `run_cores`. */
   cpu: z.number().int(),
   /** Bytes of the kernel's one source file — a property of the *language*, not of the backend. */
@@ -179,12 +176,11 @@ export const metricSchema = z.object({
    * What the two values are measured in. The site spells it; it never converts it.
    *
    * A **closed set**, deliberately: an unknown unit fails the parse rather than
-   * degrading to an unformatted number. Which is why `Unit::Microjoules` and the
-   * energy metric that needs it land in the same change as this line — a new unit on
-   * the wire ahead of the renderer that can spell it would take the whole
+   * degrading to an unformatted number. A new unit lands in the same change as the
+   * renderer that can spell it — on the wire ahead of it, it would take the whole
    * head-to-head down on a page that is live today.
    */
-  unit: z.enum(["nanoseconds", "microseconds", "bytes", "microjoules"]),
+  unit: z.enum(["nanoseconds", "microseconds", "bytes"]),
   left: z.number().nullable(),
   right: z.number().nullable(),
   /** `right / left`. Below 1, the right-hand backend is the smaller one. */

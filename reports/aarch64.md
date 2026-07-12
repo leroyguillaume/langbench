@@ -77,7 +77,6 @@ Where it ran. Timings only mean something *relative to this machine*.
 | Isolated CPUs | n/a |
 | Memory | 15.6 GiB |
 | Load average at start | 0.77, 0.23, 0.08 |
-| Energy counters | n/a (no readable /sys/class/powercap: RAPL is x86-only, and root-only on most kernels since PLATYPUS) |
 | cgroup version | 2 |
 | Docker version | 28.0.4 |
 | Docker storage driver | overlay2 |
@@ -100,46 +99,46 @@ order as a leaderboard: the sort mixes the FP modes together, and two rows in
 different modes are different experiments (see **Mode**); and a gap smaller than
 **Dispersion** is not a gap at all, it is noise that happened to land in that order.
 
-| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Energy | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| [cpp](#mandelbrot-cpp-clang) | clang | n/a | fast | 10 | 819.3 ms | 0.47% | 582.7 ms | 236.5 ms | 2.34 s | 4.0 / 4 | 3.6 MiB | n/a | 1415.5 ms | 2.41% | 5.6 KiB | 73.1 KiB | 2.7 KiB | -2476 |
-| [c](#mandelbrot-c-clang) | clang | n/a | fast | 10 | 826.2 ms | 0.70% | 581.9 ms | 243.8 ms | 2.34 s | 4.0 / 4 | 3.7 MiB | n/a | 79.5 ms | 0.43% | 5.4 KiB | 70.8 KiB | 1.5 KiB | -2476 |
-| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | fast | 10 | 828.4 ms | 0.76% | 592.4 ms | 234.9 ms | 2.38 s | 4.0 / 4 | 3.7 MiB | n/a | 1129.1 ms | 0.39% | 5.6 KiB | 73.3 KiB | 2.7 KiB | +1756 |
-| [c](#mandelbrot-c-gcc) | gcc | n/a | fast | 10 | 836.2 ms | 0.81% | 593.7 ms | 240.9 ms | 2.38 s | 4.0 / 4 | 3.7 MiB | n/a | 75.8 ms | 0.50% | 5.4 KiB | 70.7 KiB | 1.3 KiB | +1756 |
-| [c](#mandelbrot-c-clang) | clang | n/a | fma | 10 | 839.3 ms | 0.54% | 603.4 ms | 235.9 ms | 2.42 s | 4.0 / 4 | 3.4 MiB | n/a | 82.6 ms | 50.50% | 5.4 KiB | 69.4 KiB | 1.4 KiB | -3574 |
-| [cpp](#mandelbrot-cpp-clang) | clang | n/a | fma | 10 | 844.5 ms | 0.44% | 604.4 ms | 239.4 ms | 2.43 s | 4.0 / 4 | 3.7 MiB | n/a | 1438.7 ms | 3.44% | 5.6 KiB | 71.7 KiB | 2.7 KiB | -3574 |
-| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | fma | 10 | 853.2 ms | 1.09% | 613.8 ms | 238.0 ms | 2.47 s | 4.0 / 4 | 3.6 MiB | n/a | 1137.0 ms | 0.31% | 5.6 KiB | 72.0 KiB | 2.7 KiB | -3574 |
-| [c](#mandelbrot-c-gcc) | gcc | n/a | fma | 10 | 860.1 ms | 0.35% | 613.4 ms | 238.9 ms | 2.47 s | 4.0 / 4 | 3.7 MiB | n/a | 74.3 ms | 0.07% | 5.4 KiB | 69.3 KiB | 1.3 KiB | -3574 |
-| [go](#mandelbrot-go-gc) | gc | n/a | strict | 10 | 900.3 ms | 0.68% | 657.3 ms | 241.9 ms | 2.64 s | 4.0 / 4 | 3.7 MiB | n/a | 3309.8 ms | 0.60% | 5.7 KiB | 2251.8 KiB | 581.8 KiB | 0 |
-| [zig](#mandelbrot-zig-zig) | zig | n/a | strict | 10 | 903.8 ms | 0.50% | 671.5 ms | 232.0 ms | 2.69 s | 4.0 / 4 | 3.6 MiB | n/a | 1975.2 ms | 0.87% | 5.7 KiB | 1040.0 KiB | 21.8 KiB | 0 |
-| [c](#mandelbrot-c-gcc) | gcc | n/a | strict | 10 | 907.8 ms | 0.28% | 673.9 ms | 232.6 ms | 2.71 s | 4.0 / 4 | 3.7 MiB | n/a | 74.5 ms | 0.52% | 5.4 KiB | 69.3 KiB | 1.3 KiB | 0 |
-| [rust](#mandelbrot-rust-rustc) | rustc | n/a | strict | 10 | 910.9 ms | 0.89% | 671.7 ms | 238.3 ms | 2.69 s | 4.0 / 4 | 3.7 MiB | n/a | 446.9 ms | 0.03% | 5.2 KiB | 3890.6 KiB | 243.9 KiB | 0 |
-| [cpp](#mandelbrot-cpp-clang) | clang | n/a | strict | 10 | 911.9 ms | 1.12% | 670.5 ms | 239.1 ms | 2.69 s | 4.0 / 4 | 3.7 MiB | n/a | 1430.2 ms | 0.73% | 5.6 KiB | 71.7 KiB | 2.7 KiB | 0 |
-| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | strict | 10 | 915.0 ms | 0.29% | 673.5 ms | 239.6 ms | 2.71 s | 4.0 / 4 | 3.9 MiB | n/a | 1134.2 ms | 0.16% | 5.6 KiB | 72.0 KiB | 2.7 KiB | 0 |
-| [c](#mandelbrot-c-clang) | clang | n/a | strict | 10 | 917.8 ms | 0.26% | 670.4 ms | 246.0 ms | 2.69 s | 4.0 / 4 | 3.6 MiB | n/a | 80.9 ms | 0.05% | 5.4 KiB | 69.4 KiB | 1.4 KiB | 0 |
-| [scala](#mandelbrot-scala-scala-native) | scala-native | n/a | strict | 10 | 926.5 ms | 0.17% | 681.2 ms | 244.3 ms | 2.73 s | 4.0 / 4 | 6.6 MiB | n/a | 13835.9 ms | 10.40% | 5.9 KiB | 2501.7 KiB | 575.6 KiB | 0 |
-| [java](#mandelbrot-java-javac-openjdk) | javac | openjdk | strict | 10 | 967.0 ms | 0.97% | 691.6 ms | 271.0 ms | 2.81 s | 4.0 / 4 | 12.3 MiB | n/a | 498.6 ms | 0.82% | 5.8 KiB | n/a | n/a | 0 |
-| [ts](#mandelbrot-ts-bun) | n/a | bun | strict | 10 | 968.0 ms | 0.68% | 706.2 ms | 260.2 ms | 2.86 s | 4.0 / 4 | 33.0 MiB | n/a | 4.7 ms | 4.51% | 6.1 KiB | n/a | n/a | 0 |
-| [js](#mandelbrot-js-nodejs) | n/a | nodejs | strict | 10 | 969.3 ms | 1.10% | 700.2 ms | 267.1 ms | 2.83 s | 4.0 / 4 | 50.6 MiB | n/a | 18.8 ms | 2.89% | 5.8 KiB | n/a | n/a | 0 |
-| [js](#mandelbrot-js-bun) | n/a | bun | strict | 10 | 977.6 ms | 0.59% | 705.0 ms | 269.8 ms | 2.86 s | 4.0 / 4 | 32.8 MiB | n/a | 4.5 ms | 1.20% | 5.8 KiB | n/a | n/a | 0 |
-| [kotlin](#mandelbrot-kotlin-kotlinc-openjdk) | kotlinc | openjdk | strict | 10 | 998.2 ms | 0.68% | 694.5 ms | 302.6 ms | 2.85 s | 4.1 / 4 | 26.6 MiB | n/a | 3736.2 ms | 0.42% | 4.8 KiB | n/a | n/a | 0 |
-| [kotlin](#mandelbrot-kotlin-native-image) | native-image | n/a | strict | 10 | 1008.4 ms | 0.60% | 761.4 ms | 246.1 ms | 3.06 s | 4.0 / 4 | 3.6 MiB | n/a | 48446.0 ms | 0.59% | 4.8 KiB | 13276.1 KiB | 4879.0 KiB | 0 |
-| [java](#mandelbrot-java-native-image) | native-image | n/a | strict | 10 | 1009.0 ms | 0.38% | 761.8 ms | 247.2 ms | 3.06 s | 4.0 / 4 | 3.7 MiB | n/a | 44592.9 ms | 0.70% | 5.8 KiB | 12696.4 KiB | 4846.2 KiB | 0 |
-| [scala](#mandelbrot-scala-native-image) | native-image | n/a | strict | 10 | 1014.1 ms | 0.93% | 767.7 ms | 246.0 ms | 3.08 s | 4.0 / 4 | 3.7 MiB | n/a | 53352.3 ms | 0.61% | 5.9 KiB | 15332.2 KiB | 5252.7 KiB | 0 |
-| [ts](#mandelbrot-ts-deno) | n/a | deno | strict | 10 | 1043.5 ms | 0.32% | 722.5 ms | 320.7 ms | 2.84 s | 3.9 / 4 | 60.9 MiB | n/a | 688.1 ms | 0.60% | 6.1 KiB | n/a | n/a | 0 |
-| [js](#mandelbrot-js-deno) | n/a | deno | strict | 10 | 1044.9 ms | 0.52% | 723.3 ms | 321.5 ms | 2.85 s | 3.9 / 4 | 60.5 MiB | n/a | 100.6 ms | 1.17% | 5.8 KiB | n/a | n/a | 0 |
-| [ts](#mandelbrot-ts-nodejs) | n/a | nodejs | strict | 10 | 1047.0 ms | 0.61% | 729.4 ms | 306.4 ms | 3.03 s | 4.1 / 4 | 115.4 MiB | n/a | 17.8 ms | 2.26% | 6.1 KiB | n/a | n/a | 0 |
-| [java](#mandelbrot-java-javac-graalvm) | javac | graalvm | strict | 10 | 1080.1 ms | 0.49% | 767.4 ms | 309.4 ms | 3.19 s | 4.1 / 4 | 45.9 MiB | n/a | 509.6 ms | 0.25% | 5.8 KiB | n/a | n/a | 0 |
-| [kotlin](#mandelbrot-kotlin-kotlinc-graalvm) | kotlinc | graalvm | strict | 10 | 1108.2 ms | 0.46% | 773.9 ms | 334.1 ms | 3.23 s | 4.2 / 4 | 46.4 MiB | n/a | 3742.1 ms | 0.20% | 4.8 KiB | n/a | n/a | 0 |
-| [scala](#mandelbrot-scala-scalac-openjdk) | scalac | openjdk | strict | 10 | 1115.8 ms | 0.65% | 702.5 ms | 411.9 ms | 3.06 s | 4.3 / 4 | 35.0 MiB | n/a | 2683.8 ms | 1.37% | 5.9 KiB | n/a | n/a | 0 |
-| [julia](#mandelbrot-julia-julia) | n/a | julia | strict | 10 | 1140.4 ms | 0.65% | 698.4 ms | 435.0 ms | 3.07 s | 4.4 / 4 | 79.3 MiB | n/a | 138.9 ms | 0.72% | 5.1 KiB | n/a | n/a | 0 |
-| [scala](#mandelbrot-scala-scalac-graalvm) | scalac | graalvm | strict | 10 | 1208.5 ms | 0.44% | 776.1 ms | 429.1 ms | 3.45 s | 4.4 / 4 | 68.8 MiB | n/a | 2832.8 ms | 4.32% | 5.9 KiB | n/a | n/a | 0 |
-| [python](#mandelbrot-python-pypy) | n/a | pypy | strict | 10 | 1565.5 ms | 0.52% | 1160.5 ms | 400.3 ms | 4.46 s | 3.8 / 4 | 369.8 MiB | n/a | 76.5 ms | 2.35% | 4.5 KiB | n/a | n/a | 0 |
-| [java](#mandelbrot-java-javac-openj9) | javac | openj9 | strict | 10 | 1583.3 ms | 0.29% | 1242.5 ms | 329.7 ms | 5.14 s | 4.1 / 4 | 26.1 MiB | n/a | 609.9 ms | 0.70% | 5.8 KiB | n/a | n/a | 0 |
-| [kotlin](#mandelbrot-kotlin-kotlinc-openj9) | kotlinc | openj9 | strict | 10 | 1619.2 ms | 0.43% | 1255.0 ms | 361.7 ms | 5.18 s | 4.1 / 4 | 28.9 MiB | n/a | 4133.0 ms | 0.16% | 4.8 KiB | n/a | n/a | 0 |
-| [scala](#mandelbrot-scala-scalac-openj9) | scalac | openj9 | strict | 10 | 1664.3 ms | 0.38% | 1221.2 ms | 443.0 ms | 5.21 s | 4.2 / 4 | 33.2 MiB | n/a | 3082.4 ms | 0.98% | 5.9 KiB | n/a | n/a | 0 |
-| [python](#mandelbrot-python-cpython) | n/a | cpython | strict | 10 | 30171.9 ms | 0.27% | 29788.7 ms | 379.1 ms | 115.67 s | 3.9 / 4 | 24.8 MiB | n/a | 33.5 ms | 1.39% | 4.5 KiB | n/a | n/a | 0 |
-| [python](#mandelbrot-python-cython-cpython) | cython | cpython | strict | 10 | 47055.5 ms | 0.13% | 46748.0 ms | 295.9 ms | 181.67 s | 3.9 / 4 | 19.8 MiB | n/a | 2292.3 ms | 0.38% | 4.5 KiB | 147.4 KiB | 50.5 KiB | 0 |
+| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [cpp](#mandelbrot-cpp-clang) | clang | n/a | fast | 10 | 819.3 ms | 0.47% | 582.7 ms | 236.5 ms | 2.34 s | 4.0 / 4 | 3.6 MiB | 1415.5 ms | 2.41% | 5.6 KiB | 73.1 KiB | 2.7 KiB | -2476 |
+| [c](#mandelbrot-c-clang) | clang | n/a | fast | 10 | 826.2 ms | 0.70% | 581.9 ms | 243.8 ms | 2.34 s | 4.0 / 4 | 3.7 MiB | 79.5 ms | 0.43% | 5.4 KiB | 70.8 KiB | 1.5 KiB | -2476 |
+| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | fast | 10 | 828.4 ms | 0.76% | 592.4 ms | 234.9 ms | 2.38 s | 4.0 / 4 | 3.7 MiB | 1129.1 ms | 0.39% | 5.6 KiB | 73.3 KiB | 2.7 KiB | +1756 |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | fast | 10 | 836.2 ms | 0.81% | 593.7 ms | 240.9 ms | 2.38 s | 4.0 / 4 | 3.7 MiB | 75.8 ms | 0.50% | 5.4 KiB | 70.7 KiB | 1.3 KiB | +1756 |
+| [c](#mandelbrot-c-clang) | clang | n/a | fma | 10 | 839.3 ms | 0.54% | 603.4 ms | 235.9 ms | 2.42 s | 4.0 / 4 | 3.4 MiB | 82.6 ms | 50.50% | 5.4 KiB | 69.4 KiB | 1.4 KiB | -3574 |
+| [cpp](#mandelbrot-cpp-clang) | clang | n/a | fma | 10 | 844.5 ms | 0.44% | 604.4 ms | 239.4 ms | 2.43 s | 4.0 / 4 | 3.7 MiB | 1438.7 ms | 3.44% | 5.6 KiB | 71.7 KiB | 2.7 KiB | -3574 |
+| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | fma | 10 | 853.2 ms | 1.09% | 613.8 ms | 238.0 ms | 2.47 s | 4.0 / 4 | 3.6 MiB | 1137.0 ms | 0.31% | 5.6 KiB | 72.0 KiB | 2.7 KiB | -3574 |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | fma | 10 | 860.1 ms | 0.35% | 613.4 ms | 238.9 ms | 2.47 s | 4.0 / 4 | 3.7 MiB | 74.3 ms | 0.07% | 5.4 KiB | 69.3 KiB | 1.3 KiB | -3574 |
+| [go](#mandelbrot-go-gc) | gc | n/a | strict | 10 | 900.3 ms | 0.68% | 657.3 ms | 241.9 ms | 2.64 s | 4.0 / 4 | 3.7 MiB | 3309.8 ms | 0.60% | 5.7 KiB | 2251.8 KiB | 581.8 KiB | 0 |
+| [zig](#mandelbrot-zig-zig) | zig | n/a | strict | 10 | 903.8 ms | 0.50% | 671.5 ms | 232.0 ms | 2.69 s | 4.0 / 4 | 3.6 MiB | 1975.2 ms | 0.87% | 5.7 KiB | 1040.0 KiB | 21.8 KiB | 0 |
+| [c](#mandelbrot-c-gcc) | gcc | n/a | strict | 10 | 907.8 ms | 0.28% | 673.9 ms | 232.6 ms | 2.71 s | 4.0 / 4 | 3.7 MiB | 74.5 ms | 0.52% | 5.4 KiB | 69.3 KiB | 1.3 KiB | 0 |
+| [rust](#mandelbrot-rust-rustc) | rustc | n/a | strict | 10 | 910.9 ms | 0.89% | 671.7 ms | 238.3 ms | 2.69 s | 4.0 / 4 | 3.7 MiB | 446.9 ms | 0.03% | 5.2 KiB | 3890.6 KiB | 243.9 KiB | 0 |
+| [cpp](#mandelbrot-cpp-clang) | clang | n/a | strict | 10 | 911.9 ms | 1.12% | 670.5 ms | 239.1 ms | 2.69 s | 4.0 / 4 | 3.7 MiB | 1430.2 ms | 0.73% | 5.6 KiB | 71.7 KiB | 2.7 KiB | 0 |
+| [cpp](#mandelbrot-cpp-gcc) | gcc | n/a | strict | 10 | 915.0 ms | 0.29% | 673.5 ms | 239.6 ms | 2.71 s | 4.0 / 4 | 3.9 MiB | 1134.2 ms | 0.16% | 5.6 KiB | 72.0 KiB | 2.7 KiB | 0 |
+| [c](#mandelbrot-c-clang) | clang | n/a | strict | 10 | 917.8 ms | 0.26% | 670.4 ms | 246.0 ms | 2.69 s | 4.0 / 4 | 3.6 MiB | 80.9 ms | 0.05% | 5.4 KiB | 69.4 KiB | 1.4 KiB | 0 |
+| [scala](#mandelbrot-scala-scala-native) | scala-native | n/a | strict | 10 | 926.5 ms | 0.17% | 681.2 ms | 244.3 ms | 2.73 s | 4.0 / 4 | 6.6 MiB | 13835.9 ms | 10.40% | 5.9 KiB | 2501.7 KiB | 575.6 KiB | 0 |
+| [java](#mandelbrot-java-javac-openjdk) | javac | openjdk | strict | 10 | 967.0 ms | 0.97% | 691.6 ms | 271.0 ms | 2.81 s | 4.0 / 4 | 12.3 MiB | 498.6 ms | 0.82% | 5.8 KiB | n/a | n/a | 0 |
+| [ts](#mandelbrot-ts-bun) | n/a | bun | strict | 10 | 968.0 ms | 0.68% | 706.2 ms | 260.2 ms | 2.86 s | 4.0 / 4 | 33.0 MiB | 4.7 ms | 4.51% | 6.1 KiB | n/a | n/a | 0 |
+| [js](#mandelbrot-js-nodejs) | n/a | nodejs | strict | 10 | 969.3 ms | 1.10% | 700.2 ms | 267.1 ms | 2.83 s | 4.0 / 4 | 50.6 MiB | 18.8 ms | 2.89% | 5.8 KiB | n/a | n/a | 0 |
+| [js](#mandelbrot-js-bun) | n/a | bun | strict | 10 | 977.6 ms | 0.59% | 705.0 ms | 269.8 ms | 2.86 s | 4.0 / 4 | 32.8 MiB | 4.5 ms | 1.20% | 5.8 KiB | n/a | n/a | 0 |
+| [kotlin](#mandelbrot-kotlin-kotlinc-openjdk) | kotlinc | openjdk | strict | 10 | 998.2 ms | 0.68% | 694.5 ms | 302.6 ms | 2.85 s | 4.1 / 4 | 26.6 MiB | 3736.2 ms | 0.42% | 4.8 KiB | n/a | n/a | 0 |
+| [kotlin](#mandelbrot-kotlin-native-image) | native-image | n/a | strict | 10 | 1008.4 ms | 0.60% | 761.4 ms | 246.1 ms | 3.06 s | 4.0 / 4 | 3.6 MiB | 48446.0 ms | 0.59% | 4.8 KiB | 13276.1 KiB | 4879.0 KiB | 0 |
+| [java](#mandelbrot-java-native-image) | native-image | n/a | strict | 10 | 1009.0 ms | 0.38% | 761.8 ms | 247.2 ms | 3.06 s | 4.0 / 4 | 3.7 MiB | 44592.9 ms | 0.70% | 5.8 KiB | 12696.4 KiB | 4846.2 KiB | 0 |
+| [scala](#mandelbrot-scala-native-image) | native-image | n/a | strict | 10 | 1014.1 ms | 0.93% | 767.7 ms | 246.0 ms | 3.08 s | 4.0 / 4 | 3.7 MiB | 53352.3 ms | 0.61% | 5.9 KiB | 15332.2 KiB | 5252.7 KiB | 0 |
+| [ts](#mandelbrot-ts-deno) | n/a | deno | strict | 10 | 1043.5 ms | 0.32% | 722.5 ms | 320.7 ms | 2.84 s | 3.9 / 4 | 60.9 MiB | 688.1 ms | 0.60% | 6.1 KiB | n/a | n/a | 0 |
+| [js](#mandelbrot-js-deno) | n/a | deno | strict | 10 | 1044.9 ms | 0.52% | 723.3 ms | 321.5 ms | 2.85 s | 3.9 / 4 | 60.5 MiB | 100.6 ms | 1.17% | 5.8 KiB | n/a | n/a | 0 |
+| [ts](#mandelbrot-ts-nodejs) | n/a | nodejs | strict | 10 | 1047.0 ms | 0.61% | 729.4 ms | 306.4 ms | 3.03 s | 4.1 / 4 | 115.4 MiB | 17.8 ms | 2.26% | 6.1 KiB | n/a | n/a | 0 |
+| [java](#mandelbrot-java-javac-graalvm) | javac | graalvm | strict | 10 | 1080.1 ms | 0.49% | 767.4 ms | 309.4 ms | 3.19 s | 4.1 / 4 | 45.9 MiB | 509.6 ms | 0.25% | 5.8 KiB | n/a | n/a | 0 |
+| [kotlin](#mandelbrot-kotlin-kotlinc-graalvm) | kotlinc | graalvm | strict | 10 | 1108.2 ms | 0.46% | 773.9 ms | 334.1 ms | 3.23 s | 4.2 / 4 | 46.4 MiB | 3742.1 ms | 0.20% | 4.8 KiB | n/a | n/a | 0 |
+| [scala](#mandelbrot-scala-scalac-openjdk) | scalac | openjdk | strict | 10 | 1115.8 ms | 0.65% | 702.5 ms | 411.9 ms | 3.06 s | 4.3 / 4 | 35.0 MiB | 2683.8 ms | 1.37% | 5.9 KiB | n/a | n/a | 0 |
+| [julia](#mandelbrot-julia-julia) | n/a | julia | strict | 10 | 1140.4 ms | 0.65% | 698.4 ms | 435.0 ms | 3.07 s | 4.4 / 4 | 79.3 MiB | 138.9 ms | 0.72% | 5.1 KiB | n/a | n/a | 0 |
+| [scala](#mandelbrot-scala-scalac-graalvm) | scalac | graalvm | strict | 10 | 1208.5 ms | 0.44% | 776.1 ms | 429.1 ms | 3.45 s | 4.4 / 4 | 68.8 MiB | 2832.8 ms | 4.32% | 5.9 KiB | n/a | n/a | 0 |
+| [python](#mandelbrot-python-pypy) | n/a | pypy | strict | 10 | 1565.5 ms | 0.52% | 1160.5 ms | 400.3 ms | 4.46 s | 3.8 / 4 | 369.8 MiB | 76.5 ms | 2.35% | 4.5 KiB | n/a | n/a | 0 |
+| [java](#mandelbrot-java-javac-openj9) | javac | openj9 | strict | 10 | 1583.3 ms | 0.29% | 1242.5 ms | 329.7 ms | 5.14 s | 4.1 / 4 | 26.1 MiB | 609.9 ms | 0.70% | 5.8 KiB | n/a | n/a | 0 |
+| [kotlin](#mandelbrot-kotlin-kotlinc-openj9) | kotlinc | openj9 | strict | 10 | 1619.2 ms | 0.43% | 1255.0 ms | 361.7 ms | 5.18 s | 4.1 / 4 | 28.9 MiB | 4133.0 ms | 0.16% | 4.8 KiB | n/a | n/a | 0 |
+| [scala](#mandelbrot-scala-scalac-openj9) | scalac | openj9 | strict | 10 | 1664.3 ms | 0.38% | 1221.2 ms | 443.0 ms | 5.21 s | 4.2 / 4 | 33.2 MiB | 3082.4 ms | 0.98% | 5.9 KiB | n/a | n/a | 0 |
+| [python](#mandelbrot-python-cpython) | n/a | cpython | strict | 10 | 30171.9 ms | 0.27% | 29788.7 ms | 379.1 ms | 115.67 s | 3.9 / 4 | 24.8 MiB | 33.5 ms | 1.39% | 4.5 KiB | n/a | n/a | 0 |
+| [python](#mandelbrot-python-cython-cpython) | cython | cpython | strict | 10 | 47055.5 ms | 0.13% | 46748.0 ms | 295.9 ms | 181.67 s | 3.9 / 4 | 19.8 MiB | 2292.3 ms | 0.38% | 4.5 KiB | 147.4 KiB | 50.5 KiB | 0 |
 
 
 ## How to read a row in thirty seconds
@@ -311,11 +310,11 @@ has.
 ### Cores
 
 How many cores the row actually kept busy — `CPU time / Compute min` — read against
-the 4 threads the harness handed every kernel of this campaign.
+the {{ campaign.cpu }} threads the harness handed every kernel of this campaign.
 
 This is the column that separates *this backend is slow* from *this backend cannot
-use the machine*. Two rows with the same **Run min**, one at `7.8 / 4`
-and one at `1.0 / 4`, are not two slow backends: one of them is a
+use the machine*. Two rows with the same **Run min**, one at `7.8 / {{ campaign.cpu }}`
+and one at `1.0 / {{ campaign.cpu }}`, are not two slow backends: one of them is a
 global interpreter lock, and no amount of compiler work will ever move it. Wall-clock
 alone hides that completely.
 
@@ -325,7 +324,7 @@ so the smallest sample is the best estimate of what the machine can do. Parallel
 is not one-sided like that — contention inflates the CPU clock (threads spinning) and
 the compute clock alike — so no extreme recommends itself over the middle.
 
-It can exceed 4, and that is a result rather than an overflow. The
+It can exceed {{ campaign.cpu }}, and that is a result rather than an overflow. The
 numerator counts every microsecond of CPU the container burned; the denominator counts
 only the span the kernel timed *itself* over. A JIT compiling on one thread while the
 kernel computes on the others is spending CPU that the hot loop's clock never sees,
@@ -357,25 +356,6 @@ heap from what its cgroup shows it — a JVM takes a quarter of it — so an unp
 budget would have let the *bench machine's* RAM decide how much memory a JVM decided
 it wanted, and this column would describe the host instead of the backend. It follows
 that two campaigns run under different budgets do not compare here.
-
-### Energy
-
-Microjoules burned by the CPU package around the run, from the kernel's RAPL counters,
-minimum over the measured samples — reported in joules.
-
-**Docker's own overhead is in this number.** RAPL counts a *socket*, not a cgroup: the
-counters are invisible from inside a container, so the harness reads them from the host
-around the `docker run`, and the span it brackets is the same one **Run min** measures.
-It is the energy twin of **Run min** and never of **Compute min**. There is no inner
-counterpart, and there cannot be one — the kernel has no per-cgroup joule — so there is
-nothing honest to subtract, and nothing is subtracted.
-
-Read it as a **ratio between two rows** of this table, exactly like a timing, and never
-as an absolute figure for what the algorithm costs.
-
-`n/a` down the whole column means this host exposed no readable counter — RAPL is
-x86-only, and root-only on most kernels since the PLATYPUS side-channel. The machine
-table above says which it was. It does not mean the backends burned no energy.
 
 ### Build min
 

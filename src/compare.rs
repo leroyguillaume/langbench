@@ -49,14 +49,11 @@ pub struct Row {
 /// Every unit a metric can arrive in — and a **closed set on the wire**: the site
 /// validates against it, and an unknown variant fails the parse rather than
 /// degrading to an unformatted number. A new one lands with the renderer that can
-/// spell it, never before. See the note beside `energy` in [`compare`].
+/// spell it, never before.
 pub enum Unit {
     Nanoseconds,
     Microseconds,
     Bytes,
-    /// Energy. On the wire since the site learned to spell it — see the note beside
-    /// `energy` in [`compare`], and the closed enum it is validated against.
-    Microjoules,
 }
 
 /// Which side of a metric the campaign is entitled to call better — smaller
@@ -236,21 +233,6 @@ pub fn compare_across(
                 left.run_peak_bytes,
                 right.run_peak_bytes,
             ),
-            // Energy. It was held back until the site could spell microjoules — a new
-            // unit on the wire ahead of the renderer that knows it would have failed
-            // the site's parse and taken the whole head-to-head down with it — and
-            // the site learned it in the same commit as this line.
-            //
-            // `null` wherever the host exposes no counter, which is most laptops and
-            // every virtualised runner: an absent number, not a zero. A backend that
-            // spent no measurable energy would be a backend that did not run.
-            smallest(
-                "energy",
-                "Energy (the whole container)",
-                Unit::Microjoules,
-                left.run_energy_uj,
-                right.run_energy_uj,
-            ),
             timing(
                 "build",
                 "Compile (the compiler's own clock)",
@@ -311,9 +293,9 @@ fn side(aggregate: &Aggregate, arch: &str) -> Side {
 /// A metric drawn from the minimum of N — the statistic this project reports for
 /// everything whose noise is one-sided, and the one the dispersion qualifies.
 ///
-/// Timings, joules and bytes of memory all qualify: a busy machine can only ever
-/// make a run slower, make it burn more, or make it hold more pages. None of them
-/// can come out below what the backend genuinely needed.
+/// Timings and bytes of memory both qualify: a busy machine can only ever make a
+/// run slower, or make it hold more pages. Neither can come out below what the
+/// backend genuinely needed.
 fn smallest(
     key: &str,
     label: &str,
@@ -494,7 +476,6 @@ mod tests {
             elapsed_ns: wall / 2,
             user_usec: wall / 1_000,
             system_usec: 0,
-            energy_uj: Some(wall / 100),
             peak_bytes: Some(12_582_912),
             source_bytes: Some(2_048),
             checksum: Some(checksum),

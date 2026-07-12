@@ -6,7 +6,6 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use langbench::cli::{Cli, Command};
-use langbench::energy::EnergyMeter;
 use langbench::engine::DockerEngine;
 use langbench::machine::Machine;
 use langbench::{discovery, output, runner, shutdown};
@@ -26,9 +25,7 @@ fn main() -> Result<()> {
     shutdown::install()?;
 
     match cli.command {
-        // The energy counters are probed once, here, and not around every one of a
-        // few hundred runs: whether this host has them is a property of the host.
-        Command::Run(args) => runner::execute(args, &DockerEngine::new(EnergyMeter::detect())),
+        Command::Run(args) => runner::execute(args, &DockerEngine::new()),
         Command::Csv(args) => output::csv(&args),
         Command::Md(args) => output::markdown(&args),
         Command::Validate(args) => discovery::validate(&args.paths).map(|_| ()),

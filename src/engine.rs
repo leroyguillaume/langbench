@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use tracing::debug;
 
-use crate::energy::EnergyMeter;
 use crate::sample::{ContainerRecord, parse_container_stdout};
 use crate::shutdown;
 
@@ -58,12 +57,6 @@ pub struct RunSpec {
 pub struct Execution {
     /// External wall-clock, measured around the child process.
     pub wall_ns: u64,
-    /// Microjoules burned by the CPU package while the container ran — Docker's
-    /// own overhead included, because RAPL is not namespaced and there is no
-    /// honest way to subtract it. The energy twin of [`Self::wall_ns`], and never
-    /// of `elapsed_ns`. `None` on a host with no readable counters.
-    /// See [`crate::energy`].
-    pub energy_uj: Option<u64>,
     pub record: ContainerRecord,
 }
 
@@ -76,18 +69,18 @@ pub trait ContainerEngine {
     fn run(&self, spec: &RunSpec) -> Result<Execution>;
 }
 
-/// The daemon, plus the host's energy counters.
-///
-/// The meter is discovered **once**, at construction: probing `/sys` around every
-/// one of a few hundred runs would be work the measurement pays for, and whether
-/// the counters exist is a property of the machine, not of the run.
-pub struct DockerEngine {
-    energy: EnergyMeter,
-}
+/// The daemon.
+pub struct DockerEngine;
 
 impl DockerEngine {
-    pub fn new(energy: EnergyMeter) -> Self {
-        Self { energy }
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DockerEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -138,11 +131,6 @@ impl ContainerEngine for DockerEngine {
         let args = run_args(spec, &name);
         debug!(image = %spec.image, %name, ?args, "docker run");
 
-        // Both counters open on the same envelope: the joules are bracketed by the
-        // same two instants as the wall-clock, so `energy_uj` and `wall_ns` always
-        // describe exactly the same span. Reading RAPL costs two small `read`s of
-        // a `/sys` file, on the outside of the span it measures.
-        let before = self.energy.read();
         let started = Instant::now();
         let mut child = Command::new("docker")
             .args(&args)
@@ -157,9 +145,6 @@ impl ContainerEngine for DockerEngine {
         let stderr = drain(child.stderr.take().expect("stderr is piped"));
 
         let (status, wall_ns) = wait_or_kill(child, &name, started, spec.timeout)?;
-        let energy_uj = self
-            .energy
-            .delta(before.as_ref(), self.energy.read().as_ref());
         let stdout = stdout.join().unwrap_or_default();
         let stderr = stderr.join().unwrap_or_default();
 
@@ -168,11 +153,7 @@ impl ContainerEngine for DockerEngine {
         }
         let record = parse_container_stdout(&stdout)
             .with_context(|| format!("reading the record printed by {}", spec.image))?;
-        Ok(Execution {
-            wall_ns,
-            energy_uj,
-            record,
-        })
+        Ok(Execution { wall_ns, record })
     }
 }
 
