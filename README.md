@@ -478,8 +478,9 @@ each campaign's ISA out of its own machine record, never out of a path.
 
 ## Continuous integration
 
-Four workflows. Three of them are one gate — every push to `main`, every pull
-request. The fourth measures, and it is the only one you have to ask for.
+Five workflows. Three of them are one gate — every push to `main`, every pull
+request. The other two you have to ask for: one measures, the other publishes the
+page.
 
 **[`quality`](.github/workflows/quality.yaml)** — `pre-commit run --all-files`:
 `cargo fmt`, `clippy`, `hadolint`, `actionlint`, `biome`, `tsc`, the generated
@@ -509,17 +510,24 @@ for, never source it links.
 **[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
 which measures the emulator). It commits every `samples/<arch>.ndjson` **and** its
-`reports/<arch>.md` back to `main`, then builds the site from those very samples
-and deploys it to GitHub Pages. Both files, never one without the other: the
+`reports/<arch>.md` back to `main`. Both files, never one without the other: the
 samples are the only artefact that cannot be recomputed, and committing a report
-without its evidence publishes a conclusion nobody can check.
+without its evidence publishes a conclusion nobody can check. Then it calls
+`pages` with the SHA of that commit, so a campaign still ends with a published
+page.
 
 **`workflow_dispatch` only** — it takes `grid_size`, `max_iter` and `rounds` as
 inputs. A campaign is a deliberate act, not a side effect of a push: it costs
 minutes of runner time and it rewrites the two files this repository publishes,
 which on every commit would mean churning them for reasons that have nothing to do
-with the backends being measured. Which also means a change to `site/` alone
-reaches the page only when a campaign is next dispatched.
+with the backends being measured.
+
+**[`pages`](.github/workflows/pages.yaml)** — builds the site from the campaigns
+committed at a given `ref` and deploys it to GitHub Pages. `bench` invokes it via
+`workflow_call`; on its own it is a `workflow_dispatch` away. It measures nothing —
+it is the third rendering, a pure function of `samples/` — which is exactly why it
+is a separate workflow: a change to `site/` alone reaches the page without spending
+an hour of runner time re-measuring backends that have not moved.
 
 **A number this workflow produces is indicative, not publishable.** A GitHub
 runner is shared, virtualised and frequency-scaled — the worst benchmark target
