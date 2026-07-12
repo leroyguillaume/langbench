@@ -20,15 +20,27 @@ name: pages
 # WebAssembly -- reached `main` and stopped there, waiting for somebody to dispatch a
 # campaign that had nothing to do with it.
 #
-# What is deliberately **not** in the path filter: `samples/` and `reports/`. They are
-# what `bench` commits, and `bench` calls this workflow itself the moment it has --
-# a push trigger on them would fire a second, identical deploy of the same commit,
-# racing the first through the concurrency group below.
+# That includes the campaigns themselves. A number worth publishing is measured on a
+# real machine and its `samples/<arch>.ndjson` is pushed by hand -- and until now that
+# push landed on `main` and stopped there too, while the page kept rendering the
+# campaign a shared, frequency-scaled runner had produced. The samples are the one
+# artefact that cannot be recomputed; a new one is the strongest reason there is to
+# rebuild the page.
+#
+# This does **not** double up with the `workflow_call` below. GitHub fires no workflow
+# on a push made with the default `GITHUB_TOKEN`, which is what `bench` commits with:
+# its campaigns reach `main` without waking this trigger, and `bench` calls the
+# workflow explicitly instead, at the SHA it just wrote. The path filter is therefore
+# the human's path in, and `workflow_call` the runner's -- never both for one commit.
 on:
   push:
     branches:
       - main
     paths:
+      # The campaigns, and the reports rendered from them. A hand-measured campaign
+      # pushed from a real bench machine is a new set of numbers on every chart.
+      - samples/**
+      - reports/**
       # The page itself.
       - site/**
       # The harness's arithmetic: `analysis.rs` and `compare.rs` are compiled to
