@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Aggregate } from "./analysis";
-import { findByKey, identityKey, label, toolchain } from "./identity";
+import { anchorId, findByKey, identityKey, label, toolchain } from "./identity";
 
 const aggregate = (
   language: string,
@@ -57,6 +57,24 @@ describe("naming an implementation", () => {
     expect(label({ language: "java", compiler: "javac", interpreter: "openjdk" })).toBe(
       "java · javac + openjdk",
     );
+  });
+});
+
+describe("the anchor a table row links to", () => {
+  it("is the triple, because clicking a row puts it in the address bar", () => {
+    expect(anchorId({ language: "java", compiler: "native-image", interpreter: null })).toBe(
+      "impl-java-native-image-none",
+    );
+    expect(anchorId({ language: "python", compiler: null, interpreter: "cpython" })).toBe(
+      "impl-python-none-cpython",
+    );
+  });
+
+  // Two rows that differ only by an absence must not land on the same card.
+  it("spells an absence rather than dropping it", () => {
+    const compiled = anchorId({ language: "python", compiler: "cython", interpreter: null });
+    const interpreted = anchorId({ language: "python", compiler: null, interpreter: "cython" });
+    expect(compiled).not.toBe(interpreted);
   });
 });
 

@@ -565,9 +565,33 @@ td.numeric {
   font-size: 0.85rem;
 }
 
-/* The shared column reference, rendered under the table. */
-.reference {
-  padding-top: 0;
+/* The shared column reference, slotted into a card between the table it explains and
+ * the implementations that follow it. */
+.reference .prose h2:first-child {
+  margin-top: 0;
+}
+
+/* An anchor under a sticky header is an anchor scrolled out of sight. Both of these
+ * are jumped to from elsewhere on the page: the reference from the table's intro,
+ * an implementation from its own row. */
+.impl,
+#columns {
+  scroll-margin-top: 5rem;
+}
+
+/* The Language cell: a link to what the row actually is. Underlined on hover only —
+ * fifteen underlined cells in a column would read as a wall of links, and the column
+ * is a value first. */
+.row-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--text-muted);
+}
+
+.row-link:hover,
+.row-link:focus-visible {
+  color: var(--series-1);
+  border-bottom-color: var(--series-1);
 }
 
 .machine {

@@ -22,7 +22,7 @@ import {
   ratio,
   seconds,
 } from "../format";
-import { ABSENT, type Triple } from "../identity";
+import { ABSENT, anchorId, label, type Triple } from "../identity";
 import { MODE_COLOR } from "../series";
 import type { Filters } from "../url";
 
@@ -239,7 +239,19 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
               (row.run_wall?.n ?? 0) >= 3 && (row.run_wall?.mad_pct ?? 0) > DISPERSION_CEILING;
             return (
               <tr key={`${row.backend_id}-${row.mode}`}>
-                <td className="text">{row.language}</td>
+                {/* To the card that says what this thing *is*. A row of fifteen
+                    numbers is not self-explanatory, and the implementation describes
+                    itself — including the caveats about what its numbers do not say.
+                    The report's Language cell links to the same place. */}
+                <td className="text">
+                  <a
+                    className="row-link"
+                    href={`#${anchorId(row)}`}
+                    title={`what ${label(row)} is, and what its author wanted you to know`}
+                  >
+                    {row.language}
+                  </a>
+                </td>
                 {/* `n/a` is the answer, not a missing one: a compiled backend has no
                     interpreter, and the manifest says so on purpose. */}
                 <td className="text muted-cell">{optional(row.compiler)}</td>

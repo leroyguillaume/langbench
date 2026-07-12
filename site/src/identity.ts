@@ -80,6 +80,21 @@ export function identityKey(identity: Identity): string {
   ].join("/");
 }
 
+/**
+ * The `id` of an implementation's card, and what a table row links to.
+ *
+ * Derived from the triple, like everything else a reader can see: clicking a row
+ * puts this in the address bar, and `#impl-java-native-image-none` says what it
+ * points at where `#mandelbrot-java-native-image` — the harness's slug — would have
+ * to be decoded. An absence is spelled `none` rather than dropped, so two rows that
+ * differ only by an absent half cannot land on the same anchor.
+ */
+export function anchorId(triple: Triple): string {
+  return ["impl", triple.language, triple.compiler ?? "none", triple.interpreter ?? "none"].join(
+    "-",
+  );
+}
+
 /** The triple of whatever the harness sent us, whatever else it carries. */
 export function tripleOf(row: Triple): Triple {
   return {

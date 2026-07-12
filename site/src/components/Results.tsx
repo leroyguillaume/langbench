@@ -5,18 +5,28 @@
 // the filters. A pair is not a table, and a reader who narrowed this table to one
 // language has not thereby declined to compare it with another.
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, dispersion, milliseconds, optional, ratio } from "../format";
-import { label, labelWithMode, toolchain } from "../identity";
+import { anchorId, label, labelWithMode, toolchain } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
 import { BarChart, type ChartRow } from "./BarChart";
 import { FilterBar } from "./FilterBar";
 import { filterRows, ResultsTable, type Sort, type SortKey, sortRows } from "./ResultsTable";
 
-export function Results() {
+interface ResultsProps {
+  /**
+   * The column reference, rendered from `docs/columns.md` by Astro and slotted into
+   * this island as HTML. It is prose, it is the same prose `langbench md`
+   * interpolates into the report, and it is built at build time — the browser gets
+   * no Markdown and no renderer for it.
+   */
+  columns?: ReactNode;
+}
+
+export function Results({ columns }: ResultsProps) {
   // The URL is read once, on mount, and written on every change: the address bar
   // describes what is on screen, and a link to it puts somebody else in front of
   // the same claim.
@@ -58,7 +68,15 @@ export function Results() {
     );
   }
 
-  return <Report loaded={loaded} campaigns={campaigns} state={state} setState={setState} />;
+  return (
+    <Report
+      loaded={loaded}
+      campaigns={campaigns}
+      state={state}
+      setState={setState}
+      columns={columns}
+    />
+  );
 }
 
 interface ReportProps {
@@ -66,9 +84,10 @@ interface ReportProps {
   campaigns: LoadedCampaign[];
   state: ResultsState;
   setState: (state: ResultsState) => void;
+  columns?: ReactNode;
 }
 
-function Report({ loaded, campaigns, state, setState }: ReportProps) {
+function Report({ loaded, campaigns, state, setState, columns }: ReportProps) {
   const { analysis } = loaded;
   const { campaign } = analysis;
 
@@ -282,6 +301,12 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
 
       <Failures failures={failures} total={analysis.failures.length} />
 
+      {/* What the columns mean, before what the rows are: a reader who has just met
+          this table needs `Startup` explained before they need to know which JVM ran
+          the Kotlin. Rendered from `docs/columns.md` by Astro, at build time, and
+          slotted in here — the browser never sees a Markdown renderer. */}
+      <section className="card reference">{columns}</section>
+
       <section className="card">
         <h2>The implementations</h2>
         <p>
@@ -296,7 +321,9 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
           {analysis.backends
             .filter((entry) => entry.algo === algo?.algo)
             .map((entry) => (
-              <article className="impl" key={entry.id}>
+              // The anchor a table row links to. Its `id` is the triple, like every
+              // other thing on this site a reader can point at.
+              <article className="impl" id={anchorId(entry)} key={entry.id}>
                 <header className="impl-head">
                   <h3>{entry.language}</h3>
                   <span className="impl-chain">{toolchain(entry)}</span>
