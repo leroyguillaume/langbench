@@ -32,7 +32,7 @@ export function Results({ columns }: ResultsProps) {
   // describes what is on screen, and a link to it puts somebody else in front of
   // the same claim.
   const [state, setState] = useState<ResultsState>(readResults);
-  const { campaigns, error } = useCampaigns(state.includeWarmup);
+  const { campaigns, error, pending } = useCampaigns(state.includeWarmup);
 
   useEffect(() => writeResults(state), [state]);
 
@@ -46,6 +46,10 @@ export function Results({ columns }: ResultsProps) {
       </main>
     );
   }
+  // Only when there is nothing to show at all. A *re*-aggregation keeps the previous
+  // numbers on screen and dims them: tearing the page down and putting it back
+  // collapses the document, and the browser takes the reader's scroll position with
+  // it.
   if (campaigns === null) {
     return <p className="status">Reading the campaigns…</p>;
   }
@@ -76,6 +80,7 @@ export function Results({ columns }: ResultsProps) {
       state={state}
       setState={setState}
       columns={columns}
+      pending={pending}
     />
   );
 }
@@ -86,9 +91,11 @@ interface ReportProps {
   state: ResultsState;
   setState: (state: ResultsState) => void;
   columns?: ReactNode;
+  /** The harness is re-aggregating; these numbers are the previous ones. */
+  pending: boolean;
 }
 
-function Report({ loaded, campaigns, state, setState, columns }: ReportProps) {
+function Report({ loaded, campaigns, state, setState, columns, pending }: ReportProps) {
   const { analysis } = loaded;
   const { campaign } = analysis;
 
@@ -180,7 +187,7 @@ function Report({ loaded, campaigns, state, setState, columns }: ReportProps) {
   };
 
   return (
-    <main className="page">
+    <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
         <h1>langbench</h1>
         <p>

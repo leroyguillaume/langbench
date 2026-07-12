@@ -1014,3 +1014,18 @@ td.muted-cell {
   background: var(--warning-bg);
   color: var(--warning-text);
 }
+
+/* The harness is re-aggregating the campaign. The numbers on screen are the previous
+ * ones for a frame or three, and they are dimmed rather than torn out: replacing the
+ * page with a spinner collapses the document, and the browser takes the reader's
+ * scroll position down with it. */
+.recomputing {
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recomputing {
+    transition: none;
+  }
+}

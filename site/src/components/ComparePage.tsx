@@ -27,7 +27,7 @@ import { Warmup, WarmupBanner } from "./Warmup";
 
 export function ComparePage() {
   const [state, setState] = useState<CompareState>(readCompare);
-  const { campaigns, error } = useCampaigns(state.includeWarmup);
+  const { campaigns, error, pending } = useCampaigns(state.includeWarmup);
 
   useEffect(() => writeCompare(state), [state]);
 
@@ -41,6 +41,10 @@ export function ComparePage() {
       </main>
     );
   }
+  // Only when there is nothing to show at all. A *re*-aggregation keeps the previous
+  // numbers on screen and dims them: tearing the page down and putting it back
+  // collapses the document, and the browser takes the reader's scroll position with
+  // it.
   if (campaigns === null) {
     return <p className="status">Reading the campaigns…</p>;
   }
@@ -56,7 +60,15 @@ export function ComparePage() {
     );
   }
 
-  return <Head2Head loaded={loaded} campaigns={campaigns} state={state} setState={setState} />;
+  return (
+    <Head2Head
+      loaded={loaded}
+      campaigns={campaigns}
+      state={state}
+      setState={setState}
+      pending={pending}
+    />
+  );
 }
 
 interface Props {
@@ -64,9 +76,11 @@ interface Props {
   campaigns: LoadedCampaign[];
   state: CompareState;
   setState: (state: CompareState) => void;
+  /** The harness is re-aggregating; these numbers are the previous ones. */
+  pending: boolean;
 }
 
-function Head2Head({ loaded, campaigns, state, setState }: Props) {
+function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const { analysis, ndjson } = loaded;
   const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
   const aggregates = useMemo(
@@ -134,7 +148,7 @@ function Head2Head({ loaded, campaigns, state, setState }: Props) {
   const run = comparison.value?.metrics.find((metric) => metric.key === "run") ?? null;
 
   return (
-    <main className="page">
+    <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
         <h1>Head to head</h1>
         <p>
