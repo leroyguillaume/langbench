@@ -93,6 +93,41 @@ pub fn compare(
     into_js(&comparison, "the comparison")
 }
 
+/// The same, with each row drawn from a campaign of its own — which is how a reader
+/// puts x86-64 next to AArch64.
+///
+/// The comparison comes back with `cross_isa` set, and the caller is expected to say
+/// so, loudly: the timings are computed exactly as they are within one campaign, and
+/// **they mean nothing across two**. Two machines, two clock speeds, two instruction
+/// sets, and a ratio of their milliseconds that describes neither. It is computed
+/// anyway because refusing would only send somebody off to divide the two numbers by
+/// hand, with nothing on screen to tell them not to.
+///
+/// The checksums are the exception, and the reason this is worth having at all: in
+/// `strict` mode they are obliged to be bit-identical across every ISA, and a
+/// divergence here is a genuine bug rather than a curiosity.
+/// See `METHODOLOGY.md#the-isa-rule`.
+#[wasm_bindgen]
+pub fn compare_across(
+    left_ndjson: &str,
+    right_ndjson: &str,
+    options: wasm_bindgen::JsValue,
+    selection: wasm_bindgen::JsValue,
+) -> Result<wasm_bindgen::JsValue, JsError> {
+    let options = web_options(options)?;
+    let selection: Selection = serde_wasm_bindgen::from_value(selection)
+        .map_err(|error| JsError::new(&format!("invalid selection: {error}")))?;
+
+    // One conversion, used twice: both campaigns are aggregated the same way, or the
+    // pair would be comparing two different definitions of a sample.
+    let options: analysis::Options = options.into();
+    let left = analysis::analyze(&recording(left_ndjson)?, options);
+    let right = analysis::analyze(&recording(right_ndjson)?, options);
+    let comparison = compare::compare_across(&left, &right, &selection)
+        .map_err(|error| JsError::new(&format!("{error:#}")))?;
+    into_js(&comparison, "the comparison")
+}
+
 /// The campaign, parsed by `serde_json` — never by `JSON.parse`. See the header.
 fn recording(ndjson: &str) -> Result<sample::Recording, JsError> {
     sample::parse(ndjson).map_err(|error| JsError::new(&format!("{error:#}")))

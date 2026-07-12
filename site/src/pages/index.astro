@@ -1,0 +1,34 @@
+---
+// The results of one campaign: the tiles, the charts, the table, and what the
+// campaign lost. An island, because there is nothing to render until a browser has
+// fetched a campaign and the WebAssembly has aggregated it.
+//
+// The column reference is *not* an island, and not a second explanation either: it
+// is `docs/columns.md`, the same file `langbench md` interpolates into the report. A
+// table of fifteen columns is unreadable without it if you have never opened a
+// benchmark before — and "why the minimum and not the average" deserves to be
+// answered once, in one place, rather than twice in two voices.
+//
+// It is *slotted into* the island rather than placed after it, because it belongs
+// between the table it explains and the implementations that come next. Astro
+// renders the Markdown at build time and hands the island the resulting HTML; no
+// Markdown renderer ever reaches the browser.
+
+import { Results } from "../components/Results";
+import { Content as Columns } from "../generated/columns.md";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout
+  title="langbench — compiler and runtime backends, measured"
+  description="Given the same source, how do different compiler and runtime backends compare? Raw samples, aggregated by the harness itself."
+>
+  <Results client:only="react">
+    {/* The prose lives *inside* a `.page`, never as one: `.page` is a flex column
+        with a gap sized for sections, and a Markdown document whose every paragraph
+        is a direct child of it comes out with a section's worth of air per line. */}
+    <div slot="columns" class="prose" id="columns">
+      <Columns />
+    </div>
+  </Results>
+</Layout>

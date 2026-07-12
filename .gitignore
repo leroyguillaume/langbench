@@ -2,3 +2,7 @@
 *.local.md
 /samples.local/*.ndjson
 /target
+
+# The Node project is `site/`. A `node_modules/` at the root is always an accident:
+# a tool run from the wrong directory. Ignored so it cannot become a commit.
+/node_modules

@@ -1,0 +1,17 @@
+---
+// The head-to-head, on its own page.
+//
+// It was a card at the bottom of the results; it is the sharpest claim this site
+// makes, and it now gets the room to make it — two languages, each with the
+// toolchain that ran it, and the verdict the campaign can actually defend.
+
+import { ComparePage } from "../components/ComparePage";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout
+  title="Head to head — langbench"
+  description="Two languages of one campaign, side by side, and whether the gap between them is a difference the campaign can defend."
+>
+  <ComparePage client:only="react" />
+</Layout>

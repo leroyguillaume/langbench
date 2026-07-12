@@ -420,11 +420,26 @@ langbench md --template mine.liquid         # renders into report.md
 
 ## The website
 
-The third rendering. `site/` is a static page — sortable table, charts, a
-head-to-head between any two backends, filters that live in the URL — published to
-GitHub Pages by [`.github/workflows/pages.yaml`](.github/workflows/pages.yaml).
+The third rendering. `site/` is an [Astro][astro] site — three prerendered pages,
+published to GitHub Pages by
+[`.github/workflows/pages.yaml`](.github/workflows/pages.yaml):
 
-It is a rendering like the other two, which means two things it would have been
+| Page | What it is |
+| --- | --- |
+| `/` | The campaign: tiles, charts, and the table `report.md` prints — sortable, and filtered by any field of the triple |
+| `/compare/` | Two languages head to head, and whether the gap between them is a difference |
+| `/methodology/` | [`METHODOLOGY.md`](METHODOLOGY.md), rendered at build time. No JavaScript: it is prose |
+
+Static output, because the host is a file server: every route is a real `.html`,
+so a deep link, a refresh and a shared URL all work without the `404.html`
+fallback a client-side router needs on GitHub Pages. Everything that reads a
+campaign is a React island, and Astro's `ClientRouter` swaps pages without
+reloading the document — so the WebAssembly instance and the parsed campaigns
+survive a navigation, and the 500 kB of samples are fetched **once**.
+
+[astro]: https://astro.build
+
+It is a rendering like the other two, which means three things it would have been
 much easier not to do:
 
 **The site computes no statistic of its own.** Min-of-N, the buckets, the
@@ -435,16 +450,27 @@ what this project measures, and the two would drift the first time one of them
 was "fixed". The site sorts, formats and draws; it does not do arithmetic on the
 samples.
 
-**A gap smaller than the dispersion is not a difference.** The head-to-head panel
-puts two rows side by side and answers the question the table leaves open: *is
-this gap real?* A 3% gap between two rows that each wobble by 9% is a **tie** — not
-equal, *indistinguishable*, which is a statement about the campaign and not about
-the backends. That verdict is `src/compare.rs`, in the harness, for the same reason
+**A gap smaller than the dispersion is not a difference.** `/compare/` puts two
+rows side by side and answers the question the table leaves open: *is this gap
+real?* A 3% gap between two rows that each wobble by 9% is a **tie** — not equal,
+*indistinguishable*, which is a statement about the campaign and not about the
+backends. That verdict is `src/compare.rs`, in the harness, for the same reason
 min-of-N is: what counts as a difference is a definition of what this project
 measures, and it has one home
 ([`METHODOLOGY.md`](METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference)).
-The pair lives in the URL — `?a=c-gcc:strict&b=rust-llvm:fast` — because a
+The pair lives in the URL — `?a=c/gcc/-/strict&b=python/-/cpython/fast` — because a
 comparison nobody can link to is a comparison nobody can check.
+
+**A row is named by its triple, never by a slug.** You pick a *language* first, and
+then the toolchain that ran it, because that is the question a reader arrives with.
+The harness carries a `backend` slug on the wire — its Markdown template needs a
+string to hang an anchor off — and the site never shows it, never sorts on it and
+never puts it in a URL: `java-native-image` reads as "java, native" and is in fact
+java, compiled by `native-image`, with no interpreter at all. Three fields that say
+it outright beat one name you have to decode. An absence is a published fact, so
+`n/a` is rendered rather than blanked — and it is selectable as a filter, because
+"the implementations that ship machine code and no runtime" is a question with an
+answer.
 
 **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
 integer and a JavaScript number is a double: `JSON.parse` rounds every integer
@@ -457,9 +483,11 @@ it never adds them.
 ([`METHODOLOGY.md#the-isa-rule`](METHODOLOGY.md#the-isa-rule)): a millisecond on
 x86-64 and a millisecond on aarch64 are not the same claim. So the site loads
 every campaign and shows **one at a time**, behind an ISA selector — comparing
-backends *within* an architecture, which is what a ratio is for. The architecture
-it keys on is the one the machine recorded in the campaign header, never the one
-in the filename: a filename is a label somebody typed.
+backends *within* an architecture, which is what a ratio is for. The ISA travels
+with the link to `/compare/`, so a head-to-head never quietly changes architecture
+under the reader. The architecture it keys on is the one the machine recorded in
+the campaign header, never the one in the filename: a filename is a label somebody
+typed.
 
 The data it publishes is each campaign's samples, byte for byte — no export
 format, no intermediate file. They live in [`samples/`](samples/), one per ISA:
@@ -564,11 +592,20 @@ which on every commit would mean churning them for reasons that have nothing to 
 with the backends being measured.
 
 **[`pages`](.github/workflows/pages.yaml)** — builds the site from the campaigns
-committed at a given `ref` and deploys it to GitHub Pages. `bench` invokes it via
-`workflow_call`; on its own it is a `workflow_dispatch` away. It measures nothing —
-it is the third rendering, a pure function of `samples/` — which is exactly why it
-is a separate workflow: a change to `site/` alone reaches the page without spending
-an hour of runner time re-measuring backends that have not moved.
+committed at a given `ref` and deploys it to GitHub Pages. It measures nothing — it
+is the third rendering, a pure function of `samples/` — which is exactly why it is a
+separate workflow: a change to `site/` alone reaches the page without spending an
+hour of runner time re-measuring backends that have not moved.
+
+It fires three ways. **On a push to `main`** that touches anything the page is made
+of: `site/`, `src/` (which *is* the site's arithmetic — `analysis.rs` and
+`compare.rs` are compiled to WebAssembly and called from the browser),
+`METHODOLOGY.md` and `docs/columns.md` (rendered verbatim), or the workflow itself.
+**Via `workflow_call`**, from `bench`, once a campaign's samples are committed —
+which is why `samples/` and `reports/` are deliberately *not* in that path filter:
+`bench` publishes them and then calls this workflow itself, and a push trigger on
+them would race a second, identical deploy of the same commit. And **on
+`workflow_dispatch`**, to republish any `ref` by hand.
 
 **A number this workflow produces is indicative, not publishable.** A GitHub
 runner is shared, virtualised and frequency-scaled — the worst benchmark target

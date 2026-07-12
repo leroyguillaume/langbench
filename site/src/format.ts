@@ -50,6 +50,66 @@ export function delta(value: string | null): string {
   return value === "0" || value.startsWith("-") ? value : `+${value}`;
 }
 
+/**
+ * A size, scaled to the unit a human would have chosen: `812 B`, `70.8 KiB`, `3.6 MiB`.
+ *
+ * For the head-to-head, and only for it. The wire says `bytes` for a binary and for a
+ * container's peak memory alike — they are the same unit and three orders of
+ * magnitude apart — and a pair of rows is two numbers side by side, where scaling
+ * each to fit is a kindness. A *column* is not: a column where one row reads
+ * `900 KiB` and the next `3.6 MiB` cannot be scanned, which is why the table pins
+ * Memory to MiB and Binary to KiB and neither of them uses this.
+ */
+export function size(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return NOT_AVAILABLE;
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const kib = value / 1024;
+  return kib < 1024 ? `${kib.toFixed(1)} KiB` : `${(kib / 1024).toFixed(1)} MiB`;
+}
+
+/**
+ * A whole container's memory, which is megabytes and not kilobytes: a JVM's peak in
+ * KiB is a six-digit number nobody reads at a glance. The same spelling as
+ * `report.md`'s Memory column.
+ */
+export function mebibytes(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return NOT_AVAILABLE;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+/**
+ * Energy, in joules. `n/a` wherever the host exposes no counter — which is most
+ * laptops and every virtualised runner, and is an absence rather than a zero.
+ */
+export function joules(microjoules: number | null | undefined): string {
+  if (microjoules === null || microjoules === undefined) {
+    return NOT_AVAILABLE;
+  }
+  return `${(microjoules / 1e6).toFixed(1)} J`;
+}
+
+/**
+ * Cores kept busy, against the cores the kernel was given: `7.8 / 8`.
+ *
+ * The denominator is what makes the number readable — `7.8` alone says nothing until
+ * you know whether eight threads were on offer or two. The harness measures both; the
+ * site spells the pair. And the numerator is the **median**, the one statistic on the
+ * row that is not a minimum: contention pushes a spinning thread's CPU clock and the
+ * compute clock in both directions, so there is no one-sided noise to argue from.
+ */
+export function cores(summary: Summary | null, cpu: number): string {
+  if (summary === null) {
+    return NOT_AVAILABLE;
+  }
+  return `${(summary.median / 1e3).toFixed(1)} / ${cpu}`;
+}
+
 /** An absent half of the triple is a fact about the backend, so it is rendered. */
 export function optional(value: string | null): string {
   return value ?? NOT_AVAILABLE;

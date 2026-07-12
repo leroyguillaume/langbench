@@ -74,3 +74,35 @@ for (const campaign of campaigns) {
 // (its ISA, its host, its date) lives in the campaign itself.
 writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(campaigns, null, 2)}\n`);
 console.log(`published ${campaigns.length} campaign(s) from ${chosen}: ${campaigns.join(", ")}`);
+
+// METHODOLOGY.md, copied rather than rewritten.
+//
+// It is the document every rule in this repository links to when it looks like
+// excessive caution, and the site publishes it for the same reason the README
+// leads with it: a number nobody can audit is a number nobody should trust. It is
+// copied *in*, at build time, because Astro only renders Markdown it can see under
+// `src/` — and a second, hand-maintained copy of it on the site would be a
+// methodology that drifts from the one the harness is written against, which is
+// the failure `bench.schema.json` is generated to avoid.
+// The same goes for `docs/columns.md`: what every column of the results table means,
+// and how to read a row. `langbench md` interpolates that file into the report and
+// the site renders it under the same table — one explanation of why we report the
+// minimum and not the average, written once, for a reader who has never opened a
+// benchmark before, and improved in one place.
+const generated = resolve(here, "..", "src", "generated");
+mkdirSync(generated, { recursive: true });
+
+const shared = [
+  { from: resolve(root, "METHODOLOGY.md"), to: "methodology.md" },
+  { from: resolve(root, "docs", "columns.md"), to: "columns.md" },
+];
+
+for (const { from, to } of shared) {
+  try {
+    copyFileSync(from, join(generated, to));
+  } catch (error) {
+    console.error(`cannot read ${from}: ${error.message}`);
+    process.exit(1);
+  }
+  console.log(`published ${from}`);
+}
