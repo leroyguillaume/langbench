@@ -75,10 +75,21 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
   const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
   const aggregates = useMemo(() => algo?.aggregates ?? [], [algo]);
 
-  const visible = useMemo(
-    () => sortRows(filterRows(aggregates, state.filters), state.sort),
-    [aggregates, state.filters, state.sort],
+  // What the filters left standing, in the order the harness ranked it: fastest
+  // first, on the statistic the report headlines. This is what the charts draw.
+  const filtered = useMemo(
+    () => filterRows(aggregates, state.filters),
+    [aggregates, state.filters],
   );
+
+  // And this is what the table shows. The sort belongs to the *table* — it is the
+  // reader asking to read the same rows in another order, not asking a different
+  // question. A chart that reordered its bars every time a column header was
+  // clicked would be redrawing four figures to answer a question nobody asked of
+  // them, and a `Binary` sort would rank the run chart by binary size, which is a
+  // chart that says something it does not mean. The filters do scope the charts:
+  // those change *which* rows are on screen, and that is a different claim.
+  const visible = useMemo(() => sortRows(filtered, state.sort), [filtered, state.sort]);
 
   // The failures narrow with everything else. A reader who filtered down to
   // `python` and sees no failures has been told something true only if the filter
@@ -108,7 +119,7 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
   // standing keep their own colour — the series is the mode, not the position.
   const runRows: ChartRow[] = useMemo(() => {
     const grouped = new Map<string, ChartRow>();
-    for (const row of visible) {
+    for (const row of filtered) {
       const key = row.backend_id;
       const existing = grouped.get(key) ?? {
         key,
@@ -122,7 +133,7 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
       grouped.set(key, existing);
     }
     return [...grouped.values()];
-  }, [visible, state.filters.modes]);
+  }, [filtered, state.filters.modes]);
 
   const chartRow = (row: Aggregate, values: (number | null)[]): ChartRow => ({
     key: `${row.backend_id}-${row.mode}`,
@@ -130,15 +141,15 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
     values,
   });
 
-  const wallRows: ChartRow[] = visible.map((row) =>
+  const wallRows: ChartRow[] = filtered.map((row) =>
     chartRow(row, [row.run_elapsed?.min ?? null, row.run_startup?.min ?? null]),
   );
 
-  const buildRows: ChartRow[] = visible
+  const buildRows: ChartRow[] = filtered
     .filter((row) => row.build_elapsed !== null)
     .map((row) => chartRow(row, [row.build_elapsed?.min ?? null]));
 
-  const sizeRows: ChartRow[] = visible
+  const sizeRows: ChartRow[] = filtered
     .filter((row) => row.binary_bytes !== null)
     .map((row) => chartRow(row, [row.binary_bytes]));
 
@@ -182,7 +193,9 @@ function Report({ loaded, campaigns, state, setState }: ReportProps) {
         </section>
       )}
 
-      <Tiles rows={visible} analysis={analysis} />
+      {/* The tiles are a fastest, a spread and a worst — none of which has an
+          order. They read the filtered rows, so a sort cannot change a headline. */}
+      <Tiles rows={filtered} analysis={analysis} />
 
       <FilterBar
         scope={scope}
