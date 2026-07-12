@@ -8,6 +8,8 @@ language: java
 compiler: native-image
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.java
 # One floating-point semantics. The JLS binds the code generator whether it runs
 # before the program or during it, so Graal-ahead-of-time may no more contract a
 # multiply-add than C2-on-the-fly. Its checksum is HotSpot's, and it is C's.

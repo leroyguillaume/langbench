@@ -257,6 +257,23 @@ pub struct RunArgs {
     #[arg(long, env = "TMPFS_SIZE_MB", default_value_t = 2048)]
     pub tmpfs_size_mb: u64,
 
+    /// Memory budget of every measured container, in MiB. Swap is off.
+    ///
+    /// Part of the measurement, not a safety rail: a garbage-collected runtime
+    /// sizes its heap from what its cgroup shows it — a JVM takes a quarter of it
+    /// by default — so an unpinned budget would let the *host's* RAM decide how
+    /// much memory a backend decides to want, and the peak we publish would
+    /// describe the bench machine. Pinned, and identical for every backend, it is
+    /// a property of the backend again.
+    ///
+    /// It has to clear the hungriest *compiler* in the tree, not the kernels:
+    /// GraalVM's `native-image` is what sets this floor, and the build-phase
+    /// tmpfs is charged to the same cgroup. Changing it changes the numbers —
+    /// campaigns run under different budgets are not comparable.
+    /// See `METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget`.
+    #[arg(long, env = "MEMORY_LIMIT_MB", default_value_t = 8192)]
+    pub memory_limit_mb: u64,
+
     /// Wall-clock ceiling for a single container invocation, in seconds.
     ///
     /// A container that exceeds it is killed and the campaign fails. Without

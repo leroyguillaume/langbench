@@ -5,6 +5,8 @@ language: js
 # that cost lands in the run column and there is no compiler to declare here.
 compiler: ~
 interpreter: nodejs
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mjs
 # One floating-point semantics, and no flag to change it: ECMAScript specifies the
 # result of every arithmetic operator, so no engine may contract a multiply-add or
 # reassociate. An `fma` image would be the same run under another tag.

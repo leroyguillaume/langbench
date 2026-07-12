@@ -53,6 +53,14 @@ struct Manifest {
     /// A backend can have both: Cython compiles, CPython then executes.
     #[serde(default)]
     interpreter: Option<String>,
+    /// The kernel, relative to this manifest's directory. One file, because the
+    /// benchmark rule is one file — and its size in bytes is a published metric.
+    ///
+    /// Declared rather than guessed: the harness would otherwise have to decide
+    /// which of the files beside the manifest is *the source*, and the only way to
+    /// do that is to pattern-match a name — which is parsing the path, under
+    /// another name. See `METHODOLOGY.md#repository-layout`.
+    source: String,
     /// The FP modes this backend distinguishes: `all`, or an explicit list.
     modes: Modes,
     /// The architectures this backend can be built on: `all`, or an explicit
@@ -137,6 +145,12 @@ pub struct Implementation {
     /// The directory the manifest sits in. Where the Dockerfile is, and nothing
     /// more: it identifies no part of this implementation.
     pub context: PathBuf,
+    /// The kernel's source file, as the manifest declared it.
+    pub source: PathBuf,
+    /// Its size. Read once, at discovery, and copied onto every sample — like the
+    /// rest of the manifest, so a sample describes itself without a second file to
+    /// join against.
+    pub source_bytes: u64,
     /// The FP modes this implementation declares are meaningful for it. A
     /// compiled backend distinguishes all three; an interpreter has one FP
     /// semantics, so the other two would be the same run under another name.
@@ -222,6 +236,28 @@ impl Implementation {
             );
         }
 
+        // The manifest names one file, and it has to *be* a file. A `source:` that
+        // resolves to nothing publishes a byte count for a kernel nobody read; an
+        // empty one resolves to the directory itself, which `fs::metadata` is
+        // perfectly happy to size — and a report would then quote the size of a
+        // directory entry as the length of a Mandelbrot kernel. Both are caught
+        // here, at discovery, and not an hour into a campaign.
+        let source = dir.join(manifest.source.trim());
+        let source_bytes = fs::metadata(&source)
+            .ok()
+            .filter(std::fs::Metadata::is_file)
+            .map(|metadata| metadata.len())
+            .with_context(|| {
+                format!(
+                    "{} declares `source: {}`, which is not a file in {}. It names the one \
+                     kernel this implementation compiles, and its size is a published metric — \
+                     so it has to exist and it has to be a file.",
+                    path.display(),
+                    manifest.source,
+                    dir.display(),
+                )
+            })?;
+
         Ok(Self {
             algo: manifest.algo,
             language: manifest.language,
@@ -230,6 +266,8 @@ impl Implementation {
             description: manifest.description,
             comments: manifest.comments,
             context: dir.to_path_buf(),
+            source,
+            source_bytes,
             fp_modes,
             arches,
         })
@@ -438,16 +476,36 @@ mod tests {
     const C_GCC: &str = "algo: mandelbrot\n\
                          language: c\n\
                          compiler: gcc\n\
+                         source: kernel.txt\n\
                          modes: all\n\
                          description: The reference C kernel.\n";
 
-    /// A manifest at an arbitrary depth, with the Dockerfile beside it.
+    /// The kernel every fixture ships, and its size on disk.
+    const SOURCE: &str = "kernel.txt";
+    const SOURCE_TEXT: &str = "// the fixture's kernel\n";
+    const SOURCE_BYTES: u64 = 24;
+
+    /// A manifest at an arbitrary depth, with the Dockerfile and the kernel beside
+    /// it.
+    ///
+    /// A fixture that does not spell `source:` gets one, pointing at the kernel
+    /// written here. The tests below are about discovery's *other* rules — modes,
+    /// architectures, colliding identities — and repeating the same line in every
+    /// one of them would bury what each is actually asserting. A test that means to
+    /// say something about the source declares its own.
     fn tree(spec: &[(&str, &str)]) -> TempDir {
         let root = TempDir::new().unwrap();
         for (path, manifest) in spec {
             let dir = root.path().join(path);
             create_dir_all(&dir).unwrap();
             File::create(dir.join("Dockerfile")).unwrap();
+            write(dir.join(SOURCE), SOURCE_TEXT).unwrap();
+
+            let manifest = if manifest.contains("source:") {
+                (*manifest).to_owned()
+            } else {
+                format!("{manifest}source: {SOURCE}\n")
+            };
             write(dir.join(MANIFEST), manifest).unwrap();
         }
         root
@@ -455,6 +513,44 @@ mod tests {
 
     fn one(manifest: &str) -> Result<Vec<Implementation>> {
         discover(tree(&[("anywhere", manifest)]).path(), &[])
+    }
+
+    #[test]
+    fn the_source_is_read_off_disk_and_its_size_recorded() {
+        let found = one(C_GCC).unwrap();
+        assert_eq!(found[0].source.file_name().unwrap(), SOURCE);
+        assert_eq!(found[0].source_bytes, SOURCE_BYTES);
+    }
+
+    /// A `source:` that resolves to nothing would publish a byte count of zero for
+    /// a kernel that plainly exists — and a zero is the one answer a size column
+    /// must never invent. Loud, at discovery, and not an hour into the campaign.
+    #[test]
+    fn a_source_that_is_not_there_fails_the_campaign() {
+        let error = one("algo: mandelbrot\n\
+             language: c\n\
+             compiler: gcc\n\
+             source: typo.c\n\
+             modes: all\n\
+             description: The reference C kernel.\n")
+        .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("typo.c"), "{error}");
+    }
+
+    /// The manifest must say which file is the kernel. The alternative is for the
+    /// harness to guess from the names beside it — which is parsing the path, under
+    /// another name, and the path is not metadata.
+    #[test]
+    fn a_manifest_that_declares_no_source_fails_the_campaign() {
+        let error = one("algo: mandelbrot\n\
+             language: c\n\
+             compiler: gcc\n\
+             source:\n\
+             modes: all\n\
+             description: The reference C kernel.\n")
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("source"));
     }
 
     /// The path locates the manifest and says nothing else. Every fact about the

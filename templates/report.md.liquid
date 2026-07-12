@@ -77,10 +77,10 @@ order as a leaderboard: the sort mixes the FP modes together, and two rows in
 different modes are different experiments (see **Mode**); and a gap smaller than
 **Dispersion** is not a gap at all, it is noise that happened to land in that order.
 
-| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Build min | Build disp. | Binary | `.text` | Δ strict |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Energy | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {% for row in algo.rows -%}
-| [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
+| [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.cores }} | {{ row.memory }} | {{ row.energy }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.source }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
 {% if failures.size > 0 %}
@@ -272,14 +272,77 @@ whose scheduler busy-waits (spinning in a loop while waiting instead of sleeping
 burns CPU without finishing a millisecond sooner — and the gap between these two
 columns is the only place you will ever see it.
 
-Rule of thumb: `CPU time / (Compute min × threads)` gives you a parallel
-efficiency. Close to 1 means the threads were genuinely working; well below means
-they were waiting on each other.
+You do not have to divide this by anything: the **Cores** column beside it already
+has.
 
-Use **Compute min** here, never **Run min**. The threads do not exist during
-container creation and interpreter boot, but the stopwatch behind **Run min** is
-already running — divide by it and a perfectly parallel backend reports an
-efficiency well under 1, for no reason other than that Docker took its time.
+### Cores
+
+How many cores the row actually kept busy — `CPU time / Compute min` — read against
+the {{ campaign.cpu }} threads the harness handed every kernel of this campaign.
+
+This is the column that separates *this backend is slow* from *this backend cannot
+use the machine*. Two rows with the same **Run min**, one at `7.8 / {{ campaign.cpu }}`
+and one at `1.0 / {{ campaign.cpu }}`, are not two slow backends: one of them is a
+global interpreter lock, and no amount of compiler work will ever move it. Wall-clock
+alone hides that completely.
+
+It is the one number in this table that is a **median** rather than a minimum. Every
+timing here is a min-of-N because a busy machine can only ever make a run *slower*,
+so the smallest sample is the best estimate of what the machine can do. Parallelism
+is not one-sided like that — contention inflates the CPU clock (threads spinning) and
+the compute clock alike — so no extreme recommends itself over the middle.
+
+It can exceed {{ campaign.cpu }}, and that is a result rather than an overflow. The
+numerator counts every microsecond of CPU the container burned; the denominator counts
+only the span the kernel timed *itself* over. A JIT compiling on one thread while the
+kernel computes on the others is spending CPU that the hot loop's clock never sees,
+and a reader comparing a JVM to a static binary deserves to see it rather than have it
+normalised away.
+
+Note the denominator is **Compute min**, never **Run min**. The threads do not exist
+during container creation and interpreter boot, but the stopwatch behind **Run min** is
+already running — divide by that and a perfectly parallel backend reports far fewer
+cores than it used, for no reason other than that Docker took its time.
+
+### Memory
+
+The peak memory of the **whole container**, from the cgroup's own high-water mark
+(`memory.peak`) — minimum over the measured samples.
+
+Not the resident set of one process, and deliberately not: it is the process tree, the
+page cache it faulted in, and the tmpfs a build wrote into. The question this column
+answers is what the backend needed in order to *run*, not what one of its processes
+happened to be holding at the end.
+
+The minimum is the right statistic here, and for once the argument is exact rather
+than statistical: page cache and a lazy garbage collector can only ever push the
+high-water mark *up*, never below what the backend genuinely had to allocate.
+
+Every measured container ran under the **same pinned memory budget**, and that pin is
+what makes the column comparable at all. A garbage-collected runtime sizes its default
+heap from what its cgroup shows it — a JVM takes a quarter of it — so an unpinned
+budget would have let the *bench machine's* RAM decide how much memory a JVM decided
+it wanted, and this column would describe the host instead of the backend. It follows
+that two campaigns run under different budgets do not compare here.
+
+### Energy
+
+Microjoules burned by the CPU package around the run, from the kernel's RAPL counters,
+minimum over the measured samples — reported in joules.
+
+**Docker's own overhead is in this number.** RAPL counts a *socket*, not a cgroup: the
+counters are invisible from inside a container, so the harness reads them from the host
+around the `docker run`, and the span it brackets is the same one **Run min** measures.
+It is the energy twin of **Run min** and never of **Compute min**. There is no inner
+counterpart, and there cannot be one — the kernel has no per-cgroup joule — so there is
+nothing honest to subtract, and nothing is subtracted.
+
+Read it as a **ratio between two rows** of this table, exactly like a timing, and never
+as an absolute figure for what the algorithm costs.
+
+`n/a` down the whole column means this host exposed no readable counter — RAPL is
+x86-only, and root-only on most kernels since the PLATYPUS side-channel. The machine
+table above says which it was. It does not mean the backends burned no energy.
 
 ### Build min
 
@@ -310,6 +373,21 @@ result away.
 
 Same dispersion metric, over the build samples. Builds are slow, so we do fewer of
 them, so this column reads `n/a (n=…)` more often.
+
+### Source
+
+The size, in bytes, of the one kernel file the backend's manifest declares.
+
+It is a property of the **language**, not of the backend, and it is honest about that:
+two rows that compile the same file report the same number. `c` / `gcc` and `c` /
+`clang` are the same `mandelbrot.c`, so this column ties between them — which is
+exactly what it should say about code somebody wrote once and compiled twice.
+
+**Do not read it as a measure of quality, or of effort.** It is one author's kernel,
+in one style, under this repository's rules — zero dependencies, one file, threads
+handed in from `argv`. It says how much text this language needed to express *this*
+algorithm under *those* constraints. It does not say a language is verbose, and it
+certainly does not say how much work it was to write.
 
 ### Binary
 

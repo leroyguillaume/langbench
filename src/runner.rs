@@ -427,6 +427,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
             image: unit.image.clone(),
             args: self.container_args(phase),
             tmpfs_size_mb: self.args.tmpfs_size_mb,
+            memory_limit_mb: self.args.memory_limit_mb,
             timeout: Duration::from_secs(self.args.run_timeout),
         })?;
         let record = execution.record;
@@ -446,6 +447,14 @@ impl<E: ContainerEngine> Runner<'_, E> {
             elapsed_ns: record.elapsed_ns,
             user_usec: record.user_usec,
             system_usec: record.system_usec,
+            // The energy comes from the *host*, around the container; the peak
+            // memory comes from inside it. Two sources, because RAPL counts sockets
+            // and cgroups do not count joules. See `crate::energy`.
+            energy_uj: execution.energy_uj,
+            peak_bytes: record.peak_bytes,
+            // Off the manifest, not off the container: the source is a fact about
+            // the implementation, and the image never sees it.
+            source_bytes: Some(unit.implementation.source_bytes),
             checksum: record.checksum,
             binary_bytes: record.binary_bytes,
             binary_stripped_bytes: record.binary_stripped_bytes,
@@ -509,6 +518,7 @@ mod tests {
             user_usec: 10,
             system_usec: 1,
             checksum,
+            peak_bytes: Some(4_194_304),
             binary_bytes: None,
             binary_stripped_bytes: None,
             text_bytes: None,
@@ -542,17 +552,93 @@ mod tests {
         let dir = root.join(algo).join(name);
         create_dir_all(&dir).unwrap();
         File::create(dir.join("Dockerfile")).unwrap();
+        // The manifest declares a source, and the source is there: discovery reads
+        // its size onto every sample, and refuses a manifest that points at nothing.
+        std::fs::write(dir.join(SOURCE), "// the fixture's kernel\n").unwrap();
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
             format!(
                 "algo: {algo}\n\
                  language: {language}\n\
                  compiler: {compiler}\n\
+                 source: {SOURCE}\n\
                  modes: {modes}\n\
                  description: {name}, as the fixture declares it.\n",
             ),
         )
         .unwrap();
+    }
+
+    /// The kernel every fixture declares, and its size on disk.
+    const SOURCE: &str = "kernel.txt";
+    const SOURCE_BYTES: u64 = 24;
+
+    /// The three metrics come from three different places, and the sample is where
+    /// they meet: the peak memory from inside the container, the energy from the
+    /// host around it, the source size from the manifest on disk. A sample must
+    /// describe itself without a second file to join against — so all three travel
+    /// on the line, whatever produced them.
+    #[test]
+    fn a_sample_carries_its_memory_its_energy_and_the_size_of_its_source() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(|_| {
+            Ok(Execution {
+                energy_uj: Some(9_400_000),
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 1;
+        let output = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+        let sample = &recording.samples[0];
+        assert_eq!(sample.energy_uj, Some(9_400_000));
+        assert_eq!(sample.peak_bytes, Some(4_194_304));
+        assert_eq!(sample.source_bytes, Some(SOURCE_BYTES));
+    }
+
+    /// A host with no readable RAPL counter measures no energy, and the campaign
+    /// carries on without it. An absence is a published fact — never a zero, which
+    /// would read as the most frugal backend ever measured.
+    #[test]
+    fn a_campaign_on_a_host_with_no_energy_counter_still_measures_everything_else() {
+        let root = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        benchmarks(root.path(), &["c-gcc"]);
+
+        let mut engine = MockContainerEngine::new();
+        engine.expect_build().returning(|_| Ok(()));
+        engine.expect_run().returning(|_| {
+            Ok(Execution {
+                energy_uj: None,
+                wall_ns: 2_000,
+                record: record(Some(42)),
+            })
+        });
+
+        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        args.warmup_rounds = 0;
+        args.build_rounds = 0;
+        args.rounds = 1;
+        let output = args.output.clone();
+        execute(args, &engine).unwrap();
+
+        let recording = crate::sample::load(&output).unwrap();
+        let sample = &recording.samples[0];
+        assert_eq!(sample.energy_uj, None);
+        assert_eq!(sample.wall_ns, 2_000);
+        assert_eq!(sample.checksum, Some(42));
     }
 
     fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
@@ -569,6 +655,7 @@ mod tests {
             warmup_rounds: 1,
             march: "x86-64-v3".to_owned(),
             tmpfs_size_mb: 16,
+            memory_limit_mb: 1024,
             run_timeout: 60,
         }
     }
@@ -597,6 +684,7 @@ mod tests {
         // 4 units x ((1 warmup + 1 build round) + (1 warmup + 2 run rounds)).
         engine.expect_run().times(4 * 5).returning(|_| {
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -624,6 +712,7 @@ mod tests {
         engine.expect_build().returning(|_| Ok(()));
         engine.expect_run().returning(|_| {
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -656,6 +745,7 @@ mod tests {
         });
         engine.expect_run().returning(|_| {
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -711,6 +801,7 @@ mod tests {
         engine.expect_run().returning(move |spec| {
             recorded.lock().unwrap().push(spec.image.clone());
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -748,6 +839,7 @@ mod tests {
         engine.expect_run().returning(|spec| {
             let checksum = if spec.image.contains("clang") { 9 } else { 7 };
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(checksum)),
             })
@@ -799,6 +891,7 @@ mod tests {
         engine.expect_run().returning(|spec| {
             let checksum = if spec.image.contains("nbody") { 9 } else { 7 };
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(checksum)),
             })
@@ -823,6 +916,7 @@ mod tests {
         engine.expect_run().returning(move |_| {
             let checksum = checksums.lock().unwrap().remove(0);
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(checksum)),
             })
@@ -845,14 +939,18 @@ mod tests {
         let dir = root.path().join("mandelbrot").join("kotlin-kotlin-native");
         create_dir_all(&dir).unwrap();
         File::create(dir.join("Dockerfile")).unwrap();
+        std::fs::write(dir.join(SOURCE), "// the fixture's kernel\n").unwrap();
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
-            "algo: mandelbrot\n\
-             language: kotlin\n\
-             compiler: kotlin-native\n\
-             modes: [strict]\n\
-             arch: [x86_64]\n\
-             description: No linux-aarch64 host compiler exists.\n",
+            format!(
+                "algo: mandelbrot\n\
+                 language: kotlin\n\
+                 compiler: kotlin-native\n\
+                 source: {SOURCE}\n\
+                 modes: [strict]\n\
+                 arch: [x86_64]\n\
+                 description: No linux-aarch64 host compiler exists.\n",
+            ),
         )
         .unwrap();
         benchmarks(root.path(), &["c-gcc"]);
@@ -889,6 +987,7 @@ mod tests {
             }
             *remaining -= 1;
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -927,6 +1026,7 @@ mod tests {
                 );
             }
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -967,6 +1067,7 @@ mod tests {
                 bail!("`docker run` failed");
             }
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -1003,6 +1104,7 @@ mod tests {
         engine.expect_run().times(2).returning(|spec| {
             assert!(spec.image.contains("c-gcc"), "ran a unit that never built");
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })
@@ -1039,6 +1141,7 @@ mod tests {
         });
         engine.expect_run().returning(|_| {
             Ok(Execution {
+                energy_uj: None,
                 wall_ns: 2_000,
                 record: record(Some(42)),
             })

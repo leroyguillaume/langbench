@@ -5,6 +5,8 @@ language: js
 # never before the run starts.
 compiler: ~
 interpreter: bun
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mjs
 # One floating-point semantics, and no flag to change it: ECMAScript specifies the
 # result of every arithmetic operator, so no engine may contract a multiply-add or
 # reassociate. That is why this row's checksum is bit-identical to the V8 rows'.

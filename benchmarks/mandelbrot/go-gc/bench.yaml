@@ -5,6 +5,8 @@ language: go
 compiler: gc
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.go
 # One mode, and this is the language where that costs something to say. The Go
 # spec *permits* fusing a multiply-add across statements, and on arm64 gc takes the
 # offer -- so the kernel forbids it in the source, with explicit float64() rounding

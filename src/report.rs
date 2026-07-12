@@ -107,8 +107,17 @@ pub struct Row {
     pub compute_min: String,
     pub startup: String,
     pub cpu_time: String,
+    /// Cores kept busy, against the thread count the harness handed out. It can
+    /// exceed that count: a runtime's JIT and GC threads burn CPU the hot loop's
+    /// own clock never sees. See [`crate::sample::Sample::cores_milli`].
+    pub cores: String,
+    pub memory: String,
+    /// `n/a` on a host with no readable RAPL counter, which the machine table
+    /// above says in as many words.
+    pub energy: String,
     pub build_min: String,
     pub build_dispersion: String,
+    pub source: String,
     pub binary: String,
     pub text: String,
     pub checksum_delta: String,
@@ -207,8 +216,20 @@ fn row(aggregate: &Aggregate) -> Row {
             || "n/a".to_owned(),
             |summary| format!("{:.2} s", summary.median as f64 / 1e6),
         ),
+        // The median, not the minimum — the one number on this row that is neither.
+        // See `Aggregate::run_cores`.
+        cores: aggregate.run_cores.map_or_else(
+            || "n/a".to_owned(),
+            |summary| format!("{:.1} / {}", summary.median as f64 / 1e3, aggregate.cpu),
+        ),
+        memory: mebibytes(aggregate.run_peak_bytes.map(|summary| summary.min)),
+        energy: aggregate.run_energy_uj.map_or_else(
+            || "n/a".to_owned(),
+            |summary| format!("{:.1} J", summary.min as f64 / 1e6),
+        ),
         build_min: min_ms(aggregate.build_elapsed),
         build_dispersion: dispersion(aggregate.build_elapsed),
+        source: bytes(aggregate.source_bytes),
         binary: bytes(aggregate.binary_bytes),
         text: bytes(aggregate.text_bytes),
         checksum_delta: delta(aggregate.checksum_delta),
@@ -266,6 +287,15 @@ fn bytes(value: Option<u64>) -> String {
     }
 }
 
+/// A whole container's memory, which is megabytes and not kilobytes: a JVM's peak
+/// in KiB is a six-digit number nobody can read at a glance.
+fn mebibytes(value: Option<u64>) -> String {
+    value.map_or_else(
+        || "n/a".to_owned(),
+        |bytes| format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0)),
+    )
+}
+
 /// A relaxed mode's distance from the strict reference: the precision sold for
 /// the speed gained.
 fn delta(delta: Option<i128>) -> String {
@@ -320,6 +350,9 @@ mod tests {
             elapsed_ns: wall / 2,
             user_usec: 1_000,
             system_usec: 0,
+            energy_uj: Some(9_400_000),
+            peak_bytes: Some(12_582_912),
+            source_bytes: Some(2_048),
             checksum: Some(42),
             binary_bytes: Some(2048),
             binary_stripped_bytes: None,

@@ -5,6 +5,8 @@ language: kotlin
 # loop while it runs.
 compiler: kotlinc
 interpreter: openjdk
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.kt
 # One floating-point semantics, inherited from the JVM: a Double is an IEEE 754
 # double, and neither kotlinc nor the JIT may contract a multiply-add.
 modes:

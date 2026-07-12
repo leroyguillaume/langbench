@@ -7,6 +7,8 @@ language: julia
 # the compiling: the field says *when*, not *whether*.
 compiler: ~
 interpreter: julia
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.jl
 # One floating-point semantics. Julia never fuses a multiply-add unless the source
 # writes `muladd`, and never reassociates. `--math-mode=fast` was deprecated as
 # unsound and does nothing in 1.11, so `fma` and `fast` would be this same run

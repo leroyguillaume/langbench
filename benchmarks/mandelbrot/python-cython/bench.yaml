@@ -6,6 +6,8 @@ compiler: cython
 # same interpreter, same source byte for byte as `python-cpython` -- only the
 # compiler column differs. That is the clean experiment.
 interpreter: cpython
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.py
 # The generated C goes through the PyFloat C-API, never a raw double, so there is
 # no multiply-add for gcc to contract and nothing to reassociate. The three modes
 # would produce the same machine code.

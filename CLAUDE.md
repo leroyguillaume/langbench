@@ -57,8 +57,12 @@ subject is **compiler and runtime backends**, not languages.
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
 - Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
-  `algo`, `language`, `compiler`, `interpreter`, `modes`, `description`,
+  `algo`, `language`, `compiler`, `interpreter`, `source`, `modes`, `description`,
   `comments`. **Discovery is a walk for `bench.yaml`; nothing else is read.**
+- `source` names the one kernel file, and the manifest **declares** it — the harness
+  never guesses which file beside the Dockerfile is the source. Guessing means
+  pattern-matching a filename, which is parsing the path under another name. A
+  `source` that is not a file on disk fails the campaign at discovery.
 - **The path is not metadata.** Never parse a directory name. The tree is
   free-form: move a benchmark, nest it, rename it — the campaign is unchanged.
 - **An implementation is `(algo, language, compiler, interpreter)`.** No name, no
@@ -89,6 +93,29 @@ subject is **compiler and runtime backends**, not languages.
   structural guarantee, not a convention — do not trade it away.
 - CPU time comes from the container's `/sys/fs/cgroup/cpu.stat`. Never from
   `rusage` of the `docker` client process, which measures argument parsing.
+- Peak memory comes from the container's `/sys/fs/cgroup/memory.peak`, the same way.
+  It is the **whole container** — process tree, page cache, tmpfs — not one process's
+  RSS. Min-of-N, and here the argument is exact rather than statistical: nothing can
+  push a high-water mark below what the backend had to allocate.
+- **`--memory` is pinned, identically, on every measured run, and swap is off.**
+  ([why](METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget)) It is part
+  of the measurement, not a safety rail: a GC runtime sizes its heap from what its
+  cgroup shows it, so an unpinned budget publishes a peak that describes the bench
+  machine. Changing the budget changes the *timings* too — campaigns run under
+  different budgets do not compare, on any column.
+- **Energy is read by the harness, on the host, around `docker run` — never inside
+  the container.** ([why](METHODOLOGY.md#energy-is-an-envelope)) RAPL counts a socket,
+  not a cgroup. The number therefore includes Docker's overhead, it is the twin of the
+  external wall-clock and never of `elapsed_ns`, and **nothing is subtracted from it**
+  because there is nothing honest to subtract. Publish it as a within-campaign ratio,
+  never as an absolute. No counter (AArch64, or non-root) means `null` and a stated
+  reason — never a zero.
+- **Parallel efficiency is a median, not a min-of-N.**
+  ([why](METHODOLOGY.md#parallel-efficiency-is-a-median-not-a-minimum)) Min-of-N is
+  licensed by one-sided noise; contention moves a core count in both directions. It is
+  computed per sample, never as a ratio of two minima, and it is allowed to exceed the
+  thread count — a runtime's JIT and GC threads burn CPU the kernel's own clock never
+  sees, and clamping that would hide the result.
 - Record the external wall-clock *and* the program's self-reported `elapsed_ns`.
   The gap is runtime startup cost, and it is a result.
 - The **run** column headlines the external wall-clock; the **build** column

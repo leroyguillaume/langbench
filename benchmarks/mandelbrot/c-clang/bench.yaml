@@ -5,6 +5,8 @@ language: c
 compiler: clang
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.c
 # clang distinguishes all three, and spells them exactly as gcc does:
 # `-ffp-contract=off`, `-ffp-contract=fast` and `-ffast-math`.
 modes: all

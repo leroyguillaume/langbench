@@ -5,6 +5,8 @@ language: scala
 # loop while it runs.
 compiler: scalac
 interpreter: openjdk
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.scala
 # One floating-point semantics, inherited from the JVM: a Double is an IEEE 754
 # double, and neither scalac nor the JIT may contract a multiply-add.
 modes:

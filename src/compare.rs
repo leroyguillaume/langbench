@@ -46,6 +46,10 @@ pub struct Row {
 /// What a number is measured in. The site spells it; it never converts it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+/// Every unit a metric can arrive in — and a **closed set on the wire**: the site
+/// validates against it, and an unknown variant fails the parse rather than
+/// degrading to an unformatted number. A new one lands with the renderer that can
+/// spell it, never before. See the note beside `energy` in [`compare`].
 pub enum Unit {
     Nanoseconds,
     Microseconds,
@@ -189,6 +193,33 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
             // minimum would flatter whichever backend happened to get a quiet
             // core.
             cpu(left.run_cpu_usec, right.run_cpu_usec),
+            // Deliberately absent: the core count. It is on every row of the table
+            // and it explains half of what the rows above say — but this list ranks
+            // two backends, and *busier is not better*. A kernel that saturates
+            // eight cores has not beaten one that needed four, and a `Verdict` on
+            // that number would be an opinion the campaign has not earned. The
+            // table describes it; the head-to-head declines to score it.
+            smallest(
+                "memory",
+                "Peak memory (the whole container)",
+                Unit::Bytes,
+                left.run_peak_bytes,
+                right.run_peak_bytes,
+            ),
+            // Also absent, and for a duller reason than the core count: **energy**.
+            //
+            // It is a `run_energy_uj` on every aggregate, it has a column in the
+            // report and a field in the CSV, and it would slot in here in four lines
+            // — `smallest("energy", …, Unit::Microjoules, …)`. What stops it is that
+            // microjoules would be a *new unit on the wire*, and the site's schema
+            // validates the unit against a closed set. An unknown one does not
+            // degrade to an unformatted number: it fails the parse, and the whole
+            // head-to-head goes with it.
+            //
+            // So the metric waits for the renderer that can spell it. Adding
+            // `Unit::Microjoules` and the four lines below it is the entire change,
+            // and it belongs in the same commit as the site that learns the unit —
+            // never before it, which would break a page that is live today.
             timing(
                 "build",
                 "Compile (the compiler's own clock)",
@@ -202,6 +233,16 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
                 right.binary_bytes,
             ),
             exact("text", ".text size", left.text_bytes, right.text_bytes),
+            // The source is the *language's*, not the backend's: two rows that
+            // compile the same file are the same number twice, and the comparison
+            // says `tie` — which is the honest answer, and a useful one when the two
+            // rows are `c-gcc` and `c-clang`.
+            exact(
+                "source",
+                "Source size",
+                left.source_bytes,
+                right.source_bytes,
+            ),
         ],
         checksums: checksums(left, right),
     })
@@ -227,17 +268,31 @@ fn side(aggregate: &Aggregate) -> Side {
     }
 }
 
-/// A metric drawn from the minimum of N — the statistic every timing on this
-/// project is reported as, and the one the dispersion qualifies.
-fn timing(key: &str, label: &str, left: Option<Summary>, right: Option<Summary>) -> Metric {
+/// A metric drawn from the minimum of N — the statistic this project reports for
+/// everything whose noise is one-sided, and the one the dispersion qualifies.
+///
+/// Timings, joules and bytes of memory all qualify: a busy machine can only ever
+/// make a run slower, make it burn more, or make it hold more pages. None of them
+/// can come out below what the backend genuinely needed.
+fn smallest(
+    key: &str,
+    label: &str,
+    unit: Unit,
+    left: Option<Summary>,
+    right: Option<Summary>,
+) -> Metric {
     metric(
         key,
         label,
-        Unit::Nanoseconds,
+        unit,
         left.map(|summary| summary.min),
         right.map(|summary| summary.min),
         noise(left, right),
     )
+}
+
+fn timing(key: &str, label: &str, left: Option<Summary>, right: Option<Summary>) -> Metric {
+    smallest(key, label, Unit::Nanoseconds, left, right)
 }
 
 fn cpu(left: Option<Summary>, right: Option<Summary>) -> Metric {
@@ -399,6 +454,9 @@ mod tests {
             elapsed_ns: wall / 2,
             user_usec: wall / 1_000,
             system_usec: 0,
+            energy_uj: Some(wall / 100),
+            peak_bytes: Some(12_582_912),
+            source_bytes: Some(2_048),
             checksum: Some(checksum),
             binary_bytes: Some(2048),
             binary_stripped_bytes: None,

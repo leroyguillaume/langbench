@@ -399,8 +399,8 @@ Compilers and runtimes write to stderr; stdout is reserved for the record. The
 harness rejects any other shape rather than measure noise.
 
 ```json
-{"phase":"run","checksum":31415926535,"elapsed_ns":4102337891,"user_usec":32418004,"system_usec":118273}
-{"phase":"build","elapsed_ns":812004221,"user_usec":2914000,"system_usec":204000,"binary_bytes":312840,"binary_stripped_bytes":248904,"text_bytes":41216}
+{"phase":"run","checksum":31415926535,"elapsed_ns":4102337891,"user_usec":32418004,"system_usec":118273,"peak_bytes":13160448}
+{"phase":"build","elapsed_ns":812004221,"user_usec":2914000,"system_usec":204000,"binary_bytes":312840,"binary_stripped_bytes":248904,"text_bytes":41216,"peak_bytes":486539264}
 ```
 
 Stdout rather than a bind-mounted file: it needs no volume, no per-invocation
@@ -412,9 +412,15 @@ hot loop.
 it is the correctness gate for the whole harness. Anything that rounds it —
 `float64` storage, a metrics system, a spreadsheet — destroys the invariant.
 
-All measurement originates inside the container. The CLI contributes exactly one
-number, the external wall-clock, which nothing inside the container can produce:
-nothing in there is alive to time its own creation.
+`peak_bytes` is `null` on a kernel that exposes neither `memory.peak` nor the
+cgroup v1 file. `null`, never `0`: a backend that needed no memory would be a
+remarkable claim, and it is not the one being made.
+
+Almost all measurement originates inside the container. The CLI contributes the two
+numbers nothing inside the container can produce: the **external wall-clock** —
+nothing in there is alive to time its own creation — and the **energy**, because RAPL
+counts a socket rather than a cgroup and is invisible from inside the namespace. See
+[Energy is an envelope](#energy-is-an-envelope).
 
 ---
 
@@ -485,6 +491,120 @@ Build time is a **headline result**, not a footnote. The canonical
 compile-versus-runtime trade-off — cranelift compiles much faster and emits
 slower code — is half the story of a compiler benchmark.
 
+### Parallel efficiency is a median, not a minimum
+
+CPU time over compute time is how many cores a run actually kept busy, and it is
+the one number that separates *this backend is slow* from *this backend cannot use
+the machine*. Two rows with the same wall-clock, one at 7.8 cores and one at 1.0,
+are not two slow backends: one of them is a global interpreter lock, and no amount
+of compiler work will ever move it. A wall-clock alone hides that completely — which
+is why the harness hands every kernel the same thread count and then reports what
+each did with it.
+
+It is derived, not measured: both operands are already on every sample, so the
+column is computable on campaigns recorded before it existed.
+
+**Per sample, never as a ratio of two minima.** The same rule as startup: the
+smallest CPU time and the smallest compute time come from different rounds, and
+their quotient describes a run that never happened.
+
+**The median, and not the minimum.** This is the one place the min-of-N rule does
+not apply, and it is worth being precise about why. Min-of-N is licensed by the
+*one-sidedness* of contention: a busy machine can only ever make a run slower, so
+the smallest sample is the closest the machine came to showing its true capability.
+Parallelism has no such asymmetry. Contention inflates the CPU clock — threads
+spinning, waiting on each other — and inflates the compute clock too, in whatever
+proportion the scheduler happened to pick that round. Nothing recommends the extreme
+of a two-sided distribution over its middle, so we take the middle, and we publish
+the dispersion beside it like everywhere else.
+
+**It can exceed the thread count, and that is a result rather than an overflow.**
+The numerator counts every microsecond of CPU the container burned; the denominator
+counts only the span the program timed *itself* over. A JIT compiling on one thread
+while the kernel computes on eight is spending CPU that the hot loop's clock never
+sees. Clamping that to the thread count, or quietly normalising it into a percentage
+that cannot exceed 100%, would be hiding the very thing a reader comparing a JVM to a
+static binary is entitled to see. The column reports what the cgroup said.
+
+### Memory is only comparable under a pinned budget
+
+Peak memory comes from the container's own cgroup — `memory.peak`, read by the
+entrypoint exactly where `cpu.stat` is. It is the **whole container**: the process
+tree, the page cache it faulted in, the tmpfs a build wrote into. Not the resident
+set of one process, and deliberately not: the question is what the backend needed in
+order to run, not what one of its processes happened to be holding at the end.
+
+Here the minimum is not a statistical estimate but an exact bound. Page cache and a
+lazy collector can only ever push a high-water mark *up*; nothing can push it below
+what the backend genuinely had to allocate. Min-of-N is the memory it needed.
+
+**The measurement is only meaningful because every measured container runs under the
+same pinned `--memory`, and this is a change to the protocol rather than a safety
+rail.** A garbage-collected runtime sizes its default heap from what its cgroup shows
+it — a JVM takes a quarter of it — and so do Node, Bun and every other runtime with a
+collector. Leave the budget unset and they read the *host's* RAM: the peak we publish
+would then describe the bench machine, and moving the campaign to a box with twice the
+memory would "prove" that Java got hungrier. Pinned, and pinned identically for every
+backend, it is a property of the backend again.
+
+Two consequences follow, and neither is optional:
+
+- **Pinning the budget changes the timings.** A constrained heap is a different
+  garbage-collection regime. The run column moves. Campaigns recorded under different
+  budgets are not comparable to each other — not on memory, and not on time either.
+- **The floor is set by the hungriest *compiler*, not by the kernels.** The kernels
+  need almost nothing; `native-image` needs gigabytes, and the build-phase tmpfs is
+  charged to the same cgroup. A budget that comfortably runs every kernel and quietly
+  OOM-kills one toolchain does not produce a smaller number — it produces a
+  quarantined backend and a missing row.
+
+Swap is off (`--memory-swap` equals `--memory`). A container permitted to swap does
+not fail when it overruns its budget: it silently gets slower, and the timing absorbs
+a page-fault storm that no column explains.
+
+### Energy is an envelope
+
+Joules are the metric that makes a language comparison worth reading, and they are the
+one measurement a container cannot take for itself.
+
+`cpu.stat` and `memory.peak` are cgroup files: they are namespaced, so the entrypoint
+reads its own and reports it. RAPL is not. `/sys/class/powercap` describes a **socket**,
+not a cgroup, and it is invisible from inside a container. So the harness reads it, on
+the host, around the `docker run` — and what comes back is an **envelope**:
+
+- It is the energy the whole package burned while the container ran. That includes the
+  `docker` client, the daemon's work creating and reaping the container, and anything
+  else awake on the machine.
+- It is therefore the energy twin of the **external** clock, never of the internal one.
+  There is no inner counterpart and there cannot be one: the kernel has no per-cgroup
+  joule. **Nothing is subtracted, because there is nothing honest to subtract.**
+
+That is the same trade the wall-clock already makes, and it gets the same answer:
+publish the envelope, say exactly what is inside it, and read it as a **ratio between
+two rows of one campaign** — never as an absolute figure for what the algorithm costs.
+
+Two ways it comes back empty, and both are facts rather than bugs:
+
+- The counters do not exist. RAPL is x86 (AMD drives the same `intel-rapl` powercap
+  zones, misleading name and all); an AArch64 host has no equivalent, so that campaign
+  publishes no energy at all.
+- They exist and are unreadable. Since the PLATYPUS side-channel, distributions ship
+  `energy_uj` root-only.
+
+In both cases the samples carry `null`, the machine record says which it was, and every
+rendering prints `n/a`. **An empty column must never be mistaken for a backend that
+burned nothing**, which is precisely what a zero would have claimed.
+
+Two implementation details that are not details:
+
+- **Only the top-level `intel-rapl:<n>` zones are summed.** The nested ones —
+  `intel-rapl:0:0` is the `core` sub-domain of package 0 — are *subsets* of their
+  parent. Adding a package to its own children counts the same joules twice.
+- **The counter wraps**, at `max_energy_range_uj`, roughly once an hour on a busy
+  socket. A plain subtraction across a wrap yields a colossal negative number, and on
+  an unsigned integer a colossal positive one: a run that appears to have used more
+  energy than the machine can produce. The wrap is corrected explicitly.
+
 ### The build column reports the internal clock, the run column the external one
 
 Both phases record both clocks — the sample carries `wall_ns` and `elapsed_ns`
@@ -549,6 +669,33 @@ of the language.
 We archive `objdump -d` of the hot loop alongside the results. Three lines of
 Dockerfile. When clang comes out 3× ahead of gcc we do not speculate about the
 vectorizer — we look for the `vmulpd`.
+
+### Source size, and what it is not
+
+`source_bytes` is the size of the one kernel file the manifest declares. The manifest
+declares it rather than the harness guessing it: the alternative is to pattern-match
+the filenames sitting beside the Dockerfile, which is parsing the path under another
+name, and [the path is not metadata](#the-path-is-not-metadata).
+
+**It is a property of the language, not of the backend, and it is honest about that.**
+`c` / `gcc` and `c` / `clang` compile the same `mandelbrot.c`, so they report the same
+number and the head-to-head calls it a tie. That is not a weakness of the column; it is
+the column telling the truth about the one axis this project exists to measure. Every
+other number here separates two compilers on identical source. This one cannot, and
+says so.
+
+**It is not a measure of quality, and it is not a measure of effort.** It is one
+author's kernel, in one style, under this repository's rules: zero dependencies, one
+file, threads handed in from `argv`, a checksum printed. It says how much text a
+language needed to express *this* algorithm under *those* constraints. It does not say
+a language is verbose, and it emphatically does not say how much work it was to write.
+
+That last distinction is why the column is **bytes and not tokens**. Counting tokens
+would answer a question nobody here asked — the tokens in a finished file are not the
+tokens it cost to produce one, which is prompt plus reasoning plus every attempt that
+failed the checksum — and it would make the number depend on some vendor's tokenizer,
+so that a figure in this repository could change because somebody else shipped a model.
+Bytes are stable, vendor-neutral, and will mean the same thing in ten years.
 
 ### Sampling
 

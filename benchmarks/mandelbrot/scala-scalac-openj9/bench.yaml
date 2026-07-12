@@ -2,6 +2,8 @@ algo: mandelbrot
 language: scala
 compiler: scalac
 interpreter: openj9
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.scala
 modes:
   - strict
 description: >-

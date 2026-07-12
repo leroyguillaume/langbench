@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use tracing::debug;
 
+use crate::energy::EnergyMeter;
 use crate::sample::{ContainerRecord, parse_container_stdout};
 use crate::shutdown;
 
@@ -36,6 +37,17 @@ pub struct RunSpec {
     pub image: String,
     pub args: Vec<String>,
     pub tmpfs_size_mb: u64,
+    /// The memory budget of the container, in MiB. Pinned, and pinned to the
+    /// *same* value for every backend — which is what makes the peak comparable
+    /// at all.
+    ///
+    /// This is not a safety rail, it is part of the measurement. A JVM sizes its
+    /// default heap at a fraction of the memory its cgroup shows it, and so do
+    /// Node, Bun and every other runtime with a garbage collector. Left
+    /// unconstrained, they read the *host's* RAM — and the peak we published
+    /// would describe the bench machine, not the backend. See
+    /// `METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget`.
+    pub memory_limit_mb: u64,
     /// A wall-clock ceiling for one invocation. A container that exceeds it is
     /// killed and the campaign fails: a hung run must not be mistaken for a slow
     /// one, and the harness has no other way to tell them apart.
@@ -46,6 +58,12 @@ pub struct RunSpec {
 pub struct Execution {
     /// External wall-clock, measured around the child process.
     pub wall_ns: u64,
+    /// Microjoules burned by the CPU package while the container ran — Docker's
+    /// own overhead included, because RAPL is not namespaced and there is no
+    /// honest way to subtract it. The energy twin of [`Self::wall_ns`], and never
+    /// of `elapsed_ns`. `None` on a host with no readable counters.
+    /// See [`crate::energy`].
+    pub energy_uj: Option<u64>,
     pub record: ContainerRecord,
 }
 
@@ -58,7 +76,20 @@ pub trait ContainerEngine {
     fn run(&self, spec: &RunSpec) -> Result<Execution>;
 }
 
-pub struct DockerEngine;
+/// The daemon, plus the host's energy counters.
+///
+/// The meter is discovered **once**, at construction: probing `/sys` around every
+/// one of a few hundred runs would be work the measurement pays for, and whether
+/// the counters exist is a property of the machine, not of the run.
+pub struct DockerEngine {
+    energy: EnergyMeter,
+}
+
+impl DockerEngine {
+    pub fn new(energy: EnergyMeter) -> Self {
+        Self { energy }
+    }
+}
 
 impl ContainerEngine for DockerEngine {
     fn build(&self, spec: &BuildSpec) -> Result<()> {
@@ -107,6 +138,11 @@ impl ContainerEngine for DockerEngine {
         let args = run_args(spec, &name);
         debug!(image = %spec.image, %name, ?args, "docker run");
 
+        // Both counters open on the same envelope: the joules are bracketed by the
+        // same two instants as the wall-clock, so `energy_uj` and `wall_ns` always
+        // describe exactly the same span. Reading RAPL costs two small `read`s of
+        // a `/sys` file, on the outside of the span it measures.
+        let before = self.energy.read();
         let started = Instant::now();
         let mut child = Command::new("docker")
             .args(&args)
@@ -121,6 +157,9 @@ impl ContainerEngine for DockerEngine {
         let stderr = drain(child.stderr.take().expect("stderr is piped"));
 
         let (status, wall_ns) = wait_or_kill(child, &name, started, spec.timeout)?;
+        let energy_uj = self
+            .energy
+            .delta(before.as_ref(), self.energy.read().as_ref());
         let stdout = stdout.join().unwrap_or_default();
         let stderr = stderr.join().unwrap_or_default();
 
@@ -129,7 +168,11 @@ impl ContainerEngine for DockerEngine {
         }
         let record = parse_container_stdout(&stdout)
             .with_context(|| format!("reading the record printed by {}", spec.image))?;
-        Ok(Execution { wall_ns, record })
+        Ok(Execution {
+            wall_ns,
+            energy_uj,
+            record,
+        })
     }
 }
 
@@ -253,6 +296,19 @@ pub fn run_args(spec: &RunSpec, name: &str) -> Vec<String> {
         "--network=none".to_owned(),
         "--tmpfs".to_owned(),
         format!("{BUILD_DIR}:rw,exec,size={}m", spec.tmpfs_size_mb),
+        // The same budget for every backend, every round. A garbage-collected
+        // runtime sizes its heap from what its cgroup shows it, so an unpinned
+        // limit would let the *host's* RAM decide how much memory a JVM decides
+        // it needs — and `memory.peak` would describe the bench machine. It is
+        // part of the measurement, not a safety rail. See `RunSpec::memory_limit_mb`.
+        "--memory".to_owned(),
+        format!("{}m", spec.memory_limit_mb),
+        // Swap disabled, by setting the memory+swap ceiling to the memory ceiling.
+        // A container allowed to swap does not fail when it exceeds its budget: it
+        // gets slow, quietly, and the timing absorbs a page-fault storm that no
+        // column explains.
+        "--memory-swap".to_owned(),
+        format!("{}m", spec.memory_limit_mb),
     ];
     args.push(spec.image.clone());
     args.extend(spec.args.iter().cloned());
@@ -268,6 +324,7 @@ mod tests {
             image: "img".to_owned(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
             tmpfs_size_mb,
+            memory_limit_mb: 8192,
             timeout: Duration::from_secs(60),
         }
     }
@@ -309,6 +366,27 @@ mod tests {
         let args = run_args(&spec(&[], 1), "langbench-42-7");
         let index = args.iter().position(|arg| arg == "--name").unwrap();
         assert_eq!(args[index + 1], "langbench-42-7");
+    }
+
+    /// Not a safety rail: a garbage-collected runtime reads its cgroup to size its
+    /// own heap, so an unpinned budget would let the host's RAM decide what a JVM
+    /// thinks it needs — and the peak we publish would describe the bench machine.
+    #[test]
+    fn every_measured_run_gets_the_same_pinned_memory_budget() {
+        let args = run_args(&spec(&["run", "4096"], 2048), "langbench-1-0");
+        let index = args.iter().position(|arg| arg == "--memory").unwrap();
+        assert_eq!(args[index + 1], "8192m");
+    }
+
+    /// Swap turned off, by pinning the memory+swap ceiling to the memory ceiling.
+    /// A container that may swap does not fail when it overruns its budget — it
+    /// silently gets slower, and the timing quietly absorbs the difference.
+    #[test]
+    fn a_measured_run_may_not_swap() {
+        let args = run_args(&spec(&[], 1), "n");
+        let memory = args.iter().position(|arg| arg == "--memory").unwrap();
+        let swap = args.iter().position(|arg| arg == "--memory-swap").unwrap();
+        assert_eq!(args[memory + 1], args[swap + 1]);
     }
 
     #[test]

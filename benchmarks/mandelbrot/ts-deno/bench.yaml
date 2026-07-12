@@ -6,6 +6,8 @@ language: ts
 # compiler stands between this source and V8.
 compiler: ~
 interpreter: deno
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mts
 # One floating-point semantics, and no flag to change it: ECMAScript specifies the
 # result of every arithmetic operator.
 modes:

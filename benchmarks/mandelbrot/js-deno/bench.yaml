@@ -4,6 +4,8 @@ language: js
 # js-nodejs: same engine, different runtime around it. That is the experiment.
 compiler: ~
 interpreter: deno
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mjs
 # One floating-point semantics, and no flag to change it: ECMAScript specifies the
 # result of every arithmetic operator, so no engine may contract a multiply-add or
 # reassociate.

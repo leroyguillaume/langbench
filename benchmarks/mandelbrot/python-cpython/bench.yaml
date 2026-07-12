@@ -5,6 +5,8 @@ language: python
 # what the timed build phase measures.
 compiler: ~
 interpreter: cpython
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.py
 # One floating-point semantics, and no flag to change it: the interpreter never
 # contracts a multiply-add and never reassociates. An `fma` image would be the
 # same run under another tag.

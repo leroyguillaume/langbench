@@ -3,6 +3,8 @@ language: cpp
 compiler: gcc
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.cpp
 # Same compiler as c-gcc, same three code generators over the same source.
 modes: all
 description: >-

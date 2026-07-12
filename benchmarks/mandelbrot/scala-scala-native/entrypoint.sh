@@ -47,6 +47,19 @@ read_cpu_time() {
     fi
 }
 
+# The peak memory the container needed, from the cgroup's own high-water mark.
+# Not the RSS of one process: it is the whole container -- the process tree, the
+# page cache it faulted in, the tmpfs it wrote. That is the memory this backend
+# needed to run, which is the number worth publishing.
+read_peak_memory() {
+    peak_bytes=null
+    if [ -r /sys/fs/cgroup/memory.peak ]; then
+        peak_bytes=$(cat /sys/fs/cgroup/memory.peak)
+    elif [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
+        peak_bytes=$(cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes)
+    fi
+}
+
 # The ISA baseline. Unlike every JVM row, this one can honour it exactly: the code
 # generator is clang, and clang takes gcc's spelling verbatim -- the same
 # `-march=x86-64-v3` or `-march=armv8.2-a` the C rows are built with. No
@@ -137,9 +150,10 @@ build)
     text_bytes=$(size --format=sysv "${BINARY}" | awk '/^\.text/ { print $2 }')
 
     read_cpu_time
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s}\n' \
+    read_peak_memory
+    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
         "${elapsed_ns}" "${user_usec}" "${system_usec}" \
-        "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}"
+        "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
 run)
@@ -152,8 +166,9 @@ run)
     elapsed_ns=${output#* }
 
     read_cpu_time
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}"
+    read_peak_memory
+    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)
