@@ -74,3 +74,23 @@ for (const campaign of campaigns) {
 // (its ISA, its host, its date) lives in the campaign itself.
 writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(campaigns, null, 2)}\n`);
 console.log(`published ${campaigns.length} campaign(s) from ${chosen}: ${campaigns.join(", ")}`);
+
+// METHODOLOGY.md, copied rather than rewritten.
+//
+// It is the document every rule in this repository links to when it looks like
+// excessive caution, and the site publishes it for the same reason the README
+// leads with it: a number nobody can audit is a number nobody should trust. It is
+// copied *in*, at build time, because Astro only renders Markdown it can see under
+// `src/` — and a second, hand-maintained copy of it on the site would be a
+// methodology that drifts from the one the harness is written against, which is
+// the failure `bench.schema.json` is generated to avoid.
+const methodology = resolve(root, "METHODOLOGY.md");
+const generated = resolve(here, "..", "src", "generated");
+mkdirSync(generated, { recursive: true });
+try {
+  copyFileSync(methodology, join(generated, "methodology.md"));
+} catch (error) {
+  console.error(`cannot read ${methodology}: ${error.message}`);
+  process.exit(1);
+}
+console.log(`published METHODOLOGY.md from ${methodology}`);

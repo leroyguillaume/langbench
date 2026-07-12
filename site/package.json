@@ -5,14 +5,16 @@
   "scripts": {
     "wasm": "wasm-pack build .. --release --target web --out-dir site/src/wasm --out-name langbench -- --no-default-features --features wasm",
     "data": "node scripts/data.js",
-    "dev": "npm run wasm && npm run data && vite",
-    "build": "npm run wasm && npm run data && tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "dev": "npm run wasm && npm run data && astro dev",
+    "build": "npm run wasm && npm run data && astro sync && tsc --noEmit && astro build",
+    "preview": "astro preview",
     "check": "biome check --write .",
-    "typecheck": "npm run wasm && tsc --noEmit",
+    "typecheck": "npm run wasm && npm run data && astro sync && tsc --noEmit",
     "test": "npm run wasm && vitest run"
   },
   "dependencies": {
+    "@astrojs/react": "6.0.1",
+    "astro": "7.0.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.1.12"
@@ -24,10 +26,8 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
-    "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
     "vitest": "^4.1.10"
   }
 }

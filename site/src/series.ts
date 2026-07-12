@@ -16,13 +16,25 @@ export const MODE_COLOR: Record<FpMode, string> = {
 export const MODES: FpMode[] = ["strict", "fma", "fast"];
 
 export function modeSeries(modes: FpMode[]): Series[] {
-  return modes.map((mode) => ({ key: mode, label: mode, color: MODE_COLOR[mode] }));
+  return modes.map((mode) => ({
+    key: mode,
+    label: mode,
+    color: MODE_COLOR[mode],
+  }));
 }
 
 /** The two halves of the external wall-clock. Their own slots, not the modes'. */
 export const WALL_SERIES: Series[] = [
-  { key: "compute", label: "compute (the program's own clock)", color: "--series-4" },
-  { key: "startup", label: "startup (container + runtime init)", color: "--series-5" },
+  {
+    key: "compute",
+    label: "compute (the program's own clock)",
+    color: "--series-4",
+  },
+  {
+    key: "startup",
+    label: "startup (container + runtime init)",
+    color: "--series-5",
+  },
 ];
 
 /** Magnitude, one hue: a single-series bar is a sequential encoding, not a categorical one. */

@@ -172,7 +172,10 @@ describe("the WebAssembly boundary", () => {
         { include_warmup: false },
         {
           algo,
-          left: { backend: first?.backend ?? "c-gcc", mode: first?.mode ?? "strict" },
+          left: {
+            backend: first?.backend ?? "c-gcc",
+            mode: first?.mode ?? "strict",
+          },
           right: { backend: "cobol-gnucobol", mode: "strict" },
         },
       ),

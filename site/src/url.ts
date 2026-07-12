@@ -7,15 +7,20 @@
 // The query string is an I/O boundary like any other — it is validated, never
 // trusted. `?mode=strict,rubbish` narrows to `strict`; `?sort=drop_table` falls
 // back to the default rather than reaching the sort with a key it has no column for.
+//
+// Three pages, one vocabulary: `arch`, `algo` and `warmup` mean the same thing on
+// each of them, and `compareHref` carries them across so that clicking "Compare"
+// from an aarch64 campaign does not silently land on the x86-64 one.
 
 import { z } from "zod";
-import { type FpMode, fpModeSchema, type Row } from "./analysis";
-import { rowKey } from "./components/Compare";
+import { type FpMode, fpModeSchema } from "./analysis";
 import type { Sort, SortKey } from "./components/ResultsTable";
 import { MODES } from "./series";
 
 const sortKeySchema = z.enum([
-  "backend",
+  "language",
+  "compiler",
+  "interpreter",
   "mode",
   "run",
   "dispersion",
@@ -27,112 +32,185 @@ const sortKeySchema = z.enum([
   "text",
 ]);
 
-export interface UrlState {
+/** What both pages agree about: which campaign, which algorithm, and how it was aggregated. */
+export interface Scope {
   /** The ISA whose campaign is on screen. `null` — whichever one sorts first. */
   arch: string | null;
   algo: string | null;
+  /** Warmup rounds are always recorded. This decides whether they are aggregated. */
+  includeWarmup: boolean;
+}
+
+/** Everything the results table narrows by. Each is a column of the report. */
+export interface Filters {
   language: string | null;
+  compiler: string | null;
+  interpreter: string | null;
+  /** A free-text needle, matched against the triple — never against a slug. */
   search: string;
   modes: FpMode[];
-  includeWarmup: boolean;
+}
+
+export interface ResultsState extends Scope {
+  filters: Filters;
   sort: Sort;
+}
+
+export interface CompareState extends Scope {
   /**
-   * The two rows of the head-to-head, `backend:mode`. `null` — the site pairs the
-   * fastest with its runner-up.
+   * The two rows of the head-to-head, as `language/compiler/interpreter/mode`.
+   * `null` — the site pairs the fastest with the fastest of another language.
    *
    * A comparison *is* a claim, and it is the sharpest one this site makes. It gets
    * a URL like every other view: a head-to-head somebody cannot link to is a
    * head-to-head nobody can check.
    */
-  compareLeft: Row | null;
-  compareRight: Row | null;
-}
-
-/**
- * A row as the query string spells it: `c-gcc:strict`.
- *
- * Validated, never trusted — the mode has to be one of the three, and a backend
- * this campaign never measured is dropped later, by whoever holds the aggregates.
- */
-function readRow(raw: string | null): Row | null {
-  if (raw === null) {
-    return null;
-  }
-  const [backend, mode] = raw.split(":");
-  const parsed = fpModeSchema.safeParse(mode);
-  if (backend === undefined || backend === "" || !parsed.success) {
-    return null;
-  }
-  return { backend, mode: parsed.data };
+  left: string | null;
+  right: string | null;
 }
 
 /** Fastest first, on the statistic the report headlines. The same default as `report.md`. */
 const DEFAULT_SORT: Sort = { key: "run", descending: false };
 
-export function readUrl(): UrlState {
-  const params = new URLSearchParams(window.location.search);
+export const NO_FILTERS: Filters = {
+  language: null,
+  compiler: null,
+  interpreter: null,
+  search: "",
+  modes: MODES,
+};
 
-  const modes = (params.get("mode") ?? "")
+function params(): URLSearchParams {
+  return new URLSearchParams(window.location.search);
+}
+
+function readScope(query: URLSearchParams): Scope {
+  return {
+    arch: query.get("arch"),
+    algo: query.get("algo"),
+    includeWarmup: query.get("warmup") === "1",
+  };
+}
+
+function writeScope(query: URLSearchParams, scope: Scope): void {
+  if (scope.arch !== null) {
+    query.set("arch", scope.arch);
+  }
+  if (scope.algo !== null) {
+    query.set("algo", scope.algo);
+  }
+  if (scope.includeWarmup) {
+    query.set("warmup", "1");
+  }
+}
+
+export function readResults(): ResultsState {
+  const query = params();
+
+  const modes = (query.get("mode") ?? "")
     .split(",")
     .map((raw) => fpModeSchema.safeParse(raw))
     .flatMap((parsed) => (parsed.success ? [parsed.data] : []));
 
-  const sortKey = sortKeySchema.safeParse(params.get("sort"));
+  const sortKey = sortKeySchema.safeParse(query.get("sort"));
 
   return {
-    arch: params.get("arch"),
-    algo: params.get("algo"),
-    language: params.get("language"),
-    search: params.get("q") ?? "",
-    modes: modes.length > 0 ? MODES.filter((mode) => modes.includes(mode)) : MODES,
-    includeWarmup: params.get("warmup") === "1",
+    ...readScope(query),
+    filters: {
+      language: query.get("language"),
+      compiler: query.get("compiler"),
+      interpreter: query.get("interpreter"),
+      search: query.get("q") ?? "",
+      // Kept in the canonical order, never in the order they were typed: the mode
+      // owns its colour, and a series that reorders itself repaints the chart.
+      modes: modes.length > 0 ? MODES.filter((mode) => modes.includes(mode)) : MODES,
+    },
     sort: sortKey.success
-      ? { key: sortKey.data as SortKey, descending: params.get("desc") === "1" }
+      ? { key: sortKey.data as SortKey, descending: query.get("desc") === "1" }
       : DEFAULT_SORT,
-    compareLeft: readRow(params.get("a")),
-    compareRight: readRow(params.get("b")),
   };
 }
 
-export function writeUrl(state: UrlState): void {
-  const params = new URLSearchParams();
-  if (state.arch !== null) {
-    params.set("arch", state.arch);
+export function writeResults(state: ResultsState): void {
+  const query = new URLSearchParams();
+  writeScope(query, state);
+
+  const { filters } = state;
+  if (filters.language !== null) {
+    query.set("language", filters.language);
   }
-  if (state.algo !== null) {
-    params.set("algo", state.algo);
+  if (filters.compiler !== null) {
+    query.set("compiler", filters.compiler);
   }
-  if (state.language !== null) {
-    params.set("language", state.language);
+  if (filters.interpreter !== null) {
+    query.set("interpreter", filters.interpreter);
   }
-  if (state.search !== "") {
-    params.set("q", state.search);
+  if (filters.search !== "") {
+    query.set("q", filters.search);
   }
-  if (state.modes.length !== MODES.length) {
-    params.set("mode", state.modes.join(","));
-  }
-  if (state.includeWarmup) {
-    params.set("warmup", "1");
+  if (filters.modes.length !== MODES.length) {
+    query.set("mode", filters.modes.join(","));
   }
   if (state.sort.key !== DEFAULT_SORT.key || state.sort.descending) {
-    params.set("sort", state.sort.key);
+    query.set("sort", state.sort.key);
     if (state.sort.descending) {
-      params.set("desc", "1");
+      query.set("desc", "1");
     }
   }
-  if (state.compareLeft !== null) {
-    params.set("a", rowKey(state.compareLeft));
-  }
-  if (state.compareRight !== null) {
-    params.set("b", rowKey(state.compareRight));
-  }
 
-  const query = params.toString();
+  replace(query);
+}
+
+export function readCompare(): CompareState {
+  const query = params();
+  return {
+    ...readScope(query),
+    left: query.get("a"),
+    right: query.get("b"),
+  };
+}
+
+export function writeCompare(state: CompareState): void {
+  const query = new URLSearchParams();
+  writeScope(query, state);
+  if (state.left !== null) {
+    query.set("a", state.left);
+  }
+  if (state.right !== null) {
+    query.set("b", state.right);
+  }
+  replace(query);
+}
+
+function replace(query: URLSearchParams): void {
+  const search = query.toString();
   // `replaceState`: a sort click is not a navigation, and burying the back button
   // under twelve of them helps nobody.
   window.history.replaceState(
     null,
     "",
-    query === "" ? window.location.pathname : `${window.location.pathname}?${query}`,
+    search === "" ? window.location.pathname : `${window.location.pathname}?${search}`,
   );
+}
+
+/**
+ * The link from the results to the head-to-head, carrying the scope.
+ *
+ * The filters do not travel: they narrow a table, and a pair is not a table. But
+ * the campaign and the algorithm do — an absolute timing never crosses an ISA, and
+ * a "Compare" link that quietly switched architecture would be inviting exactly the
+ * comparison `METHODOLOGY.md#the-isa-rule` forbids.
+ */
+export function compareHref(scope: Scope, left?: string, right?: string): string {
+  const query = new URLSearchParams();
+  writeScope(query, scope);
+  if (left !== undefined) {
+    query.set("a", left);
+  }
+  if (right !== undefined) {
+    query.set("b", right);
+  }
+  const search = query.toString();
+  const base = `${import.meta.env.BASE_URL}compare/`;
+  return search === "" ? base : `${base}?${search}`;
 }

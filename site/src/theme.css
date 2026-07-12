@@ -558,16 +558,21 @@ td.numeric {
 .compare-pick {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  /* The two sides are one comparison: they match height, whatever is in them. */
+  align-items: stretch;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
-.compare-pick .filter {
-  flex: 1 1 14rem;
+/* A picker inside a side is a stacked question, not a column to fill. Left to grow
+   — as it did when the pickers sat directly in this row — the three selects drift
+   half a screen apart. */
+.compare-side .filter {
+  flex: 0 0 auto;
 }
 
 .compare-swap {
+  align-self: center;
   height: 2.1rem;
   padding: 0 0.7rem;
   border: 1px solid var(--border);
@@ -635,4 +640,209 @@ td.better {
 
 .muted {
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   The shell: one masthead, three pages.
+   --------------------------------------------------------------------------- */
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+@media (min-width: 768px) {
+  .site-header {
+    padding: 0.75rem 2rem;
+  }
+}
+
+.brand {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.site-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.site-nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 0.15rem 0;
+  /* The current tab is underlined *and* darker: never colour alone. */
+  border-bottom: 2px solid transparent;
+}
+
+.site-nav a:hover {
+  color: var(--text-primary);
+}
+
+.site-nav a.current {
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--series-1);
+}
+
+.site-footer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 768px) {
+  .site-footer {
+    padding: 2rem 2rem 3rem;
+  }
+}
+
+.footnote {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* An absent half of the triple: rendered, and visibly quieter than a value. */
+td.muted-cell {
+  color: var(--text-muted);
+}
+
+.filter-clear {
+  align-self: end;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.4rem 0.7rem;
+}
+
+.filter-clear:hover {
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------
+   The head-to-head, now a page: two columns and a swap between them.
+   --------------------------------------------------------------------------- */
+
+.compare-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1 1 20rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.compare-side-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.compare-side-triple {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.compare-side-triple dt {
+  color: var(--text-muted);
+}
+
+.compare-side-triple dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+/* ---------------------------------------------------------------------------
+   METHODOLOGY.md, rendered. Prose, and nothing else on the page.
+   --------------------------------------------------------------------------- */
+
+.prose {
+  max-width: 46rem;
+}
+
+.prose h1 {
+  font-size: 1.8rem;
+  letter-spacing: -0.02em;
+}
+
+.prose h2 {
+  margin-top: 2.5rem;
+}
+
+/* METHODOLOGY.md separates its sections with a rule of its own. A border on the
+   heading as well would draw the same line twice. */
+.prose hr {
+  margin: 2.5rem 0 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.prose h3 {
+  margin-top: 1.75rem;
+}
+
+.prose blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--surface-2);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+.prose pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+/* Spelled with the list, not as a bare `.prose li`: the warnings block above already
+   styles an `li` at a higher specificity, and a looser selector coming after it is
+   the kind of thing that stops applying the day somebody reorders this file. */
+.prose ul li,
+.prose ol li {
+  margin: 0.35rem 0;
 }

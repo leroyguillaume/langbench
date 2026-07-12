@@ -163,6 +163,28 @@ subject is **compiler and runtime backends**, not languages.
   compares two rows of one campaign; a gap that does not clear the worse of the two
   rows' dispersions is `indistinguishable`, whichever minimum came out lower.
   ([why](METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference))
+- **The site is Astro, and every route is prerendered.** GitHub Pages is a file
+  server: `output: 'static'`, so `/compare/` is a real `.html` and a deep link needs
+  no `404.html` fallback. Anything that reads a campaign is a React island
+  (`client:only`) — there is no campaign at build time, and a page that pretended
+  otherwise would ship a chart of numbers nobody measured. `ClientRouter` swaps
+  pages without reloading the document, so the module singleton in `campaigns.ts`
+  keeps the WASM instance and the parsed campaigns across a navigation: the samples
+  are fetched once per tab, not once per page.
+- **`METHODOLOGY.md` is copied into the site, never re-written for it.**
+  `scripts/data.js` copies the file at the repository root; a second, hand-maintained
+  copy would be a methodology that drifts from the one the harness was written
+  against.
+- **A row is named by its triple, never by a slug.** `language`, `compiler`,
+  `interpreter` — the columns `report.md` prints, and the fields a `bench.yaml`
+  declares. The `backend` slug on the wire is the handle the WASM picks rows by, and
+  the site's use of it stops at that function call: never displayed, never sorted
+  on, never in a URL (`?a=java/native-image/-/strict`, not `?a=java-native:strict`).
+  `java-native-image` reads as "java, native" and is in fact java + `native-image` +
+  no interpreter; a name you have to decode is worse than three fields that say it.
+  An absence is a published fact: it renders as `n/a` and is selectable as a filter.
+- **The head-to-head asks for a language first**, then the toolchain that ran it,
+  then the mode. That is the order a reader asks the questions in.
 - **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
   integer, a JavaScript number is a double, and `JSON.parse` silently rounds past
   2^53. `samples.ndjson` is fetched as *text* and parsed in Rust; checksums cross
