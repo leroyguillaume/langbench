@@ -13,7 +13,35 @@ name: pages
 # committed, passing the SHA of that commit as `ref`: the page then renders the
 # samples that were just measured, not the ones that happened to be on `main` when
 # the campaign started.
+#
+# And it runs on its own, on a push to `main` that touches anything the page is made
+# of. That was the point of splitting it out and it was still missing: a CSS fix, a
+# new chart, a change to `src/analysis.rs` -- which *is* the site's arithmetic, via
+# WebAssembly -- reached `main` and stopped there, waiting for somebody to dispatch a
+# campaign that had nothing to do with it.
+#
+# What is deliberately **not** in the path filter: `samples/` and `reports/`. They are
+# what `bench` commits, and `bench` calls this workflow itself the moment it has --
+# a push trigger on them would fire a second, identical deploy of the same commit,
+# racing the first through the concurrency group below.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      # The page itself.
+      - site/**
+      # The harness's arithmetic: `analysis.rs` and `compare.rs` are compiled to
+      # WebAssembly and *are* what the site computes with. A change to min-of-N is a
+      # change to every number on the page.
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      # Prose the site renders verbatim, copied in at build time by `scripts/data.js`.
+      - METHODOLOGY.md
+      - docs/columns.md
+      # And this file: a change to how the page is built is a reason to rebuild it.
+      - .github/workflows/pages.yaml
   workflow_call:
     inputs:
       ref:
@@ -42,10 +70,13 @@ jobs:
   site:
     runs-on: ubuntu-24.04
     steps:
+      # `inputs` is empty on a push, and an empty `ref` would make this a checkout of
+      # whatever the action decides to default to. It is spelled out instead: the
+      # commit that was pushed.
       - name: check out the repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: set up the Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable

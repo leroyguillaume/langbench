@@ -51,6 +51,27 @@ export function delta(value: string | null): string {
 }
 
 /**
+ * A size, scaled to the unit a human would have chosen: `812 B`, `70.8 KiB`, `3.6 MiB`.
+ *
+ * For the head-to-head, and only for it. The wire says `bytes` for a binary and for a
+ * container's peak memory alike — they are the same unit and three orders of
+ * magnitude apart — and a pair of rows is two numbers side by side, where scaling
+ * each to fit is a kindness. A *column* is not: a column where one row reads
+ * `900 KiB` and the next `3.6 MiB` cannot be scanned, which is why the table pins
+ * Memory to MiB and Binary to KiB and neither of them uses this.
+ */
+export function size(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return NOT_AVAILABLE;
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const kib = value / 1024;
+  return kib < 1024 ? `${kib.toFixed(1)} KiB` : `${(kib / 1024).toFixed(1)} MiB`;
+}
+
+/**
  * A whole container's memory, which is megabytes and not kilobytes: a JVM's peak in
  * KiB is a six-digit number nobody reads at a glance. The same spelling as
  * `report.md`'s Memory column.

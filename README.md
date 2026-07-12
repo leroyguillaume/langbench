@@ -592,11 +592,20 @@ which on every commit would mean churning them for reasons that have nothing to 
 with the backends being measured.
 
 **[`pages`](.github/workflows/pages.yaml)** — builds the site from the campaigns
-committed at a given `ref` and deploys it to GitHub Pages. `bench` invokes it via
-`workflow_call`; on its own it is a `workflow_dispatch` away. It measures nothing —
-it is the third rendering, a pure function of `samples/` — which is exactly why it
-is a separate workflow: a change to `site/` alone reaches the page without spending
-an hour of runner time re-measuring backends that have not moved.
+committed at a given `ref` and deploys it to GitHub Pages. It measures nothing — it
+is the third rendering, a pure function of `samples/` — which is exactly why it is a
+separate workflow: a change to `site/` alone reaches the page without spending an
+hour of runner time re-measuring backends that have not moved.
+
+It fires three ways. **On a push to `main`** that touches anything the page is made
+of: `site/`, `src/` (which *is* the site's arithmetic — `analysis.rs` and
+`compare.rs` are compiled to WebAssembly and called from the browser),
+`METHODOLOGY.md` and `docs/columns.md` (rendered verbatim), or the workflow itself.
+**Via `workflow_call`**, from `bench`, once a campaign's samples are committed —
+which is why `samples/` and `reports/` are deliberately *not* in that path filter:
+`bench` publishes them and then calls this workflow itself, and a push trigger on
+them would race a second, identical deploy of the same commit. And **on
+`workflow_dispatch`**, to republish any `ref` by hand.
 
 **A number this workflow produces is indicative, not publishable.** A GitHub
 runner is shared, virtualised and frequency-scaled — the worst benchmark target

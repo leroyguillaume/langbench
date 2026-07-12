@@ -191,6 +191,13 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .filter((row) => row.run_energy_uj !== null)
     .map((row) => chartRow(row, [row.run_energy_uj?.min ?? null]));
 
+  // Why the Energy column is empty, in the machine's own words. A column of `n/a`
+  // with nothing beside it reads as a measurement that failed; this one is a
+  // *machine* that cannot be asked. "No counter on this host" and "this backend
+  // spent no energy" are opposite statements, and only one of them is true.
+  const energyCounters =
+    analysis.machine_fields.find((field) => field.label === "Energy counters")?.value ?? null;
+
   const scope = {
     arch: analysis.arch,
     algo: algo?.algo ?? null,
@@ -344,6 +351,20 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
           short version: look at <strong>Dispersion</strong> first, because nothing else on a row
           can be more trustworthy than it.
         </p>
+        {energyRows.length === 0 && (
+          <p className="card-aside">
+            <strong>
+              Energy is empty on this campaign, and that is the host's doing, not the backends'.
+            </strong>{" "}
+            {energyCounters === null
+              ? "This machine exposed no energy counter, so nothing was there to read."
+              : `The machine reported: ${energyCounters}`}{" "}
+            An absent number is not a zero — a backend that spent no measurable energy would be a
+            backend that did not run. Run a campaign on a bare-metal x86-64 host and the column
+            fills itself.
+          </p>
+        )}
+
         <p className="card-aside">
           Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
           how many times slower a row is than the fastest row <em>currently on screen</em> — filter

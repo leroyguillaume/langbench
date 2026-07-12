@@ -19,13 +19,13 @@ import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../a
 import { compare, compareAcross } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import {
-  bytes,
   joules,
   milliseconds,
   NOT_AVAILABLE,
   optional,
   percent,
   seconds,
+  size,
   times,
 } from "../format";
 import { findByKey, type Identity, identityKey, label, toolchain, wasmRow } from "../identity";
@@ -328,8 +328,11 @@ function value(metric: Metric, side: "left" | "right"): string {
       return milliseconds(raw);
     case "microseconds":
       return seconds(raw);
+    // Scaled, not pinned: the wire calls a 2 KiB `.text` section and a 400 MiB JVM
+    // heap the same unit, and a pair of rows is where fitting each to its own scale
+    // costs nothing. See `size`.
     case "bytes":
-      return bytes(raw);
+      return size(raw);
     case "microjoules":
       return joules(raw);
   }
