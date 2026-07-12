@@ -60,8 +60,14 @@ export interface ResultsState extends Scope {
 
 export interface CompareState extends Scope {
   /**
-   * The two rows of the head-to-head, as `language/compiler/interpreter/mode`.
+   * The two rows of the head-to-head, as `[arch:]language/compiler/interpreter/mode`.
    * `null` — the site pairs the fastest with the fastest of another language.
+   *
+   * The ISA belongs to the *row's* address, not to the page's, because the two sides
+   * may come from two campaigns: `?a=x86_64:c/gcc/-/strict&b=aarch64:c/gcc/-/strict`
+   * is a legitimate thing to ask for and an alarming thing to be handed — the page
+   * says so when it happens. Without a prefix a side falls back to `arch`, so every
+   * link written before this existed still opens the pair it named.
    *
    * A comparison *is* a claim, and it is the sharpest one this site makes. It gets
    * a URL like every other view: a head-to-head somebody cannot link to is a
@@ -69,6 +75,35 @@ export interface CompareState extends Scope {
    */
   left: string | null;
   right: string | null;
+}
+
+/** One side of the pair, as the query string spells it: an ISA, and a row on it. */
+export interface SideRef {
+  /** `null` — the side named none, so it belongs to whichever campaign is in scope. */
+  arch: string | null;
+  /** `language/compiler/interpreter/mode`, or `null` when the side names no row. */
+  key: string | null;
+}
+
+/**
+ * `x86_64:c/gcc/-/strict` — the ISA, then the row.
+ *
+ * Validated, never trusted, like every other thing the query string says: an ISA this
+ * build never published is dropped by whoever holds the campaigns, and so is a row.
+ */
+export function readSide(raw: string | null): SideRef {
+  if (raw === null) {
+    return { arch: null, key: null };
+  }
+  const colon = raw.indexOf(":");
+  if (colon < 0) {
+    return { arch: null, key: raw };
+  }
+  return { arch: raw.slice(0, colon), key: raw.slice(colon + 1) };
+}
+
+export function writeSide(arch: string, key: string): string {
+  return `${arch}:${key}`;
 }
 
 /** Fastest first, on the statistic the report headlines. The same default as `report.md`. */

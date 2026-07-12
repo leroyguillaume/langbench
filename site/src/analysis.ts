@@ -21,7 +21,11 @@
 
 import { z } from "zod";
 import { logger } from "./logger";
-import init, { analyze as analyzeWasm, compare as compareWasm } from "./wasm/langbench.js";
+import init, {
+  analyze as analyzeWasm,
+  compare_across as compareAcrossWasm,
+  compare as compareWasm,
+} from "./wasm/langbench.js";
 
 /** Min-of-N and its dispersion, as `src/stats.rs` defines them. */
 export const summarySchema = z.object({
@@ -170,6 +174,8 @@ export const sideSchema = z.object({
   compiler: z.string().nullable(),
   interpreter: z.string().nullable(),
   mode: fpModeSchema,
+  /** The ISA of the campaign this row was measured on. */
+  arch: z.string(),
 });
 
 export const comparisonSchema = z.object({
@@ -185,6 +191,17 @@ export const comparisonSchema = z.object({
     /** Two `strict` rows that disagree. The harness aborts over it; a file carrying one did not come from here. */
     violates_strict_invariant: z.boolean(),
   }),
+  /**
+   * The two rows come from two architectures, and **every timing above is therefore
+   * meaningless as a comparison**. The harness decides this, and the site's only job
+   * is to say it out loud: a ratio travels between ISAs, a millisecond does not.
+   * See `METHODOLOGY.md#the-isa-rule`.
+   *
+   * The checksums are the exception, and the reason the crossing is worth offering:
+   * in `strict` mode they are obliged to be bit-identical on x86-64 and on AArch64
+   * alike, and a divergence is a bug in one of them.
+   */
+  cross_isa: z.boolean(),
 });
 
 export type Summary = z.infer<typeof summarySchema>;
@@ -322,5 +339,24 @@ export async function fetchCampaigns(baseUrl: string, options: Options): Promise
  */
 export function compare(ndjson: string, options: Options, selection: Selection): Comparison {
   const raw: unknown = compareWasm(ndjson, options, selection);
+  return comparisonSchema.parse(raw);
+}
+
+/**
+ * The same, with each row drawn from a campaign of its own — which is how a reader
+ * puts x86-64 next to AArch64.
+ *
+ * The comparison comes back with `cross_isa` set, and the page is obliged to say so.
+ * The harness computes the timings exactly as it does within one campaign, because
+ * refusing would only send somebody off to divide the two numbers by hand, with
+ * nothing on screen to tell them not to — and they mean nothing across two machines.
+ */
+export function compareAcross(
+  leftNdjson: string,
+  rightNdjson: string,
+  options: Options,
+  selection: Selection,
+): Comparison {
+  const raw: unknown = compareAcrossWasm(leftNdjson, rightNdjson, options, selection);
   return comparisonSchema.parse(raw);
 }

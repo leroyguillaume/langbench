@@ -19,7 +19,7 @@
 //! [`crate::analysis`] already published, and the whole module is a pure function
 //! of an [`Analysis`]. Recomputable, like every derived thing in this repository.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::analysis::{Aggregate, Analysis};
@@ -120,7 +120,7 @@ pub struct Checksums {
     pub violates_strict_invariant: bool,
 }
 
-/// Two rows of one campaign, and what may be said about the pair.
+/// Two rows, and what may be said about the pair.
 #[derive(Clone, Debug, Serialize)]
 pub struct Comparison {
     pub algo: String,
@@ -128,6 +128,16 @@ pub struct Comparison {
     pub right: Side,
     pub metrics: Vec<Metric>,
     pub checksums: Checksums,
+    /// The two rows come from two architectures, and **every timing below is
+    /// therefore meaningless as a comparison**. It is computed here rather than
+    /// left to the caller to notice: a renderer that forgot to check would publish
+    /// exactly the claim `METHODOLOGY.md#the-isa-rule` exists to forbid. A ratio
+    /// travels between ISAs; a millisecond does not.
+    ///
+    /// The checksums, on the other hand, are *more* interesting across an ISA than
+    /// within one: in `strict` mode they are obliged to be bit-identical on x86-64
+    /// and on AArch64 alike, and a divergence is a bug in one of them.
+    pub cross_isa: bool,
 }
 
 /// A backend's identity, on one side of the pair. The manifest's own fields — the
@@ -141,6 +151,9 @@ pub struct Side {
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
     pub mode: FpMode,
+    /// The ISA of the campaign this row was measured on — out of the machine record
+    /// inside the file, never out of its name.
+    pub arch: String,
 }
 
 /// Below three samples the median absolute deviation is structurally zero — the
@@ -154,21 +167,35 @@ const MINIMUM_SAMPLES_FOR_DISPERSION: usize = 3;
 /// or two rows from two algorithms — whose timings are two different amounts of
 /// work and whose checksums are two different reference values.
 pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison> {
-    let Some(algo) = analysis
-        .algos
-        .iter()
-        .find(|candidate| candidate.algo == selection.algo)
-    else {
-        bail!("this campaign has no algorithm {}", selection.algo);
-    };
+    compare_across(analysis, analysis, selection)
+}
 
-    let left = find(&algo.aggregates, &selection.left)?;
-    let right = find(&algo.aggregates, &selection.right)?;
+/// Compare a row of one campaign with a row of another — including, deliberately,
+/// two campaigns from two architectures.
+///
+/// The result then carries `cross_isa`, and **that flag is the point**. The timings
+/// it hands back are computed exactly as they would be within one campaign, because
+/// refusing to compute them would only push somebody into doing the division by
+/// hand; what the harness will not do is let the pair pass for a comparable one. A
+/// millisecond on x86-64 and a millisecond on AArch64 are two different machines
+/// answering two different questions, and no ratio of them means anything.
+/// See `METHODOLOGY.md#the-isa-rule`.
+pub fn compare_across(
+    left_analysis: &Analysis,
+    right_analysis: &Analysis,
+    selection: &Selection,
+) -> Result<Comparison> {
+    let left_algo = algo_of(left_analysis, &selection.algo)?;
+    let right_algo = algo_of(right_analysis, &selection.algo)?;
+
+    let left = find(&left_algo.aggregates, &selection.left)?;
+    let right = find(&right_algo.aggregates, &selection.right)?;
 
     Ok(Comparison {
-        algo: algo.algo.clone(),
-        left: side(left),
-        right: side(right),
+        algo: left_algo.algo.clone(),
+        cross_isa: left_analysis.arch != right_analysis.arch,
+        left: side(left, &left_analysis.arch),
+        right: side(right, &right_analysis.arch),
         metrics: vec![
             timing(
                 "run",
@@ -248,6 +275,14 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
     })
 }
 
+fn algo_of<'a>(analysis: &'a Analysis, algo: &str) -> Result<&'a crate::analysis::AlgoAnalysis> {
+    analysis
+        .algos
+        .iter()
+        .find(|candidate| candidate.algo == algo)
+        .ok_or_else(|| anyhow::anyhow!("this campaign has no algorithm {algo}"))
+}
+
 fn find<'a>(aggregates: &'a [Aggregate], row: &Row) -> Result<&'a Aggregate> {
     aggregates
         .iter()
@@ -257,7 +292,7 @@ fn find<'a>(aggregates: &'a [Aggregate], row: &Row) -> Result<&'a Aggregate> {
         )
 }
 
-fn side(aggregate: &Aggregate) -> Side {
+fn side(aggregate: &Aggregate, arch: &str) -> Side {
     Side {
         backend: aggregate.backend.clone(),
         backend_id: aggregate.backend_id.clone(),
@@ -265,6 +300,7 @@ fn side(aggregate: &Aggregate) -> Side {
         compiler: aggregate.compiler.clone(),
         interpreter: aggregate.interpreter.clone(),
         mode: aggregate.mode,
+        arch: arch.to_owned(),
     }
 }
 
@@ -473,9 +509,19 @@ mod tests {
     }
 
     fn analysis(samples: Vec<Sample>) -> Analysis {
+        on_arch("x86_64", samples)
+    }
+
+    /// A campaign, and the machine it says it ran on. The ISA is read out of that
+    /// record — never out of a filename, which is a label somebody typed.
+    fn on_arch(arch: &str, samples: Vec<Sample>) -> Analysis {
+        let machine = Machine {
+            arch: arch.to_owned(),
+            ..Machine::default()
+        };
         analyze(
             &Recording {
-                machine: Machine::default(),
+                machine,
                 campaign: campaign(),
                 samples,
                 failures: Vec::new(),
@@ -729,5 +775,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("nbody"), "{error:#}");
+    }
+
+    /// Two architectures, deliberately. The pair is computed — refusing would only
+    /// send somebody off to divide the two numbers by hand — but it is *flagged*,
+    /// because a millisecond does not cross an ISA and a renderer that forgot to say
+    /// so would publish the one claim `METHODOLOGY.md#the-isa-rule` forbids.
+    #[test]
+    fn a_pair_drawn_from_two_architectures_says_so() {
+        let x86 = on_arch(
+            "x86_64",
+            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
+        );
+        let arm = on_arch(
+            "aarch64",
+            rows("rust-rustc", FpMode::Strict, &[1_500_000_000; 5], 42),
+        );
+
+        let across = compare_across(&x86, &arm, &selection("c-gcc", "rust-rustc")).unwrap();
+        assert!(across.cross_isa);
+        assert_eq!(across.left.arch, "x86_64");
+        assert_eq!(across.right.arch, "aarch64");
+
+        // The timings are still computed. The flag is what makes them honest.
+        let run = across
+            .metrics
+            .iter()
+            .find(|metric| metric.key == "run")
+            .unwrap();
+        assert_eq!(run.left, Some(1_000_000_000));
+        assert_eq!(run.right, Some(1_500_000_000));
+
+        // And the one thing that *is* obliged to survive the crossing: in `strict`
+        // the checksum is bit-identical on every ISA. That is the whole invariant.
+        assert_eq!(across.checksums.same, Some(true));
+        assert!(!across.checksums.violates_strict_invariant);
+    }
+
+    #[test]
+    fn two_rows_of_one_campaign_are_not_a_cross_isa_pair() {
+        let campaign = analysis(
+            [
+                rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
+                rows("rust-rustc", FpMode::Strict, &[1_100_000_000; 5], 42),
+            ]
+            .concat(),
+        );
+        let same = compare(&campaign, &selection("c-gcc", "rust-rustc")).unwrap();
+        assert!(!same.cross_isa);
+        assert_eq!(same.left.arch, "x86_64");
+    }
+
+    /// Two `strict` rows on two ISAs whose checksums disagree: the invariant broken,
+    /// and it is a bug in one of them rather than a rounding excuse.
+    #[test]
+    fn a_strict_checksum_that_does_not_survive_the_crossing_is_a_violation() {
+        let x86 = on_arch(
+            "x86_64",
+            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
+        );
+        let arm = on_arch(
+            "aarch64",
+            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 43),
+        );
+        let across = compare_across(&x86, &arm, &selection("c-gcc", "c-gcc")).unwrap();
+        assert!(across.cross_isa);
+        assert!(across.checksums.violates_strict_invariant);
     }
 }

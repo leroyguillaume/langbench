@@ -16,13 +16,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../analysis";
-import { compare } from "../analysis";
+import { compare, compareAcross } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, milliseconds, NOT_AVAILABLE, optional, percent, seconds, times } from "../format";
 import { findByKey, type Identity, identityKey, label, toolchain, wasmRow } from "../identity";
 import { logger } from "../logger";
 import { MODE_COLOR, MODES } from "../series";
-import { type CompareState, readCompare, writeCompare } from "../url";
+import { type CompareState, readCompare, readSide, writeCompare, writeSide } from "../url";
 import { Warmup, WarmupBanner } from "./Warmup";
 
 export function ComparePage() {
@@ -81,40 +81,54 @@ interface Props {
 }
 
 function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
-  const { analysis, ndjson } = loaded;
+  const { analysis } = loaded;
+
+  // Each side names its own campaign. A side that names none belongs to the one in
+  // scope — which is what every link written before this page could cross an ISA says.
+  const sideOf = (raw: string | null): LoadedCampaign => {
+    const { arch } = readSide(raw);
+    return campaigns.find((entry) => entry.analysis.arch === arch) ?? loaded;
+  };
+  const leftCampaign = sideOf(state.left);
+  const rightCampaign = sideOf(state.right);
+
+  const rowsOf = (campaign: LoadedCampaign): Aggregate[] => {
+    const found = campaign.analysis.algos.find((entry) => entry.algo === state.algo);
+    const chosen = found ?? campaign.analysis.algos[0];
+    return (chosen?.aggregates ?? []).filter((row) => row.run_wall !== null);
+  };
+  const leftRows = rowsOf(leftCampaign);
+  const rightRows = rowsOf(rightCampaign);
+
   const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
-  const aggregates = useMemo(
-    () => (algo?.aggregates ?? []).filter((row) => row.run_wall !== null),
-    [algo],
-  );
 
   // The default pair is the fastest row and the fastest row of *another language*.
   // Two rows of the same language, one compiled by gcc and one by clang, is a fine
   // question — but it is not the one this page opens with, and a reader who wanted
   // it can pick it in two clicks. The aggregates arrive fastest first: the harness
   // sorted them, on the statistic the report headlines.
-  const [left, right] = useMemo(() => {
-    const first = findByKey(aggregates, state.left) ?? aggregates[0] ?? null;
-    const fallback =
-      aggregates.find((row) => row.language !== first?.language) ??
-      aggregates.find((row) => row !== first) ??
-      null;
-    return [first, findByKey(aggregates, state.right) ?? fallback] as const;
-  }, [aggregates, state.left, state.right]);
+  const left = findByKey(leftRows, readSide(state.left).key) ?? leftRows[0] ?? null;
+  const right =
+    findByKey(rightRows, readSide(state.right).key) ??
+    rightRows.find((row) => row.language !== left?.language) ??
+    rightRows.find((row) => row !== left) ??
+    null;
 
-  // The comparison is the harness's, computed from the raw campaign — the same
-  // file, the same code, the same min-of-N as every other number on this site. The
-  // site never decides whether a gap is a difference.
+  // The comparison is the harness's — the same code, the same min-of-N as every other
+  // number on this site. When the two rows come from two campaigns it is the harness
+  // that reads both files, and the harness that flags the crossing: the site does not
+  // divide a millisecond by another, here or anywhere.
   const comparison: { value: Comparison | null; error: string | null } = useMemo(() => {
     if (left === null || right === null || algo === undefined) {
       return { value: null, error: null };
     }
+    const options = { include_warmup: state.includeWarmup };
+    const selection = { algo: algo.algo, left: wasmRow(left), right: wasmRow(right) };
     try {
-      const value = compare(
-        ndjson,
-        { include_warmup: state.includeWarmup },
-        { algo: algo.algo, left: wasmRow(left), right: wasmRow(right) },
-      );
+      const value =
+        leftCampaign === rightCampaign
+          ? compare(leftCampaign.ndjson, options, selection)
+          : compareAcross(leftCampaign.ndjson, rightCampaign.ndjson, options, selection);
       return { value, error: null };
     } catch (cause: unknown) {
       // A pair the campaign cannot honour is a broken card, never a broken page.
@@ -122,7 +136,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
       logger.error("compare.failed", { message });
       return { value: null, error: message };
     }
-  }, [ndjson, algo, left, right, state.includeWarmup]);
+  }, [leftCampaign, rightCampaign, algo, left, right, state.includeWarmup]);
 
   if (left === null || right === null) {
     return (
@@ -140,41 +154,42 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
     );
   }
 
-  const pick = (side: "left" | "right", row: Aggregate) =>
-    setState({ ...state, [side]: identityKey(row) });
+  const pick = (side: "left" | "right", arch: string, row: Aggregate) =>
+    setState({ ...state, [side]: writeSide(arch, identityKey(row)) });
+
+  // Moving a side to another ISA keeps the row it was on, if that campaign measured
+  // it: "the same backend, on the other machine" is the question somebody switching
+  // ISA is asking. Otherwise it lands on that campaign's fastest row.
+  const moveTo = (side: "left" | "right", arch: string) => {
+    const campaign = campaigns.find((entry) => entry.analysis.arch === arch);
+    if (campaign === undefined) {
+      return;
+    }
+    const current = side === "left" ? left : right;
+    const rows = rowsOf(campaign);
+    const row = findByKey(rows, identityKey(current)) ?? rows[0];
+    if (row !== undefined) {
+      pick(side, arch, row);
+    }
+  };
 
   const swap = () => setState({ ...state, left: state.right, right: state.left });
 
-  const run = comparison.value?.metrics.find((metric) => metric.key === "run") ?? null;
+  const view = comparison.value;
+  const run = view?.metrics.find((metric) => metric.key === "run") ?? null;
 
   return (
     <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
         <h1>Head to head</h1>
         <p>
-          Two rows of the <strong>{analysis.arch}</strong> campaign, and the verdict the campaign
-          can defend. A gap smaller than the dispersion the two rows carry is{" "}
-          <strong>not a difference</strong> — it is the same number, measured twice, on a machine
-          that was busy. The harness decides that, not this page.
+          Two rows, and the verdict the campaign can defend. A gap smaller than the dispersion the
+          two rows carry is <strong>not a difference</strong> — it is the same number, measured
+          twice, on a machine that was busy. The harness decides that, not this page.
         </p>
       </header>
 
       <div className="filters">
-        {campaigns.length > 1 && (
-          <label className="filter">
-            <span>ISA</span>
-            <select
-              value={analysis.arch}
-              onChange={(event) => setState({ ...state, arch: event.target.value })}
-            >
-              {campaigns.map((entry) => (
-                <option key={entry.analysis.arch} value={entry.analysis.arch}>
-                  {entry.analysis.arch}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <label className="filter">
           <span>Algorithm</span>
           <select
@@ -202,19 +217,45 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
       )}
 
       <div className="compare-pick">
-        <Picker side="left" title="A" aggregates={aggregates} selected={left} onPick={pick} />
+        <Picker
+          side="left"
+          title="A"
+          aggregates={leftRows}
+          selected={left}
+          arch={leftCampaign.analysis.arch}
+          arches={campaigns.map((entry) => entry.analysis.arch)}
+          onPick={pick}
+          onArch={moveTo}
+        />
         <button type="button" className="compare-swap" onClick={swap} aria-label="swap A and B">
           ⇄
         </button>
-        <Picker side="right" title="B" aggregates={aggregates} selected={right} onPick={pick} />
+        <Picker
+          side="right"
+          title="B"
+          aggregates={rightRows}
+          selected={right}
+          arch={rightCampaign.analysis.arch}
+          arches={campaigns.map((entry) => entry.analysis.arch)}
+          onPick={pick}
+          onArch={moveTo}
+        />
       </div>
+
+      {/* The two rows were measured on two machines. Everything below is still
+          computed, and almost none of it means anything — said here rather than left
+          for the reader to work out from a row of numbers that looks exactly like a
+          valid one. */}
+      {view?.cross_isa === true && (
+        <CrossIsaWarning left={view.left.arch} right={view.right.arch} />
+      )}
 
       {comparison.error !== null && <p className="compare-error">{comparison.error}</p>}
 
-      {comparison.value !== null && (
+      {view !== null && (
         <>
-          <Headline comparison={comparison.value} run={run} />
-          <Checksums comparison={comparison.value} />
+          <Headline comparison={view} run={run} />
+          <Checksums comparison={view} />
 
           <section className="card">
             <h2>Every metric</h2>
@@ -224,24 +265,39 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
                   <tr>
                     <th className="text">Metric</th>
                     <th className="numeric">
-                      <Name identity={left} />
+                      <Name identity={left} {...(view.cross_isa ? { arch: view.left.arch } : {})} />
                     </th>
                     <th className="numeric">
-                      <Name identity={right} />
+                      <Name
+                        identity={right}
+                        {...(view.cross_isa ? { arch: view.right.arch } : {})}
+                      />
                     </th>
                     <th className="numeric">B ÷ A</th>
                     <th className="text">Verdict</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {comparison.value.metrics.map((metric) => (
+                  {view.metrics.map((metric) => (
                     <tr key={metric.key}>
                       <td className="text">{metric.label}</td>
                       <td className={cell(metric, "left")}>{value(metric, "left")}</td>
                       <td className={cell(metric, "right")}>{value(metric, "right")}</td>
                       <td className="numeric">{times(metric.ratio)}</td>
                       <td className="text">
-                        <Verdict metric={metric} left={left} right={right} />
+                        <Verdict
+                          metric={metric}
+                          left={left}
+                          right={right}
+                          crossIsa={
+                            view.cross_isa
+                              ? {
+                                  left: view.left.arch,
+                                  right: view.right.arch,
+                                }
+                              : null
+                          }
+                        />
                       </td>
                     </tr>
                   ))}
@@ -273,11 +329,17 @@ function cell(metric: Metric, side: "left" | "right"): string {
   return metric.verdict === side ? "numeric better" : "numeric";
 }
 
-function Name({ identity }: { identity: Identity }) {
+/**
+ * A column header of the metrics table. The ISA is named whenever the two sides
+ * disagree about it: a column of milliseconds whose machine is not stated is the
+ * thing that makes a cross-ISA table dangerous rather than merely useless.
+ */
+function Name({ identity, arch }: { identity: Identity; arch?: string }) {
   return (
     <span className="mode-tag">
       <span className="mode-dot" style={{ background: `var(${MODE_COLOR[identity.mode]})` }} />
       {label(identity)} · {identity.mode}
+      {arch !== undefined && <span className="side-arch">{arch}</span>}
     </span>
   );
 }
@@ -306,6 +368,15 @@ function Headline({ comparison, run }: { comparison: Comparison; run: Metric | n
     );
   }
   const winner = run.verdict === "left" ? comparison.left : comparison.right;
+  if (comparison.cross_isa) {
+    return (
+      <p className="compare-headline tie">
+        On the run, the <strong>{winner.arch}</strong> row came out {percent(run.gap_pct)} lower —
+        and that is a fact about two machines, not about two backends. It is not a result, and this
+        project does not publish it. See the warning above.
+      </p>
+    );
+  }
   return (
     <p className="compare-headline">
       On the run, <strong>{label(winner)}</strong> in <strong>{winner.mode}</strong> is faster by{" "}
@@ -359,7 +430,18 @@ function Checksums({ comparison }: { comparison: Comparison }) {
   );
 }
 
-function Verdict({ metric, left, right }: { metric: Metric; left: Identity; right: Identity }) {
+function Verdict({
+  metric,
+  left,
+  right,
+  crossIsa,
+}: {
+  metric: Metric;
+  left: Identity;
+  right: Identity;
+  /** Across an ISA the two sides can be the same triple, and only the machine tells them apart. */
+  crossIsa: { left: string; right: string } | null;
+}) {
   switch (metric.verdict) {
     case "unmeasured":
       return <span className="muted">one side has no such number</span>;
@@ -373,6 +455,14 @@ function Verdict({ metric, left, right }: { metric: Metric; left: Identity; righ
       );
     default: {
       const winner = metric.verdict === "left" ? left : right;
+      if (crossIsa !== null) {
+        const arch = metric.verdict === "left" ? crossIsa.left : crossIsa.right;
+        return (
+          <span className="tie" title="two machines, not two backends">
+            lower on <strong>{arch}</strong>, by {percent(metric.gap_pct)} — not a result
+          </span>
+        );
+      }
       return (
         <span>
           <strong>{label(winner)}</strong> · {winner.mode}, by {percent(metric.gap_pct)}
@@ -382,12 +472,54 @@ function Verdict({ metric, left, right }: { metric: Metric; left: Identity; righ
   }
 }
 
+/**
+ * The two rows were measured on two machines, and the page says so before the reader
+ * reads a single number.
+ *
+ * The harness computed the comparison anyway — refusing would only send somebody off
+ * to divide the two numbers by hand, with nothing on screen to tell them not to. So
+ * the numbers are there, and so is this.
+ */
+function CrossIsaWarning({ left, right }: { left: string; right: string }) {
+  const methodology = `${import.meta.env.BASE_URL}methodology/#the-isa-rule`;
+  return (
+    <section className="warnings">
+      <h2>
+        These two rows ran on different machines — {left} and {right}
+      </h2>
+      <p>
+        So the timings below are <strong>not a comparison</strong>, and the ratio between them is
+        not a result. Two architectures means two CPUs, two clock speeds, two instruction sets and
+        two memory systems: a millisecond here and a millisecond there answer different questions,
+        and dividing one by the other describes neither. Whatever the verdict column says, it is
+        ranking the machines at least as much as the backends.
+      </p>
+      <p>
+        The ratio is the thing that travels. If you want to know whether Rust beats C <em>more</em>{" "}
+        on {right} than on {left}, compare each of them against the same baseline <em>within</em>{" "}
+        its own campaign, and compare the two ratios — <a href={methodology}>the ISA rule</a> is
+        why, and it is short.
+      </p>
+      <p>
+        One column does survive the crossing, and it is the reason this pairing is worth having:{" "}
+        <strong>the checksum</strong>. In <code>strict</code> mode it is obliged to be bit-identical
+        on every architecture, every compiler and every language. If the two below disagree, that is
+        not a curiosity — it is a bug in one of them.
+      </p>
+    </section>
+  );
+}
+
 interface PickerProps {
   side: "left" | "right";
   title: string;
   aggregates: Aggregate[];
   selected: Aggregate;
-  onPick: (side: "left" | "right", row: Aggregate) => void;
+  /** The ISA of the campaign this side is reading. */
+  arch: string;
+  arches: string[];
+  onPick: (side: "left" | "right", arch: string, row: Aggregate) => void;
+  onArch: (side: "left" | "right", arch: string) => void;
 }
 
 /**
@@ -401,7 +533,7 @@ interface PickerProps {
  * if it does not — a selector that can land on a row the campaign never measured is
  * a selector that can produce a blank page.
  */
-function Picker({ side, title, aggregates, selected, onPick }: PickerProps) {
+function Picker({ side, title, aggregates, selected, arch, arches, onPick, onArch }: PickerProps) {
   const languages = [...new Set(aggregates.map((row) => row.language))].sort();
   const sameLanguage = aggregates.filter((row) => row.language === selected.language);
 
@@ -423,14 +555,14 @@ function Picker({ side, title, aggregates, selected, onPick }: PickerProps) {
   const setLanguage = (language: string) => {
     const row = nearest(aggregates.filter((candidate) => candidate.language === language));
     if (row !== undefined) {
-      onPick(side, row);
+      onPick(side, arch, row);
     }
   };
 
   const setToolchain = (chain: string) => {
     const row = nearest(sameLanguage.filter((candidate) => toolchain(candidate) === chain));
     if (row !== undefined) {
-      onPick(side, row);
+      onPick(side, arch, row);
     }
   };
 
@@ -439,13 +571,26 @@ function Picker({ side, title, aggregates, selected, onPick }: PickerProps) {
       (candidate) => toolchain(candidate) === toolchain(selected) && candidate.mode === mode,
     );
     if (row !== undefined) {
-      onPick(side, row);
+      onPick(side, arch, row);
     }
   };
 
   return (
     <div className="compare-side">
       <div className="compare-side-title">{title}</div>
+
+      {arches.length > 1 && (
+        <label className="filter">
+          <span>ISA — the machine it ran on</span>
+          <select value={arch} onChange={(event) => onArch(side, event.target.value)}>
+            {arches.map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="filter">
         <span>Language</span>
