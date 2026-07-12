@@ -6,6 +6,8 @@ language: python
 # this table's sense: nothing is compiled before the program starts.
 compiler: ~
 interpreter: pypy
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.py
 # One floating-point semantics, and no flag to change it: the JIT is not licensed
 # to contract a multiply-add or reassociate while it traces. That is why this row's
 # checksum is bit-identical to CPython's, and to C's.

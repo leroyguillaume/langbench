@@ -3,6 +3,8 @@ language: cpp
 compiler: clang
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.cpp
 # clang distinguishes all three, and spells them exactly as gcc does.
 modes: all
 description: >-

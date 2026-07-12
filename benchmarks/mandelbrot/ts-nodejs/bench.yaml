@@ -6,6 +6,8 @@ language: ts
 # is no compiler in this pipeline, only a runtime that ignores the annotations.
 compiler: ~
 interpreter: nodejs
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mts
 # One floating-point semantics, and no flag to change it: the types are gone before
 # V8 ever sees the program, and ECMAScript specifies the result of every operator.
 modes:

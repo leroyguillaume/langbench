@@ -46,6 +46,15 @@ pub struct ContainerRecord {
     pub system_usec: u64,
     #[serde(default)]
     pub checksum: Option<u64>,
+    /// The cgroup's memory high-water mark, read by the container from its own
+    /// `memory.peak`. `None` on a kernel that exposes neither that nor the cgroup
+    /// v1 file — an absence, never a zero.
+    ///
+    /// It is the whole container: the process tree, the page cache it faulted in,
+    /// the tmpfs it wrote. Not the RSS of one process, and deliberately not — the
+    /// question is what this backend needed in order to run.
+    #[serde(default)]
+    pub peak_bytes: Option<u64>,
     #[serde(default)]
     pub binary_bytes: Option<u64>,
     #[serde(default)]
@@ -84,6 +93,31 @@ pub struct Sample {
     pub elapsed_ns: u64,
     pub user_usec: u64,
     pub system_usec: u64,
+    /// Microjoules the CPU package burned around this run — Docker's overhead
+    /// included. The energy twin of [`Self::wall_ns`], never of `elapsed_ns`: RAPL
+    /// counts sockets, not cgroups, so there is no inner clock to read and nothing
+    /// honest to subtract. See [`crate::energy`].
+    ///
+    /// `None` on a host with no readable counters: AArch64 has none, and since
+    /// PLATYPUS most distributions keep them root-only.
+    #[serde(default)]
+    pub energy_uj: Option<u64>,
+    /// The container's peak memory, from its own cgroup. See
+    /// [`ContainerRecord::peak_bytes`].
+    #[serde(default)]
+    pub peak_bytes: Option<u64>,
+    /// Bytes of the one source file the manifest declares. A property of the
+    /// implementation, read off disk at discovery — not of the run, and not of the
+    /// image.
+    ///
+    /// It measures the *language*, and it is honest about that: two backends that
+    /// compile the same file report the same number, which is exactly what a
+    /// `c-gcc` / `c-clang` pair should say about the code somebody wrote once.
+    ///
+    /// `Option` for one reason only: a campaign recorded before this field existed
+    /// carries none, and a report of it says so rather than inventing a zero.
+    #[serde(default)]
+    pub source_bytes: Option<u64>,
     pub checksum: Option<u64>,
     pub binary_bytes: Option<u64>,
     pub binary_stripped_bytes: Option<u64>,
@@ -123,6 +157,39 @@ impl Sample {
 
     pub fn cpu_usec(&self) -> u64 {
         self.user_usec + self.system_usec
+    }
+
+    /// How many cores this run actually kept busy, in thousandths of a core.
+    ///
+    /// CPU time over compute time — and the single number that separates *this
+    /// backend is slow* from *this backend cannot use the machine*. Two rows with
+    /// the same wall-clock and 1.0 versus 7.8 cores are not two slow backends;
+    /// one of them is a GIL. The harness hands every kernel the same thread count
+    /// ([`Self::cpu`]), so this is read against that.
+    ///
+    /// **It can exceed the thread count, and that is a result, not an overflow.**
+    /// The numerator is every microsecond of CPU the container burned; the
+    /// denominator is only the span the program timed itself over. A JIT compiling
+    /// on one thread while the kernel computes on eight is spending CPU that the
+    /// hot loop's own clock never sees — and a reader comparing a JVM to a static
+    /// binary deserves to see that CPU rather than have it quietly normalised away.
+    ///
+    /// Per sample, never as a ratio of two minima: those come from different
+    /// rounds and describe a run that never happened. The same rule as
+    /// [`Self::startup_ns`].
+    ///
+    /// `None` when the program reported no elapsed time — there is nothing to
+    /// divide by, and a zero denominator is not infinite parallelism.
+    pub fn cores_milli(&self) -> Option<u64> {
+        if self.elapsed_ns == 0 {
+            return None;
+        }
+        // `u128`, because the numerator scales a microsecond count by a billion:
+        // a minute of CPU time would already overflow a `u64` here, and it is a
+        // perfectly ordinary campaign that spends one.
+        let cpu_ns = u128::from(self.cpu_usec()) * 1_000;
+        let milli = cpu_ns * 1_000 / u128::from(self.elapsed_ns);
+        Some(u64::try_from(milli).unwrap_or(u64::MAX))
     }
 }
 
@@ -340,6 +407,9 @@ const CSV_COLUMNS: &[&str] = &[
     "elapsed_ns",
     "user_usec",
     "system_usec",
+    "energy_uj",
+    "peak_bytes",
+    "source_bytes",
     "checksum",
     "binary_bytes",
     "binary_stripped_bytes",
@@ -384,6 +454,9 @@ impl Sample {
             self.elapsed_ns.to_string(),
             self.user_usec.to_string(),
             self.system_usec.to_string(),
+            optional(self.energy_uj),
+            optional(self.peak_bytes),
+            optional(self.source_bytes),
             optional(self.checksum),
             optional(self.binary_bytes),
             optional(self.binary_stripped_bytes),
@@ -531,6 +604,9 @@ mod tests {
             elapsed_ns: 213_300_000,
             user_usec: 860_000,
             system_usec: 4_000,
+            energy_uj: Some(9_400_000),
+            peak_bytes: Some(12_582_912),
+            source_bytes: Some(2_048),
             checksum,
             binary_bytes: Some(70_984),
             binary_stripped_bytes: Some(67_568),
@@ -680,7 +756,7 @@ mod tests {
         assert_eq!(
             row,
             "mandelbrot,c,gcc,,The reference C kernel.,,strict,run,3,false,8,313600000,\
-             213300000,860000,4000,448356792,70984,67568,1340",
+             213300000,860000,4000,9400000,12582912,2048,448356792,70984,67568,1340",
         );
     }
 
@@ -711,28 +787,108 @@ mod tests {
 
     #[test]
     fn startup_is_the_gap_between_the_two_clocks() {
-        let sample = Sample {
-            algo: "mandelbrot".to_owned(),
-            language: "c".to_owned(),
-            compiler: Some("gcc".to_owned()),
-            interpreter: None,
-            description: "The reference C kernel.".to_owned(),
-            comments: None,
-            mode: FpMode::Strict,
-            phase: Phase::Run,
-            round: 0,
-            warmup: false,
-            cpu: 8,
-            wall_ns: 4_300_000_000,
-            elapsed_ns: 4_100_000_000,
-            user_usec: 1,
-            system_usec: 2,
-            checksum: Some(1),
-            binary_bytes: None,
-            binary_stripped_bytes: None,
-            text_bytes: None,
-        };
-        assert_eq!(sample.startup_ns(), 200_000_000);
-        assert_eq!(sample.cpu_usec(), 3);
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.wall_ns = 4_300_000_000;
+        measured.elapsed_ns = 4_100_000_000;
+        measured.user_usec = 1;
+        measured.system_usec = 2;
+
+        assert_eq!(measured.startup_ns(), 200_000_000);
+        assert_eq!(measured.cpu_usec(), 3);
+    }
+
+    /// Eight cores, saturated for the whole compute span: 8000 thousandths.
+    #[test]
+    fn cores_are_the_cpu_time_over_the_compute_time() {
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.cpu = 8;
+        measured.elapsed_ns = 1_000_000_000; // 1 s of compute
+        measured.user_usec = 8_000_000; // 8 s of CPU
+        measured.system_usec = 0;
+        assert_eq!(measured.cores_milli(), Some(8_000));
+    }
+
+    /// The GIL, in one number: one core busy however many threads it was handed.
+    #[test]
+    fn a_backend_that_cannot_use_the_machine_says_so_in_one_core() {
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.cpu = 8;
+        measured.elapsed_ns = 10_000_000_000; // 10 s of compute
+        measured.user_usec = 10_000_000; // 10 s of CPU: one core
+        measured.system_usec = 0;
+        assert_eq!(measured.cores_milli(), Some(1_000));
+    }
+
+    /// Not an overflow: the CPU clock counts the runtime's JIT and GC threads,
+    /// and the compute clock does not count the span they ran in. A JVM burning
+    /// more CPU than its hot loop's wall-clock explains is the result.
+    #[test]
+    fn cores_may_exceed_the_thread_count_and_that_is_a_result() {
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.cpu = 4;
+        measured.elapsed_ns = 1_000_000_000;
+        measured.user_usec = 5_500_000; // 5.5 core-seconds in a 1 s window
+        measured.system_usec = 0;
+        assert_eq!(measured.cores_milli(), Some(5_500));
+    }
+
+    /// A zero denominator is not infinite parallelism.
+    #[test]
+    fn a_run_that_reported_no_compute_time_has_no_core_count() {
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.elapsed_ns = 0;
+        assert_eq!(measured.cores_milli(), None);
+    }
+
+    /// A campaign long enough to spend a minute of CPU overflows the naive `u64`
+    /// arithmetic — and a perfectly ordinary campaign spends one.
+    #[test]
+    fn a_long_run_does_not_overflow_the_core_count() {
+        let mut measured = sample(Phase::Run, Some(1));
+        measured.elapsed_ns = 600_000_000_000; // 10 minutes of compute
+        measured.user_usec = 4_800_000_000; // 80 core-minutes
+        measured.system_usec = 0;
+        assert_eq!(measured.cores_milli(), Some(8_000));
+    }
+
+    #[test]
+    fn a_container_reports_its_peak_memory() {
+        let record = parse_container_stdout(
+            r#"{"phase":"run","checksum":7,"elapsed_ns":1,"user_usec":1,"system_usec":1,"peak_bytes":12582912}"#,
+        )
+        .unwrap();
+        assert_eq!(record.peak_bytes, Some(12_582_912));
+    }
+
+    /// A kernel that exposes no `memory.peak` reports an absence, and the absence
+    /// travels. A zero would read as a backend that needed no memory at all.
+    #[test]
+    fn a_kernel_with_no_cgroup_peak_reports_nothing_rather_than_zero() {
+        let record = parse_container_stdout(
+            r#"{"phase":"run","checksum":7,"elapsed_ns":1,"user_usec":1,"system_usec":1,"peak_bytes":null}"#,
+        )
+        .unwrap();
+        assert_eq!(record.peak_bytes, None);
+    }
+
+    /// The three fields a campaign recorded before they existed. An old
+    /// `samples.ndjson` still renders, and its new columns say `n/a` — which is
+    /// the truth about it.
+    #[test]
+    fn a_campaign_recorded_before_these_metrics_existed_still_loads() {
+        let mut old = sample(Phase::Run, Some(1));
+        old.energy_uj = None;
+        old.peak_bytes = None;
+        old.source_bytes = None;
+        let mut line = serde_json::to_value(&old).unwrap();
+        let object = line.as_object_mut().unwrap();
+        object.remove("energy_uj");
+        object.remove("peak_bytes");
+        object.remove("source_bytes");
+
+        let reloaded: Sample = serde_json::from_value(line).unwrap();
+        assert_eq!(reloaded.energy_uj, None);
+        assert_eq!(reloaded.peak_bytes, None);
+        assert_eq!(reloaded.source_bytes, None);
     }
 }

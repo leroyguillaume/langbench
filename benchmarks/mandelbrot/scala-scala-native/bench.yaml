@@ -5,6 +5,8 @@ language: scala
 # of the JDK. Nothing interprets the result.
 compiler: scala-native
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.scala
 # One mode. The code generator underneath is clang, which would understand `fma` and
 # `fast` perfectly well -- but Scala the language says nothing about fusing, so a
 # relaxed build here would be a claim about clang's flags rather than about this

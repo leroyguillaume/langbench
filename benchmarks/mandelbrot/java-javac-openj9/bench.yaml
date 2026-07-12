@@ -7,6 +7,8 @@ compiler: javac
 # machine, with its own JIT (Testarossa), its own GC and its own object layout.
 # HotSpot is not "the JVM"; it is *a* JVM, and this row is what makes that visible.
 interpreter: openj9
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.java
 # One floating-point semantics: the JLS binds any JVM that claims the name, so
 # Testarossa may no more contract a multiply-add than C2 may.
 modes:

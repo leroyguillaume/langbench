@@ -7,6 +7,8 @@ language: java
 # "compiler" column in this table.
 compiler: javac
 interpreter: openjdk
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.java
 # One floating-point semantics. Since JEP 306 (Java 17) every expression is
 # evaluated strictly, and the JLS forbids javac *and* the JIT from contracting a
 # multiply-add: fusing is `Math.fma`, which the source has to write. `fma` and

@@ -90,6 +90,7 @@ Common flags — every one of them also reads an environment variable:
 | `--build-rounds` | `BUILD_ROUNDS` | `3` | Measured build rounds |
 | `--warmup-rounds` | `WARMUP_ROUNDS` | `1` | Rounds recorded but flagged |
 | `--march` | `MARCH` | per-ISA baseline | ISA baseline. `native` is rejected |
+| `--memory-limit-mb` | `MEMORY_LIMIT_MB` | `8192` | Memory budget of every measured container. Part of the measurement — see below |
 | `--run-timeout` | `RUN_TIMEOUT` | `600` | Seconds before a container is killed |
 | `--log-filter` | `LOG_FILTER` | `info` | [`tracing` filter directive][directives] |
 
@@ -132,6 +133,46 @@ none of its business.
 Sizing for the slowest backend makes the fastest one's *wall-clock* mostly
 container startup — which is why the report also carries `Compute min`, timed
 inside the program and unaffected.
+
+### The memory budget is part of the measurement
+
+`--memory-limit-mb` is not a safety rail, and changing it changes the results — all
+of them, not only the memory column.
+
+A garbage-collected runtime sizes its default heap from what its cgroup shows it: a
+JVM takes a quarter of it. Leave the budget unset and it reads the *host's* RAM, so
+the peak memory we publish would describe the bench machine rather than the backend
+— and moving the campaign to a box with twice the memory would "prove" that Java got
+hungrier. Pinned, and pinned identically for every backend, it is a property of the
+backend again.
+
+The price is that a constrained heap is a different garbage-collection regime, so the
+**timings move too**. Two campaigns run under different budgets do not compare, on any
+column. Pick a value, write it down, and leave it alone.
+
+The default of `8192` is set by the hungriest *compiler*, not by the kernels — the
+kernels need almost nothing, `native-image` needs gigabytes, and the build-phase tmpfs
+is charged to the same cgroup. Lower it far enough and you will not get smaller
+numbers: you will get a quarantined backend and a missing row.
+
+Swap is off. A container permitted to swap does not *fail* when it overruns its
+budget — it silently gets slower, and the timing quietly absorbs a page-fault storm
+that no column explains.
+
+### Energy, when the machine will tell you
+
+The report carries an energy column when the host exposes readable RAPL counters. Two
+things to know before quoting it:
+
+- **Docker's overhead is inside the number.** RAPL counts a CPU socket, not a cgroup,
+  so the container cannot read it and the harness reads it from the host, around the
+  `docker run`. It is the energy twin of the external wall-clock, never of the
+  program's own clock, and nothing is subtracted because there is nothing honest to
+  subtract. Read it as a ratio between two rows, never as an absolute.
+- **It is often absent, and absence is not zero.** RAPL is x86-only, and root-only on
+  most kernels since the PLATYPUS side-channel. `langbench machine` tells you whether
+  this host has counters before you spend an hour finding out; when it does not, the
+  column is `n/a` and the report says why.
 
 ### When a backend breaks
 
@@ -545,6 +586,7 @@ algo: mandelbrot
 language: python
 compiler: cython      # omit if nothing is compiled ahead of the run
 interpreter: cpython  # omit if the binary runs on the bare CPU
+source: mandelbrot.py # the one kernel file, beside this manifest
 modes:
   - strict            # or `modes: all`
 arch: all             # the default; omit it unless the toolchain does not exist somewhere
@@ -567,6 +609,14 @@ and nothing compiles ahead of the run, Cython does both. That last case is why
 there is no single "compiler" field — `python-cython` and `python-cpython` share
 a language *and an interpreter*, and differ only in the compiler. That is the
 clean experiment, and a directory name could not have expressed it.
+
+`source` names the one kernel file, and it is **declared rather than guessed**: the
+harness will not decide for itself which of the files beside the Dockerfile is the
+source, because the only way to do that is to pattern-match a filename — and the path
+is not metadata. Its size in bytes is published as a column. That column is a property
+of the *language*, not of the backend: `c-gcc` and `c-clang` compile the same file and
+report the same number, which is exactly what it should say about code written once
+and compiled twice. It is not a measure of quality, and it is not a measure of effort.
 
 `arch` is `all` unless the backend's **toolchain does not exist** for an
 architecture — and that is a fact, not a preference. Kotlin/Native, for instance,

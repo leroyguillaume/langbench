@@ -30,6 +30,8 @@ pub mod cli;
 #[cfg(feature = "cli")]
 pub mod discovery;
 #[cfg(feature = "cli")]
+pub mod energy;
+#[cfg(feature = "cli")]
 pub mod engine;
 #[cfg(feature = "cli")]
 pub mod output;

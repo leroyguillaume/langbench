@@ -2,6 +2,8 @@ algo: mandelbrot
 language: kotlin
 compiler: kotlinc
 interpreter: graalvm
+# The kernel. One file, and its size in bytes is a published metric.
+source: Mandelbrot.kt
 modes:
   - strict
 description: >-

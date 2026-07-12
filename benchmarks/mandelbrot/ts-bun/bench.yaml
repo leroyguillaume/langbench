@@ -4,6 +4,8 @@ language: ts
 # and hands the JavaScript to JavaScriptCore. No tsc, no emit, no type check.
 compiler: ~
 interpreter: bun
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.mts
 # One floating-point semantics, and no flag to change it: ECMAScript specifies the
 # result of every arithmetic operator, whichever engine runs it.
 modes:

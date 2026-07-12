@@ -3,6 +3,8 @@ language: rust
 compiler: rustc
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.rs
 # One mode, and it is not a shortcut. rustc has no `-ffast-math`, and LLVM may not
 # contract `a * b + c` into an FMA unless the source asked for `mul_add`. So `fma`
 # and `fast` would be the same image under another tag -- an absence that is a

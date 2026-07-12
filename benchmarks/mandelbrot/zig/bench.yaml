@@ -6,6 +6,8 @@ language: zig
 compiler: zig
 # Nothing executes the binary but the CPU.
 interpreter: ~
+# The kernel. One file, and its size in bytes is a published metric.
+source: mandelbrot.zig
 # One mode. Zig's float semantics are `.strict` unless the *source* says
 # `@setFloatMode(.optimized)`, so relaxing them would mean editing the kernel --
 # a different program, not a different build of the same one. `fma` and `fast`
