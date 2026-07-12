@@ -247,11 +247,20 @@ a {
 }
 
 /* Charts. Horizontal bars: the labels are long, and long labels belong on the
- * y-axis where they read horizontally. */
+ * y-axis where they read horizontally.
+ *
+ * `overflow-anchor: none`, and it is load-bearing. Scroll anchoring picks a node
+ * that is on screen and keeps *it* where it is when the content around it changes.
+ * That is exactly wrong for a list the reader reorders on purpose: sorting a column
+ * moves the anchored row somewhere else, and the browser faithfully scrolls the
+ * page to follow it — several hundred pixels, on a click that was supposed to
+ * reorder rows and nothing else. A sort is not new content arriving above the
+ * viewport; the reader stays where they are. */
 .chart {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-anchor: none;
 }
 
 .chart-row {
@@ -373,10 +382,13 @@ a {
   overflow-x: auto;
 }
 
+/* Same reason as `.chart`: the rows are reordered by a click, and a browser that
+   keeps the anchored row where it was drags the whole page with it. */
 table {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.85rem;
+  overflow-anchor: none;
 }
 
 th,
