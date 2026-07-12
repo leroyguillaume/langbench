@@ -78,27 +78,41 @@ a {
   color: var(--series-1);
 }
 
-/* Mobile-first: one column, everything stacked. Wider viewports add columns. */
+/* Mobile-first: one column, everything stacked. Wider viewports add columns.
+ *
+ * The vertical rhythm belongs to the page, not to each section: `gap` spaces every
+ * direct child once, and nothing below carries a `margin-bottom` of its own. A
+ * section that brought its own margin would have to agree with its neighbours about
+ * the space between them, and the day one of them stopped agreeing is the day the
+ * page looks cramped in exactly one place. */
 .page {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.5rem 1rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 @media (min-width: 768px) {
   .page {
-    padding: 2rem;
+    padding: 2.5rem 2rem 4rem;
+    gap: 2.25rem;
   }
 }
 
 .masthead h1 {
-  font-size: 1.6rem;
-  margin: 0 0 0.25rem;
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem;
   letter-spacing: -0.02em;
 }
 
+/* Prose wants a measure: past ~75 characters the eye loses the start of the next
+ * line, and this is the paragraph that says what everything below it is. */
 .masthead p {
   margin: 0;
+  max-width: 75ch;
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 
@@ -106,17 +120,24 @@ a {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
-  margin-bottom: 1rem;
+  padding: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .card {
+    padding: 1.5rem;
+  }
 }
 
 .card > h2 {
-  font-size: 1rem;
-  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  margin: 0 0 0.4rem;
 }
 
 .card > h2 + p {
-  margin: 0 0 1rem;
+  margin: 0 0 1.5rem;
+  max-width: 75ch;
+  line-height: 1.6;
   color: var(--text-secondary);
   font-size: 0.875rem;
 }
@@ -127,8 +148,7 @@ a {
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);
   border-radius: var(--radius);
-  padding: 1rem;
-  margin-bottom: 1rem;
+  padding: 1.25rem;
   color: var(--warning-text);
 }
 
@@ -150,8 +170,7 @@ a {
 .tiles {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: 1rem;
 }
 
 @media (min-width: 768px) {
@@ -164,7 +183,7 @@ a {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.75rem 1rem;
+  padding: 1rem 1.25rem;
 }
 
 .tile-label {
@@ -190,9 +209,8 @@ a {
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem 1rem;
+  gap: 1rem 1.25rem;
   align-items: flex-end;
-  margin-bottom: 1rem;
 }
 
 .filter {
@@ -518,8 +536,8 @@ td.numeric {
   background: var(--surface-2);
   border-left: 3px solid var(--series-1);
   border-radius: 0 var(--radius) var(--radius) 0;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+  margin: 0;
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
@@ -561,7 +579,6 @@ td.numeric {
   /* The two sides are one comparison: they match height, whatever is in them. */
   align-items: stretch;
   gap: 0.75rem;
-  margin-bottom: 1rem;
 }
 
 /* A picker inside a side is a stacked question, not a column to fill. Left to grow
@@ -590,8 +607,9 @@ td.numeric {
 /* The sentence the reader came for. Stated, not left to be inferred from a ratio
    column -- "1.03×" and "indistinguishable" look alike to somebody in a hurry. */
 .compare-headline {
-  margin: 0 0 0.75rem;
-  padding: 0.6rem 0.75rem;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  line-height: 1.6;
   border-left: 3px solid var(--series-1);
   background: var(--surface-2);
   border-radius: 4px;
@@ -604,7 +622,7 @@ td.numeric {
 }
 
 .compare-checksum {
-  margin: 0 0 1rem;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 0.9rem;
   overflow-wrap: anywhere;
