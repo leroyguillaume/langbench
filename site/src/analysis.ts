@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 import { logger } from "./logger";
-import init, { analyze as analyzeWasm } from "./wasm/langbench.js";
+import init, { analyze as analyzeWasm, compare as compareWasm } from "./wasm/langbench.js";
 
 /** Min-of-N and its dispersion, as `src/stats.rs` defines them. */
 export const summarySchema = z.object({
@@ -138,6 +138,55 @@ export const analysisSchema = z.object({
   failures: z.array(failureSchema),
 });
 
+/**
+ * One row of a head-to-head, as `src/compare.rs` decides it.
+ *
+ * `ratio`, `gap_pct` and `noise_pct` are the harness's arithmetic, not the site's:
+ * whether a gap is large enough to be a difference is a definition of what this
+ * project measures, and it has one home. The site spells these numbers out. It
+ * does not compute them, and it does not second-guess the `verdict`.
+ */
+export const metricSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  /** What the two values are measured in. The site spells it; it never converts it. */
+  unit: z.enum(["nanoseconds", "microseconds", "bytes"]),
+  left: z.number().nullable(),
+  right: z.number().nullable(),
+  /** `right / left`. Below 1, the right-hand backend is the smaller one. */
+  ratio: z.number().nullable(),
+  /** The gap, as a percentage of the smaller of the two. Always positive. */
+  gap_pct: z.number().nullable(),
+  /** The dispersion the pair carries — the bar `gap_pct` has to clear to be a result. */
+  noise_pct: z.number().nullable(),
+  /** `tie`: the gap is inside the noise. Not "equal" — *indistinguishable*. */
+  verdict: z.enum(["left", "right", "tie", "unmeasured"]),
+});
+
+export const sideSchema = z.object({
+  backend: z.string(),
+  backend_id: z.string(),
+  language: z.string(),
+  compiler: z.string().nullable(),
+  interpreter: z.string().nullable(),
+  mode: fpModeSchema,
+});
+
+export const comparisonSchema = z.object({
+  algo: z.string(),
+  left: sideSchema,
+  right: sideSchema,
+  metrics: z.array(metricSchema),
+  checksums: z.object({
+    left: checksumSchema,
+    right: checksumSchema,
+    /** `null` when either side never reported one. Compared in Rust, on the full 64 bits. */
+    same: z.boolean().nullable(),
+    /** Two `strict` rows that disagree. The harness aborts over it; a file carrying one did not come from here. */
+    violates_strict_invariant: z.boolean(),
+  }),
+});
+
 export type Summary = z.infer<typeof summarySchema>;
 export type FpMode = z.infer<typeof fpModeSchema>;
 export type Aggregate = z.infer<typeof aggregateSchema>;
@@ -146,6 +195,22 @@ export type Failure = z.infer<typeof failureSchema>;
 export type Campaign = z.infer<typeof campaignSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 export type AlgoAnalysis = Analysis["algos"][number];
+export type Metric = z.infer<typeof metricSchema>;
+export type Side = z.infer<typeof sideSchema>;
+export type Comparison = z.infer<typeof comparisonSchema>;
+
+/** One side of a pair, named the way the samples name it — never by row index. */
+export interface Row {
+  backend: string;
+  mode: FpMode;
+}
+
+/** The pair a reader asked for. `snake_case`: it is deserialized straight into Rust. */
+export interface Selection {
+  algo: string;
+  left: Row;
+  right: Row;
+}
 
 /**
  * Every knob the site has. `snake_case` because it crosses into Rust: this object
@@ -172,11 +237,29 @@ function load(): Promise<void> {
 }
 
 /**
+ * A campaign, as the site holds it: the file, and the harness's summary of it.
+ *
+ * The raw NDJSON is kept beside the analysis rather than dropped, because it is
+ * the *input* of every other question the harness can be asked about this
+ * campaign — `compare()` below is the second one. The file is the only artefact
+ * a run produces and the only thing that cannot be recomputed; everything else on
+ * this page is derived from it, in Rust, on demand.
+ */
+export interface LoadedCampaign {
+  /** The campaign, byte for byte, as `samples/<arch>.ndjson` on disk. */
+  ndjson: string;
+  analysis: Analysis;
+}
+
+/**
  * Fetch a campaign and summarize it — with the harness's own arithmetic.
  *
  * `campaignUrl` is served as text and never parsed by JavaScript. See the header.
  */
-export async function fetchAnalysis(campaignUrl: string, options: Options): Promise<Analysis> {
+export async function fetchCampaign(
+  campaignUrl: string,
+  options: Options,
+): Promise<LoadedCampaign> {
   await load();
 
   const response = await fetch(campaignUrl);
@@ -197,7 +280,7 @@ export async function fetchAnalysis(campaignUrl: string, options: Options): Prom
     warnings: analysis.warnings.length,
     include_warmup: options.include_warmup,
   });
-  return analysis;
+  return { ndjson, analysis };
 }
 
 /**
@@ -209,17 +292,35 @@ export async function fetchAnalysis(campaignUrl: string, options: Options): Prom
  * group invites exactly the comparison the methodology forbids. So the site
  * loads them all and shows one at a time.
  */
-export async function fetchCampaigns(baseUrl: string, options: Options): Promise<Analysis[]> {
+export async function fetchCampaigns(baseUrl: string, options: Options): Promise<LoadedCampaign[]> {
   const response = await fetch(`${baseUrl}campaigns.json`);
   if (!response.ok) {
     throw new Error(`fetching the campaign index: ${response.status} ${response.statusText}`);
   }
   const files = campaignsSchema.parse(await response.json());
 
-  const analyses = await Promise.all(
-    files.map((file) => fetchAnalysis(`${baseUrl}${file}`, options)),
+  const campaigns = await Promise.all(
+    files.map((file) => fetchCampaign(`${baseUrl}${file}`, options)),
   );
   // Deterministic order, and it is not the order the files were listed in: the
   // ISA is what the reader picks between, so the ISA is what sorts them.
-  return analyses.sort((left, right) => left.arch.localeCompare(right.arch));
+  return campaigns.sort((left, right) => left.analysis.arch.localeCompare(right.analysis.arch));
+}
+
+/**
+ * Two rows of one campaign, head to head — and whether the gap is a difference.
+ *
+ * Every number it returns is the harness's: the ratio, the gap, the dispersion
+ * the gap has to clear, and the verdict when it does not. A gap smaller than the
+ * noise the campaign carries is a **tie**, however different the two minima look
+ * — and deciding that is `src/compare.rs`'s job, not this file's. See
+ * `METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
+ *
+ * Synchronous, and the WASM has to be up: every caller reaches this through a
+ * campaign that `fetchCampaign` already loaded. Throws on a row the campaign
+ * never measured, rather than comparing against an invented zero.
+ */
+export function compare(ndjson: string, options: Options, selection: Selection): Comparison {
+  const raw: unknown = compareWasm(ndjson, options, selection);
+  return comparisonSchema.parse(raw);
 }

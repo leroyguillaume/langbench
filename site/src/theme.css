@@ -552,3 +552,87 @@ td.numeric {
   color: var(--warning-text);
   overflow-wrap: anywhere;
 }
+
+/* Head to head. The two pickers sit either side of the swap, on a viewport wide
+   enough to hold them; below that they stack, and A is still above B. */
+.compare-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.compare-pick .filter {
+  flex: 1 1 14rem;
+}
+
+.compare-swap {
+  height: 2.1rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.compare-swap:hover {
+  border-color: var(--series-1);
+}
+
+/* The sentence the reader came for. Stated, not left to be inferred from a ratio
+   column -- "1.03×" and "indistinguishable" look alike to somebody in a hurry. */
+.compare-headline {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+/* A tie is a verdict, not a missing one: it gets the caution colour, because it
+   is the campaign declining to defend a claim. */
+.compare-headline.tie {
+  border-left-color: var(--warning-border);
+}
+
+.compare-checksum {
+  margin: 0 0 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.compare-checksum.warning {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+}
+
+.compare-error {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+}
+
+/* The winning cell. Weight and a wash, never colour alone. */
+td.better {
+  font-weight: 700;
+  background: var(--surface-2);
+}
+
+.tie {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}

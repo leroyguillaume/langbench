@@ -385,7 +385,7 @@ fn strict_references(samples: &[Sample]) -> HashMap<String, u64> {
 /// harness; it does not lose its low bits on the way to a web page. The site
 /// treats it as an opaque token — it displays it and compares it, it never does
 /// arithmetic on it.
-fn as_string<T, S>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+pub(crate) fn as_string<T, S>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
 where
     T: std::fmt::Display,
     S: Serializer,

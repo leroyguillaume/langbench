@@ -379,9 +379,9 @@ langbench md --template mine.liquid         # renders into report.md
 
 ## The website
 
-The third rendering. `site/` is a static page — sortable table, charts, filters
-that live in the URL — published to GitHub Pages by
-[`.github/workflows/pages.yaml`](.github/workflows/pages.yaml).
+The third rendering. `site/` is a static page — sortable table, charts, a
+head-to-head between any two backends, filters that live in the URL — published to
+GitHub Pages by [`.github/workflows/pages.yaml`](.github/workflows/pages.yaml).
 
 It is a rendering like the other two, which means two things it would have been
 much easier not to do:
@@ -393,6 +393,17 @@ second implementation of min-of-N in TypeScript would be a second definition of
 what this project measures, and the two would drift the first time one of them
 was "fixed". The site sorts, formats and draws; it does not do arithmetic on the
 samples.
+
+**A gap smaller than the dispersion is not a difference.** The head-to-head panel
+puts two rows side by side and answers the question the table leaves open: *is
+this gap real?* A 3% gap between two rows that each wobble by 9% is a **tie** — not
+equal, *indistinguishable*, which is a statement about the campaign and not about
+the backends. That verdict is `src/compare.rs`, in the harness, for the same reason
+min-of-N is: what counts as a difference is a definition of what this project
+measures, and it has one home
+([`METHODOLOGY.md`](METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference)).
+The pair lives in the URL — `?a=c-gcc:strict&b=rust-llvm:fast` — because a
+comparison nobody can link to is a comparison nobody can check.
 
 **The site never calls `JSON.parse` on a campaign.** `checksum` is a 64-bit
 integer and a JavaScript number is a double: `JSON.parse` rounds every integer
