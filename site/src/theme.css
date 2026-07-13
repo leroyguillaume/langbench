@@ -767,26 +767,46 @@ td.better {
 }
 
 /* ---------------------------------------------------------------------------
-   The shell: one masthead, three pages.
+   The shell: a sidebar, and the page beside it.
+
+   Mobile-first, and the sidebar is a `<details>`: on a phone it starts closed,
+   because a nav listing every campaign of every workload would otherwise push the
+   numbers a screen and a half down. From 960px the CSS forces it open, pins it, and
+   hides the marker — the same markup, two shapes.
    --------------------------------------------------------------------------- */
 
-.site-header {
+.shell {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 1.5rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-1);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
-@media (min-width: 768px) {
-  .site-header {
-    padding: 0.75rem 2rem;
-  }
+.sidebar {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sidebar-head::-webkit-details-marker {
+  display: none;
+}
+
+.sidebar-toggle {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
 }
 
 .brand {
@@ -797,27 +817,96 @@ td.better {
   text-decoration: none;
 }
 
-.site-nav {
+.sidebar-nav {
+  padding: 0 1rem 1rem;
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
-.site-nav a {
+.nav-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sidebar-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar-nav a {
+  display: block;
+  padding: 0.2rem 0.5rem;
+  margin-left: -0.5rem;
+  border-radius: 4px;
   color: var(--text-secondary);
   text-decoration: none;
-  padding: 0.15rem 0;
-  /* The current tab is underlined *and* darker: never colour alone. */
-  border-bottom: 2px solid transparent;
+  /* The triple and the architectures are identifiers, so they are set as ones. */
+  font-size: 0.9rem;
 }
 
-.site-nav a:hover {
+.sidebar-nav a:hover {
   color: var(--text-primary);
+  background: var(--surface-2);
 }
 
-.site-nav a.current {
+/* The current page is bold *and* marked with a rule: never colour alone. */
+.sidebar-nav a.current {
   color: var(--text-primary);
   font-weight: 600;
-  border-bottom-color: var(--series-1);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--series-1);
+}
+
+/* The campaigns of a workload, under it. A campaign is `(workload, machine)`, and the
+ * nesting is that fact: an architecture is never a top-level thing to pick. */
+.sidebar-nav .nav-children {
+  margin: 0.1rem 0 0.3rem 0.75rem;
+  border-left: 1px solid var(--border);
+  padding-left: 0.5rem;
+}
+
+.sidebar-nav .nav-children a {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .shell {
+    flex-direction: row;
+  }
+
+  .sidebar {
+    flex: 0 0 15rem;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-head {
+    padding: 1.5rem 1.25rem 0.5rem;
+    cursor: default;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-nav {
+    padding: 0.75rem 1.25rem 2rem;
+  }
 }
 
 .site-footer {
@@ -833,6 +922,104 @@ td.better {
   .site-footer {
     padding: 2rem 2rem 3rem;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   The front page, and a workload's own page: prose and indexes, never numbers.
+   --------------------------------------------------------------------------- */
+
+.lede {
+  font-size: 1.05rem;
+  line-height: 1.65;
+  max-width: 70ch;
+}
+
+.card > p,
+.card > .lede {
+  max-width: 75ch;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.glossary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.glossary dt {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.glossary dd {
+  margin: 0.15rem 0 0;
+  max-width: 75ch;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.claims {
+  margin: 0 0 1rem;
+  padding-left: 1.1rem;
+  max-width: 75ch;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.claims li + li {
+  margin-top: 0.6rem;
+}
+
+/* The indexes: workloads, their campaigns, and what a workload declares. */
+.workload-index,
+.campaign-index {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.workload-index > li,
+.campaign-index > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.workload-index > li > a,
+.campaign-index > li > a {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.workload-index > li > .muted,
+.campaign-index > li > .muted {
+  font-size: 0.85rem;
+}
+
+.impl-index {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.impl-index > li {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
 }
 
 .footnote {

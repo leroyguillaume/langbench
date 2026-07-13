@@ -19,9 +19,8 @@ function at(query: string): void {
 describe("reading the results view out of the URL", () => {
   beforeEach(() => at(""));
 
-  it("defaults to every mode, fastest first — the order the report ranks in", () => {
+  it("defaults to every mode, fastest first — the order the table ranks in", () => {
     const state = readResults();
-    expect(state.architecture).toBeNull();
     expect(state.filters).toStrictEqual(NO_FILTERS);
     expect(state.sort).toStrictEqual({ key: "run", descending: false });
     expect(state.includeWarmup).toBe(false);
@@ -54,8 +53,6 @@ describe("reading the results view out of the URL", () => {
 
   it("round-trips a view, so a filtered table is a link somebody else can open", () => {
     const state: ResultsState = {
-      architecture: "x86_64",
-      workload: "mandelbrot",
       includeWarmup: true,
       filters: {
         language: "python",
@@ -74,8 +71,6 @@ describe("reading the results view out of the URL", () => {
   // and the second one has an answer: every ahead-of-time backend in the table.
   it("round-trips a filter on an *absent* half of the triple", () => {
     const state: ResultsState = {
-      architecture: null,
-      workload: null,
       includeWarmup: false,
       filters: { ...NO_FILTERS, interpreter: "-" },
       sort: { key: "run", descending: false },
@@ -87,13 +82,24 @@ describe("reading the results view out of the URL", () => {
 
   it("leaves the default view out of the URL entirely", () => {
     writeResults({
-      architecture: null,
-      workload: null,
       includeWarmup: false,
       filters: NO_FILTERS,
       sort: { key: "run", descending: false },
     });
     expect(window.location.search).toBe("");
+  });
+
+  // The campaign is the *path* — `/workloads/mandelbrot/x86_64/`. A query string that
+  // also named one would be a second answer to a question the URL has already
+  // answered, and the two would be free to contradict each other.
+  it("never puts the campaign in the query string", () => {
+    at("?architecture=aarch64&workload=nbody&q=gcc");
+    const state = readResults();
+    expect(state).not.toHaveProperty("architecture");
+    expect(state).not.toHaveProperty("workload");
+
+    writeResults(state);
+    expect(window.location.search).toBe("?q=gcc");
   });
 });
 
@@ -124,7 +130,9 @@ describe("reading the head-to-head out of the URL", () => {
 
 // The filters narrow a table; a pair is not a table. But the campaign does travel:
 // a "Compare" link that quietly switched architecture would invite exactly the
-// comparison `METHODOLOGY.md#the-architecture-rule` forbids.
+// comparison the architecture rule forbids. The campaign is the results page's *path*,
+// so this is where it re-enters a query string — the head-to-head is the one page that
+// may be handed two campaigns.
 describe("the link from the results to the head-to-head", () => {
   it("carries the architecture and the workload, and nothing else", () => {
     const href = compareHref({

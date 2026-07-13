@@ -1,0 +1,59 @@
+---
+// Every methodology page, and the section's landing page — one route.
+//
+// The prose is in `src/content/methodology/`; this is what gives it an address. The
+// pages are globbed rather than listed, so adding a rule to the methodology is adding
+// a file: the route, the sidebar entry and the index below all come from its
+// frontmatter.
+//
+// No island, no JavaScript, no campaign: it is prose, and prose is what a static site
+// is actually good at.
+
+import Layout from "../../layouts/Layout.astro";
+import { href, type Page, pages } from "../../methodology";
+
+export function getStaticPaths() {
+	return pages.map((page) => ({
+		params: { slug: page.slug },
+		props: { page },
+	}));
+}
+
+interface Props {
+	page: Page;
+}
+
+const { page } = Astro.props;
+const { Content } = page.entry;
+const base = import.meta.env.BASE_URL;
+
+// The landing page is the only one that lists the others: a table of contents on every
+// page is the sidebar, and the sidebar is already there.
+const rest = page.slug === undefined ? pages.filter((entry) => entry.slug !== undefined) : [];
+---
+
+<Layout title={`${page.frontmatter.title} — langbench`} description={page.frontmatter.summary}>
+  <main class="page">
+    <header class="masthead">
+      <h1>{page.frontmatter.title}</h1>
+      <p>{page.frontmatter.summary}</p>
+    </header>
+
+    <div class="prose">
+      <Content />
+    </div>
+
+    {
+      rest.length > 0 && (
+        <ul class="workload-index">
+          {rest.map((entry) => (
+            <li>
+              <a href={href(base, entry)}>{entry.frontmatter.title}</a>
+              <span class="muted">{entry.frontmatter.summary}</span>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </main>
+</Layout>

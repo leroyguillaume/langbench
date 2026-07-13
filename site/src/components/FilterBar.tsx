@@ -1,31 +1,28 @@
-// The filters, and what they scope.
+// The filters: which rows of *this* campaign to look at.
 //
-// Three of them are the three columns of the report — language, compiler,
-// interpreter — because that is what an implementation *is*, and narrowing by
-// "every backend whose name contains gcc" is narrowing by a string somebody typed.
-// A reader who picks `python` and then opens the compiler list sees `cython` and
-// nothing else: the options are the ones this campaign actually measured, never a
-// fixed list that promises rows the file does not have.
+// Three of them are the three columns of the table — language, compiler, interpreter —
+// because that is what an implementation *is*, and narrowing by "every backend whose
+// name contains gcc" is narrowing by a string somebody typed. A reader who picks
+// `python` and then opens the compiler list sees `cython` and nothing else: the
+// options are the ones this campaign actually measured, never a fixed list that
+// promises rows the file does not have.
 //
-// The architecture comes first, and it is not a filter: it is the experiment the rest of the
-// page is about. An absolute timing does not cross an architecture.
+// **The campaign is not among them.** Which workload, on which machine, is the page
+// you are on — the sidebar navigates between campaigns, and a filter narrows one. A
+// `<select>` that swapped the architecture would put two experiments behind one control
+// and invite the reader to read across them.
 
 import type { Aggregate, FpMode } from "../analysis";
 import { NOT_AVAILABLE } from "../format";
 import { ABSENT } from "../identity";
 import { MODES } from "../series";
-import type { Filters, Scope } from "../url";
+import type { Filters } from "../url";
 
 interface Props {
-  scope: Scope;
-  onScope: (scope: Scope) => void;
   filters: Filters;
   onFilters: (filters: Filters) => void;
-  /** Every row of the workload on screen, before any filter: the options come from these. */
+  /** Every row of the campaign on screen, before any filter: the options come from these. */
   rows: Aggregate[];
-  workloads: string[];
-  architectures: string[];
-  architecture: string;
 }
 
 /**
@@ -57,16 +54,7 @@ function encode(value: string | null): string {
   return value ?? "";
 }
 
-export function FilterBar({
-  scope,
-  onScope,
-  filters,
-  onFilters,
-  rows,
-  workloads,
-  architectures,
-  architecture,
-}: Props) {
+export function FilterBar({ filters, onFilters, rows }: Props) {
   const languages = [...new Set(rows.map((row) => row.language))].sort();
 
   // The compiler and interpreter lists are scoped by the language already chosen:
@@ -115,38 +103,6 @@ export function FilterBar({
 
   return (
     <div className="filters">
-      {/* First, because it scopes everything below it. A campaign is not a filter
-          over the others: it is the experiment the rest of the page is about. */}
-      {architectures.length > 1 && (
-        <label className="filter">
-          <span>architecture</span>
-          <select
-            value={architecture}
-            onChange={(event) => onScope({ ...scope, architecture: event.target.value })}
-          >
-            {architectures.map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      <label className="filter">
-        <span>Workload</span>
-        <select
-          value={scope.workload ?? ""}
-          onChange={(event) => onScope({ ...scope, workload: event.target.value })}
-        >
-          {workloads.map((workload) => (
-            <option key={workload} value={workload}>
-              {workload}
-            </option>
-          ))}
-        </select>
-      </label>
-
       <label className="filter">
         <span>Language</span>
         <select

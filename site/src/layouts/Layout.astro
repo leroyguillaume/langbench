@@ -1,13 +1,20 @@
 ---
-// The shell every page shares: the masthead, the nav, and nothing else.
+// The shell every page shares: a sidebar, and the page beside it.
 //
-// `ClientRouter` is what makes three prerendered pages behave like one app. It
+// The sidebar is the site's table of contents, and it is built from the *data* rather
+// than hand-written: every workload declared on disk, every campaign measured on it,
+// the head-to-head, and the methodology. A campaign is `(workload, machine)`, so that
+// is the shape the nav has — a campaign sits *under* the work it measured, never
+// beside it, because a millisecond means nothing until you know what was computed.
+//
+// `ClientRouter` is what makes a heap of prerendered pages behave like one app. It
 // swaps the document client-side instead of reloading it, so the JavaScript realm
 // survives a navigation — and with it the module singleton in `campaigns.ts` that
-// holds the WebAssembly instance and the parsed campaigns. The reader gets a real
-// URL for every view *and* pays for the 500 kB campaign once.
+// holds the WebAssembly instance and the parsed campaigns. The reader gets a real URL
+// for every view *and* pays for the 500 kB campaign once.
 
 import { ClientRouter } from "astro:transitions";
+import { sections } from "../nav";
 import "../theme.css";
 
 interface Props {
@@ -18,15 +25,12 @@ interface Props {
 const { title, description } = Astro.props;
 
 const base = import.meta.env.BASE_URL;
-const links = [
-	{ href: base, label: "Results" },
-	{ href: `${base}compare/`, label: "Compare" },
-	{ href: `${base}methodology/`, label: "Methodology" },
-];
 
-// Astro serves `/compare` and `/compare/` as the same page; the nav highlights on
-// the normalized path so neither spelling lights up the wrong tab.
+// Astro serves `/compare` and `/compare/` as the same page; the nav highlights on the
+// normalized path so neither spelling lights up the wrong entry.
 const path = `${Astro.url.pathname.replace(/\/$/, "")}/`;
+const nav = sections(base);
+const current = (href: string) => path === href.replace(/\/$/, "") + "/";
 ---
 
 <!doctype html>
@@ -39,36 +43,72 @@ const path = `${Astro.url.pathname.replace(/\/$/, "")}/`;
     <ClientRouter />
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href={base}>langbench</a>
-      <nav class="site-nav">
-        {
-          links.map((link) => (
-            <a
-              href={link.href}
-              class={path === link.href.replace(/\/$/, "") + "/" ? "current" : ""}
-              aria-current={path === link.href.replace(/\/$/, "") + "/" ? "page" : undefined}
-            >
-              {link.label}
-            </a>
-          ))
-        }
-      </nav>
-    </header>
+    <div class="shell">
+      {/* On a phone the sidebar is a `<details>` that starts closed: a nav listing every
+          campaign of every workload would otherwise push the numbers a screen and a half
+          down. On a wide viewport the CSS forces it open and the marker disappears. */}
+      <details class="sidebar" open>
+        <summary class="sidebar-head">
+          <a class="brand" href={base}>langbench</a>
+          <span class="sidebar-toggle" aria-hidden="true">menu</span>
+        </summary>
 
-    <slot />
+        <nav class="sidebar-nav" aria-label="Site">
+          {
+            nav.map((section) => (
+              <div class="nav-section">
+                <p class="nav-title">{section.title}</p>
+                <ul>
+                  {section.links.map((link) => (
+                    <li>
+                      <a
+                        href={link.href}
+                        class={current(link.href) ? "current" : ""}
+                        aria-current={current(link.href) ? "page" : undefined}
+                      >
+                        {link.label}
+                      </a>
+                      {link.children !== undefined && link.children.length > 0 && (
+                        <ul class="nav-children">
+                          {link.children.map((child) => (
+                            <li>
+                              <a
+                                href={child.href}
+                                class={current(child.href) ? "current" : ""}
+                                aria-current={current(child.href) ? "page" : undefined}
+                              >
+                                {child.label}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </nav>
+      </details>
 
-    <footer class="site-footer">
-      <p>
-        Compiler and runtime backends, measured. Every number on this site is the harness's own —
-        min-of-N, the buckets, the definition of startup all live in <code>src/analysis.rs</code>,
-        compiled to WebAssembly and called from this page. The site sorts, formats and draws; it
-        never does arithmetic on a sample.
-      </p>
-      <p>
-        <a href="https://github.com/leroyguillaume/langbench">Source</a> ·
-        <a href={`${base}methodology/`}>Read the methodology before trusting a number</a>
-      </p>
-    </footer>
+      <div class="content">
+        <slot />
+
+        <footer class="site-footer">
+          <p>
+            Compiler and runtime backends, measured. Every number on this site is the harness's
+            own — min-of-N, the buckets, the definition of startup all live in <code
+              >src/analysis.rs</code
+            >, compiled to WebAssembly and called from this page. The site sorts, formats and
+            draws; it never does arithmetic on a sample.
+          </p>
+          <p>
+            <a href="https://github.com/leroyguillaume/langbench">Source</a> ·
+            <a href={`${base}methodology/`}>Read the methodology before trusting a number</a>
+          </p>
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

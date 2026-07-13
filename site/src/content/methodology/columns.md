@@ -1,3 +1,9 @@
+---
+title: The columns
+order: 9
+summary: What every column of a campaign means, and how to read a row in thirty seconds.
+---
+
 ## How to read a row in thirty seconds
 
 1. Look at **Dispersion** first. If it is above roughly 2%, the machine was noisy

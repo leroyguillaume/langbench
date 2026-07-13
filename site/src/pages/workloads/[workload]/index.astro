@@ -1,0 +1,149 @@
+---
+// A workload: the work itself, as its manifest declares it today.
+//
+// This page shows **no measurement**, and the split is the whole reason it exists. A
+// workload is a question — what is computed, how it is sized, what the right answer
+// is, what it does and does not put under the light. A campaign is one machine's
+// answer to it. Reading the second without the first is how a benchmark table becomes
+// a language ranking.
+//
+// Static: everything here comes from `workload.yaml`, through the harness, at build
+// time. The description is rendered as the paragraphs its author wrote — the manifest
+// is one YAML string, and blank lines are the only structure it has.
+
+import Layout from "../../../layouts/Layout.astro";
+import { campaignsOf, paragraphs, workloads } from "../../../site";
+
+export function getStaticPaths() {
+	return workloads.map((workload) => ({
+		params: { workload: workload.id },
+		props: { workload },
+	}));
+}
+
+const { workload } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const measured = campaignsOf(workload.id);
+const [lede, ...rest] = paragraphs(workload.description);
+---
+
+<Layout
+  title={`${workload.id} — langbench`}
+  description={lede ?? `The ${workload.id} workload, as langbench declares it.`}
+>
+  <main class="page">
+    <header class="masthead">
+      <h1>{workload.id}</h1>
+      {lede !== undefined && <p>{lede}</p>}
+    </header>
+
+    {
+      rest.length > 0 && (
+        <section class="card">
+          <div class="prose">
+            {rest.map((paragraph) => (
+              <p>{paragraph}</p>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    <section class="card">
+      <h2>How the work is sized</h2>
+      <p>
+        The params are an ordered list, and the order is the order the kernels receive them on
+        the command line — never compile-time constants, or a backend could fold the whole
+        computation away before the timer started.
+      </p>
+      <dl class="machine">
+        {
+          workload.params.map((param) => (
+            <div style={{ display: "contents" }}>
+              <dt>{param.name}</dt>
+              <dd>{String(param.value)}</dd>
+            </div>
+          ))
+        }
+        <dt>the answer</dt>
+        <dd>
+          {workload.checksum ?? "n/a — this workload declares none"}
+        </dd>
+        <dt>implementations</dt>
+        <dd>{workload.implementations.length}</dd>
+      </dl>
+      {
+        workload.checksum !== null ? (
+          <p class="card-aside">
+            <strong>The answer is the correctness gate.</strong> Every implementation prints a
+            64-bit checksum on every single run, and a run that disagrees with this one is not a
+            slow run — it is a wrong run, and it never enters the statistics. The backend that
+            produced it is quarantined at the point it broke, and the campaign publishes the
+            failure rather than dropping the row.
+          </p>
+        ) : (
+          <p class="card-aside">
+            <strong>This workload declares no answer</strong>, so a campaign on it has no
+            correctness gate at all — and a backend that computes nothing and returns instantly
+            would top the table. Read every number here with that in hand.
+          </p>
+        )
+      }
+      <p class="card-aside">
+        The answer belongs to the work and to <em>these</em> params: size the work differently
+        and it no longer applies, which is why a campaign that overrides a param drops it and
+        says so.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Campaigns</h2>
+      {
+        measured.length === 0 ? (
+          <p>
+            Nothing has measured this workload yet. It is declared, its implementations are on
+            disk, and no campaign has been published — which the site says plainly rather than
+            rendering an empty table.
+          </p>
+        ) : (
+          <>
+            <p>
+              One campaign per architecture, and they are never shown together: an{" "}
+              <strong>absolute timing does not cross an architecture</strong>. A millisecond on
+              x86-64 and a millisecond on AArch64 are not the same claim. Compare backends{" "}
+              <em>within</em> a campaign — the ratio is what travels.
+            </p>
+            <ul class="campaign-index">
+              {measured.map((campaign) => (
+                <li>
+                  <a href={`${base}workloads/${campaign.workload}/${campaign.architecture}/`}>
+                    {campaign.architecture}
+                  </a>
+                  <span class="muted">
+                    {campaign.hostname ?? "unknown host"}
+                    {campaign.timestamp !== null &&
+                      ` · ${new Date(campaign.timestamp).toISOString().slice(0, 10)}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+    </section>
+
+    <section class="card">
+      <h2>The implementations it declares</h2>
+      <p>
+        A workload <em>lists</em> the directories that implement it. The harness does not walk
+        the tree and take whatever it finds: the position of a directory decides nothing, so a
+        benchmark can be moved, nested or renamed without changing what gets measured. What
+        each of these backends actually is — the language, the compiler, the interpreter — is
+        the campaign's business, and it is on the campaign's page.
+      </p>
+      <ul class="impl-index">
+        {workload.implementations.map((implementation) => <li>{implementation}</li>)}
+      </ul>
+    </section>
+  </main>
+</Layout>

@@ -1,0 +1,45 @@
+---
+// A campaign: one machine, one workload, and what it measured.
+//
+// The route *is* the campaign — `/workloads/mandelbrot/x86_64/` — because a campaign
+// is `(workload, machine)` and both halves have to be in the address for a link to
+// name one. There is no selector at the top of this page any more: picking a campaign
+// is navigating, and the sidebar is where you do it. Two architectures are never on
+// one screen, which is the architecture rule enforced by the shape of the site rather
+// than by a note under a chart.
+//
+// The island reads the campaign whose *header* says it is this one — never the file
+// whose name looks right. The path is a URL; the header is what the run recorded.
+//
+// The column reference is slotted in rather than placed after: it belongs between the
+// table it explains and the backends that come next. It is a methodology page,
+// rendered at build time, and the browser gets no Markdown renderer for it.
+
+import { Results } from "../../../../components/Results";
+import Layout from "../../../../layouts/Layout.astro";
+import { Content as Columns } from "../../../../content/methodology/columns.md";
+import { campaigns } from "../../../../site";
+
+export function getStaticPaths() {
+	return campaigns.map((campaign) => ({
+		params: { workload: campaign.workload, architecture: campaign.architecture },
+		props: { campaign },
+	}));
+}
+
+const { campaign } = Astro.props;
+---
+
+<Layout
+  title={`${campaign.workload} on ${campaign.architecture} — langbench`}
+  description={`Every backend of the ${campaign.workload} workload, measured on ${campaign.architecture}. Raw samples, aggregated in your browser by the harness itself.`}
+>
+  <Results client:only="react" workload={campaign.workload} architecture={campaign.architecture}>
+    {/* The prose lives *inside* a `.page`, never as one: `.page` is a flex column with a
+        gap sized for sections, and a Markdown document whose every paragraph is a direct
+        child of it comes out with a section's worth of air per line. */}
+    <div slot="columns" class="prose" id="columns">
+      <Columns />
+    </div>
+  </Results>
+</Layout>

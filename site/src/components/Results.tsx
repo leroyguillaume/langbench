@@ -1,9 +1,17 @@
 // One campaign, read out: the tiles, the charts, the table, and what it lost.
 //
-// The head-to-head used to be a card at the bottom of this page. It has a page of
-// its own now, and this one links to it carrying the architecture and the workload — never
-// the filters. A pair is not a table, and a reader who narrowed this table to one
-// language has not thereby declined to compare it with another.
+// **Which campaign is the route's business, not this island's.** The page is
+// `/workloads/<workload>/<architecture>/`, and the two names arrive as props — so
+// there is no campaign selector here, and there cannot be two architectures on one
+// screen. The architecture rule is enforced by the shape of the site rather than by a
+// note under a chart.
+//
+// The campaign is then picked by what its *header* says, never by the file whose name
+// matched: a path is a label somebody typed, and the header is what the run recorded.
+//
+// The head-to-head is a page of its own, and this one links to it carrying the
+// campaign — never the filters. A pair is not a table, and a reader who narrowed this
+// table to one language has not thereby declined to compare it with another.
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
@@ -18,19 +26,23 @@ import { filterRows, ResultsTable, type Sort, type SortKey, sortRows } from "./R
 import { Warmup, WarmupBanner } from "./Warmup";
 
 interface ResultsProps {
+  /** The workload this campaign measured, from the route. */
+  workload: string;
+  /** The architecture it measured it on, from the route. */
+  architecture: string;
   /**
-   * The column reference, rendered from `docs/columns.md` by Astro and slotted into
-   * this island as HTML. It is prose, it is the same prose `langbench md`
-   * interpolates into the report, and it is built at build time — the browser gets
+   * The column reference, rendered from `methodology/columns.md` by Astro and slotted
+   * into this island as HTML. It is prose, it is the same prose the methodology
+   * publishes as a page of its own, and it is built at build time — the browser gets
    * no Markdown and no renderer for it.
    */
   columns?: ReactNode;
 }
 
-export function Results({ columns }: ResultsProps) {
+export function Results({ workload, architecture, columns }: ResultsProps) {
   // The URL is read once, on mount, and written on every change: the address bar
   // describes what is on screen, and a link to it puts somebody else in front of
-  // the same claim.
+  // the same claim. The *campaign* is not in the query string — it is the path.
   const [state, setState] = useState<ResultsState>(readResults);
   const { campaigns, error, pending } = useCampaigns(state.includeWarmup);
 
@@ -51,38 +63,27 @@ export function Results({ columns }: ResultsProps) {
   // collapses the document, and the browser takes the reader's scroll position with
   // it.
   if (campaigns === null) {
-    return <p className="status">Reading the campaigns…</p>;
+    return <p className="status">Reading the campaign…</p>;
   }
 
-  // One architecture at a time, always. Two campaigns from two architectures are two
-  // experiments: an x86-64 millisecond and an aarch64 millisecond are not the same
-  // claim, and a chart that puts them in one bar group invites exactly the
-  // comparison `METHODOLOGY.md#the-architecture-rule` forbids. The reader picks an architecture; the
-  // site never adds one to another.
-  // A campaign is one machine measuring one workload, so it takes **both** to name
-  // one. Keying on the architecture alone was enough when Mandelbrot was the only
-  // work there was; with two workloads on one architecture it would show whichever
-  // campaign happened to be published first, under the other one's name.
-  //
-  // The fallbacks widen one field at a time — the workload on this architecture, then
-  // anything at all — so a stale link keeps as much of what it asked for as still
-  // exists, rather than falling all the way back to the first campaign in the list.
-  const loaded =
-    campaigns.find(
-      (entry) =>
-        entry.analysis.architecture === state.architecture &&
-        entry.analysis.campaign.workload.id === state.workload,
-    ) ??
-    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
-    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
-    campaigns[0];
+  // The campaign this route names, identified by its own header. No fallback: a page
+  // that quietly rendered a *different* campaign than the one in its address would be
+  // publishing a number under the wrong machine's name, which is the one mistake this
+  // whole project is arranged to prevent.
+  const loaded = campaigns.find(
+    (entry) =>
+      entry.analysis.architecture === architecture &&
+      entry.analysis.campaign.workload.id === workload,
+  );
   if (loaded === undefined) {
     return (
       <main className="page">
         <div className="warnings">
-          <h2>This build publishes no campaign</h2>
+          <h2>This campaign is not in the build</h2>
           <p>
-            No <code>samples/&lt;architecture&gt;.ndjson</code> was found when the site was built.
+            No published campaign says it measured <code>{workload}</code> on{" "}
+            <code>{architecture}</code>. The routes come from the campaign files, so this means the
+            file that produced this page carries a header naming something else.
           </p>
         </div>
       </main>
@@ -92,7 +93,7 @@ export function Results({ columns }: ResultsProps) {
   return (
     <Report
       loaded={loaded}
-      campaigns={campaigns}
+      workload={workload}
       state={state}
       setState={setState}
       columns={columns}
@@ -103,7 +104,7 @@ export function Results({ columns }: ResultsProps) {
 
 interface ReportProps {
   loaded: LoadedCampaign;
-  campaigns: LoadedCampaign[];
+  workload: string;
   state: ResultsState;
   setState: (state: ResultsState) => void;
   columns?: ReactNode;
@@ -111,12 +112,12 @@ interface ReportProps {
   pending: boolean;
 }
 
-function Report({ loaded, campaigns, state, setState, columns, pending }: ReportProps) {
+function Report({ loaded, workload: id, state, setState, columns, pending }: ReportProps) {
   const { analysis } = loaded;
   const { campaign } = analysis;
 
   const workload =
-    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
+    analysis.workloads.find((entry) => entry.workload === id) ?? analysis.workloads[0];
   const aggregates = useMemo(() => workload?.aggregates ?? [], [workload]);
 
   // What the filters left standing, in the order the harness ranked it: fastest
@@ -201,6 +202,10 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .filter((row) => row.run_peak_bytes !== null)
     .map((row) => chartRow(row, [row.run_peak_bytes?.min ?? null]));
 
+  // What the head-to-head has to be handed: which campaign these rows came from. The
+  // filters do not travel — they narrow a table, and a pair is not a table — but a
+  // "Compare" link that quietly switched campaign would be inviting exactly the
+  // comparison the architecture rule forbids.
   const scope = {
     architecture: analysis.architecture,
     workload: workload?.workload ?? null,
@@ -210,28 +215,22 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
   return (
     <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
-        <h1>langbench</h1>
+        <h1>
+          {campaign.workload.id} on {analysis.architecture}
+        </h1>
         <p>
-          Compiler and runtime backends, measured on <strong>{analysis.architecture}</strong>
+          Every backend of the{" "}
+          <a href={`${import.meta.env.BASE_URL}workloads/${campaign.workload.id}/`}>
+            {campaign.workload.id}
+          </a>{" "}
+          workload, measured on <strong>{analysis.architecture}</strong>
           {analysis.hostname !== null && ` (${analysis.hostname})`} on{" "}
           {new Date(campaign.timestamp).toLocaleDateString()}. Every number below is derived from
-          the raw samples by the harness itself — the site computes no statistic of its own.
+          the raw samples by the harness itself — the site computes no statistic of its own. The
+          timings on this page are comparable to each other and to nothing else: an absolute timing
+          does not cross an architecture, and a ratio is what travels.
         </p>
       </header>
-
-      {campaigns.length > 1 && (
-        <p className="isa-note">
-          This build publishes {campaigns.length} campaigns, one per architecture, and never shows
-          them together: an <strong>absolute timing does not cross an architecture</strong>. A
-          millisecond here and a millisecond on{" "}
-          {
-            campaigns.find((entry) => entry.analysis.architecture !== analysis.architecture)
-              ?.analysis.architecture
-          }{" "}
-          are not the same claim. Compare implementations <em>within</em> one architecture — the
-          ratio is what travels.
-        </p>
-      )}
 
       {analysis.warnings.length > 0 && (
         <section className="warnings">
@@ -249,23 +248,9 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
       <Tiles rows={filtered} analysis={analysis} />
 
       <FilterBar
-        scope={scope}
-        onScope={(next) =>
-          setState({
-            ...state,
-            architecture: next.architecture,
-            workload: next.workload,
-            includeWarmup: next.includeWarmup,
-          })
-        }
         filters={state.filters}
         onFilters={(filters) => setState({ ...state, filters })}
         rows={aggregates}
-        // Every workload this build published, not the one campaign on screen: the
-        // selector's job is to offer the others.
-        workloads={[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))]}
-        architectures={[...new Set(campaigns.map((entry) => entry.analysis.architecture))]}
-        architecture={analysis.architecture}
       />
 
       {/* Not in the filter bar, deliberately: a filter changes which rows you are
@@ -446,11 +431,13 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
 
       <p className="footnote">
         The samples this page is built from are{" "}
-        <a href={`${import.meta.env.BASE_URL}data/${analysis.architecture}.ndjson`}>
-          samples/{analysis.architecture}.ndjson
+        <a
+          href={`${import.meta.env.BASE_URL}data/${campaign.workload.id}/${analysis.architecture}.ndjson`}
+        >
+          samples/{campaign.workload.id}/{analysis.architecture}.ndjson
         </a>{" "}
-        — this campaign's only artefact. Everything above is recomputed from it, in Rust, in your
-        browser.
+        — this campaign's only artefact, published byte for byte. Everything above is recomputed
+        from it, in Rust, in your browser.
       </p>
     </main>
   );
