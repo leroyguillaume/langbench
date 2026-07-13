@@ -22,7 +22,7 @@ the wire, in the report, on the site, in a commit message. Every rule below is
 written in them.
 
 - **workload** — the work itself, declared in a `workload.yaml`: what it is, how it
-  is sized (`params`), what the right answer is (`strict_checksum`), and which
+  is sized (`params`), what the right answer is (`strict-checksum`), and which
   directories implement it. **A workload is not an algorithm.** Mandelbrot is one;
   a JSON parser, an HTTP server, a cold start are others. Nothing in the harness may
   assume the work is a computation over a grid.
@@ -98,7 +98,7 @@ the ones a reader is most likely to think were violated:
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
 - Every workload declares itself in a `workload.yaml`: `id`, `description`, `params`,
-  `implementations`, and an optional `strict_checksum`. **The walk for
+  `implementations`, and an optional `strict-checksum`. **The walk for
   `workload.yaml` is the only search the harness does.**
 - Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
   `language`, `compiler`, `interpreter`, `source`, `modes`, `architectures`,
@@ -110,7 +110,7 @@ the ones a reader is most likely to think were violated:
   the machine, resolved by the harness.
 - **How the work is sized is a property of the work.** Never a flag of the harness:
   `--grid-size` was Mandelbrot leaking into the CLI. `--param name=value` overrides a
-  declared param, and doing so drops the declared `strict_checksum` — it is the answer
+  declared param, and doing so drops the declared `strict-checksum` — it is the answer
   to the declared work, not to this one.
 - `source` names the one kernel file, and the manifest **declares** it — the harness
   never guesses which file beside the Dockerfile is the source. Guessing means
@@ -258,7 +258,16 @@ the ones a reader is most likely to think were violated:
   data and arithmetic, and it compiles to `wasm32-unknown-unknown`. Nothing that
   spawns a process belongs in `analysis`, `sample`, `stats` or `mode`.
 - The wire is `snake_case` throughout — the sample's own vocabulary, from the
-  NDJSON to the CSV to the browser. One vocabulary, no translation table.
+  NDJSON to the CSV to the browser. One vocabulary, no translation table. A kebab
+  key on the wire is not even reachable: `jq '.elapsed-ns'` reads it as a
+  subtraction.
+- **A manifest is `kebab-case`.** `workload.yaml` and `bench.yaml` are the only two
+  files in this project a *person* types, and that is how YAML is written wherever
+  people write it. The two conventions meet in exactly one struct — `Workload`, which
+  is both the file you write and the snapshot the campaign records — so it reads kebab
+  and writes snake, and carries a serde `alias` so it can read back the header it
+  wrote itself. `tests/key_conventions.rs` guards both sides; without it, the only
+  symptom of a slip would be a campaign the harness can no longer read.
 
 ## Rust specifics
 

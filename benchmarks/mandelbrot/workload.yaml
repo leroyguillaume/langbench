@@ -20,7 +20,7 @@ params:
 # correctness gate of the whole project: in `strict` mode every compiler, every
 # language and every architecture produces this, bit for bit. A backend that
 # disagrees is not slow, it is wrong, and it is quarantined out of the campaign.
-strict_checksum: 1038538536
+strict-checksum: 1038538536
 # The backends that implement this workload. Declared, never walked for: a
 # directory is measured because this list says so, not because of where it sits.
 implementations:

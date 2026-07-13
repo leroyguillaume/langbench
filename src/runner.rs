@@ -648,7 +648,7 @@ mod tests {
              \x20   value: 10\n",
         );
         if let Some(checksum) = strict_checksum {
-            yaml.push_str(&format!("strict_checksum: {checksum}\n"));
+            yaml.push_str(&format!("strict-checksum: {checksum}\n"));
         }
         yaml.push_str("implementations:\n");
         for name in names {

@@ -30,9 +30,18 @@ pub const MANIFEST: &str = "workload.yaml";
 /// `deny_unknown_fields`, like the implementation manifest: a misspelled key must
 /// fail the campaign rather than be quietly ignored. The numbers would still come
 /// out; they would just be wrong about what produced them.
+///
+/// **`kebab-case` coming in, `snake_case` going out**, and the two directions are
+/// not the same audience. A manifest is typed by a person, and YAML is written in
+/// kebab wherever people write it. Everything downstream is read by a machine —
+/// `samples.ndjson`, the CSV, the browser — and that wire speaks `snake_case` end to
+/// end, so that `jq '.elapsed_ns'` works and no consumer needs a translation table.
+/// This struct sits on the boundary because it is *both*: the file you write and the
+/// snapshot the campaign records. So it reads one and writes the other, and only one
+/// key is even affected today.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "langbench workload manifest")]
+#[serde(deny_unknown_fields, rename_all(deserialize = "kebab-case"))]
+#[schemars(title = "langbench workload manifest", rename_all = "kebab-case")]
 pub struct Workload {
     /// What this workload is called. Declared, never parsed out of the directory
     /// name — the path locates the file, the file says what it is.
@@ -80,8 +89,15 @@ pub struct Workload {
     /// so it takes a plain integer; everything downstream of it is read by a machine
     /// with a 53-bit mantissa, so it gets a string. The harness never does arithmetic
     /// on it: it compares it, and it prints it.
+    ///
+    /// The manifest spells it `strict-checksum`; the campaign header it was written
+    /// into spells it `strict_checksum`. The alias is what lets one struct read both
+    /// — and it is not a courtesy to old files: this struct *round-trips*, so without
+    /// it `langbench report` could not read back the header the campaign it just ran
+    /// wrote.
     #[serde(
         default,
+        alias = "strict_checksum",
         deserialize_with = "checksum",
         serialize_with = "crate::analysis::as_string"
     )]
@@ -116,7 +132,8 @@ fn checksum<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D
 
 /// One knob of a workload, and the value this campaign ran it at.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all(deserialize = "kebab-case"))]
+#[schemars(rename_all = "kebab-case")]
 pub struct Param {
     pub name: String,
     pub value: ParamValue,
@@ -297,7 +314,7 @@ mod tests {
                               \x20   value: 2048\n\
                               \x20 - name: max_iter\n\
                               \x20   value: 1000\n\
-                              strict_checksum: 1038538536\n";
+                              strict-checksum: 1038538536\n";
 
     fn mandelbrot() -> Workload {
         Workload::parse(MANDELBROT).unwrap()
@@ -396,10 +413,10 @@ mod tests {
             "id: mandelbrot\n\
              description: Fine.\n\
              params: []\n\
-             strict_cheksum: 1\n",
+             strict-cheksum: 1\n",
         )
         .unwrap_err();
-        assert!(format!("{error:#}").contains("strict_cheksum"));
+        assert!(format!("{error:#}").contains("strict-cheksum"));
     }
 
     /// The schema is generated from the struct the harness deserializes. If this
@@ -407,9 +424,33 @@ mod tests {
     #[test]
     fn the_schema_describes_the_manifest_the_harness_parses() {
         let schema = schema().unwrap();
-        for key in ["id", "description", "params", "strict_checksum"] {
+        // The schema describes the file a person *writes*, so it spells the keys the
+        // way the file does: kebab.
+        for key in ["id", "description", "params", "strict-checksum"] {
             assert!(schema.contains(&format!("\"{key}\"")), "{key} is missing");
         }
         assert!(schema.contains("\"additionalProperties\": false"));
+    }
+
+    /// One struct, two audiences: kebab from the file a person writes, snake onto the
+    /// wire a machine reads. And it round-trips — the campaign header this very struct
+    /// serialized has to deserialize back, which is what the alias is for.
+    #[test]
+    fn the_manifest_reads_kebab_and_the_wire_writes_snake() {
+        let workload = mandelbrot();
+        let json = serde_json::to_string(&workload).unwrap();
+        assert!(json.contains("\"strict_checksum\""), "{json}");
+        assert!(!json.contains("strict-checksum"), "{json}");
+
+        let round_tripped: Workload = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped, workload);
+    }
+
+    /// The old spelling is not accepted in a manifest by accident: it is the one the
+    /// header carries, and the alias is what lets the header be read back.
+    #[test]
+    fn a_manifest_that_spells_it_the_wire_way_is_still_read() {
+        let workload = Workload::parse(&MANDELBROT.replace("strict-checksum", "strict_checksum"));
+        assert_eq!(workload.unwrap().strict_checksum, Some(1_038_538_536));
     }
 }

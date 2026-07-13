@@ -39,8 +39,8 @@ const ALL_MODES: &str = "all";
 /// because the numbers still come out — they are just wrong about what produced
 /// them.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "langbench benchmark manifest")]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[schemars(title = "langbench benchmark manifest", rename_all = "kebab-case")]
 struct Manifest {
     /// The language the kernel is written in.
     language: String,
