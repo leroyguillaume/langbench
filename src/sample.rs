@@ -2,9 +2,9 @@
 //!
 //! `samples.ndjson` is the **only** thing a campaign writes, and it is the only
 //! thing that cannot be recomputed. Every other artifact — the CSV, the report —
-//! is a rendering of these lines, produced after the fact by `langbench report csv` and
-//! `langbench report md`. Aggregates never replace the samples; a discarded sample is
-//! gone forever. See `METHODOLOGY.md#sampling`.
+//! is a rendering of these lines, produced after the fact -- by `langbench sample convert`,
+//! and by the website. Aggregates never replace the samples; a discarded sample is
+//! gone forever. See `site/src/content/methodology/what-we-record.md#sampling`.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -39,7 +39,7 @@ impl Phase {
 ///
 /// The checksum is an integer. It is a sum of 64-bit iteration counts and the
 /// correctness gate for the whole harness; anything that rounds it destroys the
-/// invariant. See `METHODOLOGY.md#the-strict-mode-invariant`.
+/// invariant. See `site/src/content/methodology/floating-point.md#the-strict-mode-invariant`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ContainerRecord {
     pub elapsed_ns: u64,
@@ -306,7 +306,7 @@ enum OwnedRecord {
 /// Everything one campaign recorded: its context, every measured invocation, and
 /// every backend it lost on the way.
 ///
-/// This is what `langbench report csv` and `langbench report md` consume. Both are pure
+/// This is what `langbench sample convert` and the website consume. Both are pure
 /// functions of this value, which is why the campaign never renders anything
 /// itself.
 #[derive(Debug)]

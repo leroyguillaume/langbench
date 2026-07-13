@@ -7,15 +7,15 @@ name: bench
 # `samples/<workload>/aarch64.ndjson`, side by side, never merged. An absolute timing does
 # not cross an architecture, and the site enforces that by showing one campaign at a
 # time.
-# See `METHODOLOGY.md#the-architecture-rule`.
+# See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces
 # are *indicative*, and they say so themselves: `langbench` records the host in
-# the campaign header, and both the report and the website lead with every reason
-# it was a poor target. For a number worth publishing, run a campaign on a real
-# machine and commit its `samples/<workload>/<arch>.ndjson` -- the report and the site are
-# pure functions of that file and will render it unchanged.
+# the campaign header, and the website leads with every reason it was a poor
+# target. For a number worth publishing, run a campaign on a real machine and
+# commit its `samples/<workload>/<arch>.ndjson` -- the site is a pure function of
+# that file and will render it unchanged.
 #
 # `workflow_dispatch` only. A campaign is a deliberate act, not a side effect of a
 # push: it costs minutes of runner time, it rewrites the files this repository
@@ -95,23 +95,11 @@ jobs:
             --output "samples/${WORKLOAD}/${{ matrix.arch }}.ndjson" \
             "${overrides[@]}"
 
-      # Rendering is not part of measuring: a separate command, a pure function of
-      # the file above.
-      - name: render the report
-        env:
-          WORKLOAD: ${{ inputs.workload }}
-        run: |
-          ./target/release/langbench report md \
-            "samples/${WORKLOAD}/${{ matrix.arch }}.ndjson" \
-            --output "reports/${WORKLOAD}/${{ matrix.arch }}.md"
-
       - name: upload the campaign
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: campaign-${{ inputs.workload }}-${{ matrix.arch }}
-          path: |
-            samples/${{ inputs.workload }}/${{ matrix.arch }}.ndjson
-            reports/${{ inputs.workload }}/${{ matrix.arch }}.md
+          path: samples/${{ inputs.workload }}/${{ matrix.arch }}.ndjson
           if-no-files-found: error
 
   # One job, one push. Two matrix jobs committing to `main` would race, and the
@@ -156,26 +144,25 @@ jobs:
       # regardless, which is the whole point of uploading it before committing it.
       #
       # Only the hooks that match these paths run. No Rust, no Node: nothing that
-      # reads a `.ndjson` or a rendered `.md` needs a compiler.
+      # reads a `.ndjson` needs a compiler.
       - name: check the campaigns against the hooks
         run: |
-          pre-commit run --show-diff-on-failure \
-            --files samples/*/*.ndjson reports/*/*.md
+          pre-commit run --show-diff-on-failure --files samples/*/*.ndjson
 
-      # The samples with the report, never one without the other. A campaign's
-      # samples are the only artefact that cannot be recomputed -- the report and
-      # the website are both derived from them, and committing a conclusion
-      # without its evidence publishes something nobody can check.
+      # The samples, and only the samples. They are the one artefact of a campaign
+      # that cannot be recomputed -- the website derives everything it shows from
+      # them, in the browser, so there is no conclusion to commit beside the
+      # evidence and no rendered file to drift from it.
       #
       # A campaign that reproduced the committed one, byte for byte, has nothing to
       # commit and is not a failure: HEAD already holds those samples, so it is HEAD
       # the site renders.
-      - name: commit the samples and the reports
+      - name: commit the samples
         id: commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add samples reports
+          git add samples
           if git diff --cached --quiet; then
             echo 'the campaigns reproduced the committed ones, byte for byte; nothing to commit'
           else

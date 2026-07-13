@@ -11,7 +11,7 @@ use crate::mode::FpMode;
 /// A CPU architecture a backend can be built and measured on.
 ///
 /// The two this project supports, because they are the two the architecture rule is
-/// written for. See `METHODOLOGY.md#the-architecture-rule`.
+/// written for. See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
 ///
 /// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
 /// publishes no `linux-aarch64` host compiler, so a backend using it cannot be
@@ -338,7 +338,7 @@ pub struct RunArgs {
     /// Threads handed to the kernels and to the compilers.
     ///
     /// The harness resolves a default and passes it explicitly; the kernels
-    /// themselves must never auto-detect. See `METHODOLOGY.md#anti-cheating-contract`.
+    /// themselves must never auto-detect. See `site/src/content/methodology/the-work.md#anti-cheating-contract`.
     #[arg(long, env = "CPUS", default_value_t = default_cpu())]
     pub cpu: usize,
 
@@ -389,7 +389,7 @@ pub struct RunArgs {
     /// GraalVM's `native-image` is what sets this floor, and the build-phase
     /// tmpfs is charged to the same cgroup. Changing it changes the numbers —
     /// campaigns run under different budgets are not comparable.
-    /// See `METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget`.
+    /// See `site/src/content/methodology/measurement.md#memory-is-only-comparable-under-a-pinned-budget`.
     #[arg(long, env = "MEMORY_LIMIT_MB", default_value_t = 8192)]
     pub memory_limit_mb: u64,
 

@@ -3,7 +3,7 @@
 //!
 //! Collection is best-effort: every field is optional, because most of it comes
 //! from `/proc` and `/sys` and does not exist outside Linux. A campaign run on a
-//! non-Linux host is not a valid measurement — see `METHODOLOGY.md#where-it-runs`
+//! non-Linux host is not a valid measurement — see `site/src/content/methodology/where-it-runs.md`
 //! — but the harness must still run there for development.
 
 use std::collections::BTreeSet;

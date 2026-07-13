@@ -123,7 +123,7 @@ export function writeSide(architecture: string, key: string): string {
   return `${architecture}:${key}`;
 }
 
-/** Fastest first, on the statistic the report headlines. The same default as `report.md`. */
+/** Fastest first, on the statistic the table headlines: the minimum of the run phase. */
 const DEFAULT_SORT: Sort = { key: "run", descending: false };
 
 export const NO_FILTERS: Filters = {
@@ -255,7 +255,7 @@ function replace(query: URLSearchParams): void {
  * The filters do not travel: they narrow a table, and a pair is not a table. But
  * the campaign and the workload do — an absolute timing never crosses an architecture, and
  * a "Compare" link that quietly switched architecture would be inviting exactly the
- * comparison `METHODOLOGY.md#the-architecture-rule` forbids.
+ * comparison `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule` forbids.
  */
 export function compareHref(scope: Scope, left?: string, right?: string): string {
   const query = new URLSearchParams();

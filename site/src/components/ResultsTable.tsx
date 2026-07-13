@@ -1,4 +1,4 @@
-// The table `report.md` prints, with the sort and the filters put back in the
+// Every number the harness aggregated, with the sort and the filters put back in the
 // reader's hands.
 //
 // The row is named the way the report names it — three columns, `Language`,
@@ -246,7 +246,7 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 </span>
               </th>
             ))}
-            {/* Not in `report.md`, and so not in the shared column reference: the
+            {/* Not a column of the campaign, and so not in the shared column reference: the
                 ratio is against the fastest row *on screen*, and the report has no
                 screen. Explained where it appears, above the table. */}
             <th className="text">Ratio</th>

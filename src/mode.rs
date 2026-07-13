@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Floating-point semantics the kernels are compiled under.
 ///
 /// The axis is FP semantics, not "optimization on/off": every mode is `-O3`.
-/// See `METHODOLOGY.md#floating-point-modes`.
+/// See `site/src/content/methodology/floating-point.md`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]

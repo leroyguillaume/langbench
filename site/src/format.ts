@@ -74,7 +74,7 @@ export function size(value: number | null | undefined): string {
 /**
  * A whole container's memory, which is megabytes and not kilobytes: a JVM's peak in
  * KiB is a six-digit number nobody reads at a glance. The same spelling as
- * `report.md`'s Memory column.
+ * the results table's Memory column.
  */
 export function mebibytes(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -109,7 +109,7 @@ export function optional(value: string | null): string {
  *
  * The only cross-backend number the site publishes. Absolute timings are a
  * property of the machine; a ratio within one campaign, on one architecture, is a
- * property of the backends. See `METHODOLOGY.md#the-architecture-rule`.
+ * property of the backends. See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
  */
 export function ratio(value: number, reference: number): string {
   if (reference === 0) {

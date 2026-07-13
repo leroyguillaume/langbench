@@ -4,7 +4,7 @@
 //! compiler; if their sources drifted apart, the row-to-row comparison would
 //! silently stop being the "same source, different backend" experiment and become
 //! the confounded one.
-//! See `METHODOLOGY.md#two-axes-two-tables-never-merged`.
+//! See `site/src/content/methodology/what-is-under-test.md#two-axes-two-tables-never-merged`.
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -14,7 +14,7 @@
 # Rust's precompiled std and Deno's typings -- Go is only the loudest case, because
 # it compiles its own std from source on a cold cache, and without the refill this
 # column would read "Go compiles half of net/http" instead of "Go compiles one
-# file". See METHODOLOGY.md#the-build-phase.
+# file". See site/src/content/methodology/measurement.md#the-build-phase.
 #
 # GOCACHE lives in the image, not in the tmpfs, and that is what makes it hold:
 # every `docker run` starts from the image layers with a fresh writable layer, so

@@ -7,7 +7,7 @@
 //! quietly rounded. The correctness gate of this harness would be corrupted by
 //! the act of displaying it. So the file is parsed here, by `serde_json`, in
 //! Rust — and the checksums leave through [`crate::analysis`], which serializes
-//! them as strings. See `METHODOLOGY.md#the-strict-mode-invariant`.
+//! them as strings. See `site/src/content/methodology/floating-point.md#the-strict-mode-invariant`.
 //!
 //! The second reason this module exists at all is [`crate::analysis`]: the site
 //! gets the harness's own min-of-N, its own bucketing, its own definition of
@@ -106,7 +106,7 @@ pub fn compare(
 /// The checksums are the exception, and the reason this is worth having at all: in
 /// `strict` mode they are obliged to be bit-identical across every architecture, and a
 /// divergence here is a genuine bug rather than a curiosity.
-/// See `METHODOLOGY.md#the-architecture-rule`.
+/// See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
 #[wasm_bindgen]
 pub fn compare_across(
     left_ndjson: &str,

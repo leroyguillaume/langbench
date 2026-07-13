@@ -3,17 +3,18 @@
 Instructions for `langbench`. Complements the global rules in
 `~/.claude/CLAUDE.md`; nothing here overrides them.
 
-**The reasoning behind every rule below lives in [METHODOLOGY.md](METHODOLOGY.md).**
+**The reasoning behind every rule below lives in [site/src/content/methodology/](site/src/content/methodology/).**
 Each rule links to its section. If a rule looks like excessive caution, read the
 section before removing it — they all exist because the naive alternative
 silently produces wrong numbers.
 
 ## What this is
 
-A Rust CLI that discovers benchmark implementations on disk, builds one container
-per implementation, runs them under a controlled protocol, and emits raw samples —
-rendered afterwards as a CSV or a Markdown report by separate commands. The
-subject is **compiler and runtime backends**, not languages.
+A Rust CLI that reads the workloads declared on disk, builds one container per
+implementation, runs them under a controlled protocol, and emits raw samples — and
+stops there. The **website** is the human rendering of a campaign, and
+`langbench sample convert` the machine-readable one. The subject is **compiler and
+runtime backends**, not languages.
 
 ## Terminology
 
@@ -58,7 +59,7 @@ the ones a reader is most likely to think were violated:
 
 ## Rules
 
-**Benchmark kernels** ([why](METHODOLOGY.md#the-benchmark-mandelbrot))
+**Benchmark kernels** ([why](site/src/content/methodology/the-work.md))
 
 - Zero third-party dependencies. One source file per implementation. Rust uses
   `std::thread` + `AtomicUsize`, never `rayon`.
@@ -71,13 +72,13 @@ the ones a reader is most likely to think were violated:
 - Work chunks are handed out dynamically, at least `4 × threads` of them. The
   load is imbalanced by design.
 
-**Flags** ([why](METHODOLOGY.md#compiler-flags))
+**Flags** ([why](site/src/content/methodology/flags-and-architectures.md))
 
 - Never `-march=native`. Pin a baseline per architecture as a build arg.
 - Three FP modes — `strict`, `fma`, `fast` — as build args on the same source.
 - Pin `codegen-units`, `strip` and the linker explicitly.
 
-**Correctness** ([why](METHODOLOGY.md#the-strict-mode-invariant))
+**Correctness** ([why](site/src/content/methodology/floating-point.md#the-strict-mode-invariant))
 
 - The checksum is a **64-bit integer**, everywhere, always. Never a float, never
   through a system that stores floats. A workload whose answer *is* a float bit-casts
@@ -93,7 +94,7 @@ the ones a reader is most likely to think were violated:
   `strict` is a floating-point mode and a JSON parser has no floating-point semantics
   to be strict about; the answer is the answer whatever the mode.
 - **A backend that fails is quarantined, not propagated.**
-  ([why](METHODOLOGY.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
+  ([why](site/src/content/methodology/what-we-record.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
   that fails, a container that crashes or hangs past the timeout, unreadable
   stdout, a diverging checksum: each takes out that one `(implementation, mode)`
   unit, at the point it breaks, and never a second time — the campaign keeps
@@ -101,9 +102,9 @@ the ones a reader is most likely to think were violated:
   non-zero: an empty table is a lie told quietly.
 - **A failure is published, never swallowed.** It is a `failure` record in
   `samples.ndjson`, beside the samples, and every rendering shows it. A row missing
-  from a report reads exactly like a backend nobody wrote.
+  from a table reads exactly like a backend nobody wrote.
 
-**Layout** ([why](METHODOLOGY.md#repository-layout))
+**Layout** ([why](site/src/content/methodology/declaring-the-work.md))
 
 - Every workload declares itself in a `workload.yaml`: `id`, `description`, `params`,
   `implementations`, and an optional `checksum`. **The walk for
@@ -134,6 +135,13 @@ the ones a reader is most likely to think were violated:
   an error.
 - `modes: all`, or an explicit list. A misspelled mode fails the campaign; a mode
   that is requested but not declared is skipped with a warning.
+- **A manifest describes the work, never the results.** An implementation's `comments`
+  are what is pinned, what its entrypoint has to do, how it deviates, what its build
+  phase actually *is* — never what to expect from the table ("read this against c-gcc",
+  "expect them to land close together", "it is slower, and that is a result"). Those
+  are claims about a campaign, they change every time one runs, and the campaign is
+  what says them. Same for a workload's `description`: it says what the work is, what
+  it puts under the light, and — just as loudly — what it says nothing about.
 - Docker `LABEL`s are image provenance for `docker inspect` (`.version`,
   `.flags`). **The harness never reads them** — two sources of truth is one source
   of drift. Anything the harness acts on lives in the manifest.
@@ -150,7 +158,7 @@ the ones a reader is most likely to think were violated:
 - One Dockerfile per implementation. No templating. Base images pinned by digest,
   never by tag. Non-root `USER` in every benchmark Dockerfile.
 
-**Measurement** ([why](METHODOLOGY.md#measurement-protocol))
+**Measurement** ([why](site/src/content/methodology/measurement.md))
 
 - `docker build` prepares, `docker run` measures. Never time a `docker build`.
 - `--network=none` and `--tmpfs` on every measured run. The former is a
@@ -162,13 +170,13 @@ the ones a reader is most likely to think were violated:
   RSS. Min-of-N, and here the argument is exact rather than statistical: nothing can
   push a high-water mark below what the backend had to allocate.
 - **`--memory` is pinned, identically, on every measured run, and swap is off.**
-  ([why](METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget)) It is part
+  ([why](site/src/content/methodology/measurement.md#memory-is-only-comparable-under-a-pinned-budget)) It is part
   of the measurement, not a safety rail: a GC runtime sizes its heap from what its
   cgroup shows it, so an unpinned budget publishes a peak that describes the bench
   machine. Changing the budget changes the *timings* too — campaigns run under
   different budgets do not compare, on any column.
 - **Parallel efficiency is a median, not a min-of-N.**
-  ([why](METHODOLOGY.md#parallel-efficiency-is-a-median-not-a-minimum)) Min-of-N is
+  ([why](site/src/content/methodology/measurement.md#parallel-efficiency-is-a-median-not-a-minimum)) Min-of-N is
   licensed by one-sided noise; contention moves a core count in both directions. It is
   computed per sample, never as a ratio of two minima, and it is allowed to exceed the
   thread count — a runtime's JIT and GC threads burn CPU the kernel's own clock never
@@ -179,30 +187,34 @@ the ones a reader is most likely to think were violated:
   headlines the internal `elapsed_ns`. A runtime's startup is a property of the
   backend; a container's startup is an artefact of our isolation choice, and it is
   several times a `gcc` invocation on one file.
-  ([why](METHODOLOGY.md#the-build-column-reports-the-internal-clock-the-run-column-the-external-one))
+  ([why](site/src/content/methodology/measurement.md#the-build-column-reports-the-internal-clock-the-run-column-the-external-one))
 - `Startup` is the smallest `wall − elapsed` gap *within a single sample*, never
   the difference of two minima drawn from different rounds — that would describe a
   run that never happened.
 - Interleave round-robin: outer loop over rounds, inner loop over
   implementations. Never block by implementation.
 - **Write raw samples, never aggregates.** One NDJSON line per run, flushed as it
-  is produced. Aggregates are recomputed at report time.
+  is produced. Aggregates are recomputed when the samples are read back.
 - **`workload run` writes `samples.ndjson` and nothing else.** Rendering is not part of
-  measuring: `langbench report csv` and `langbench report md` are separate commands, pure
-  functions of the file. A report that a run could emit directly is a report that
-  can outlive the samples it came from.
+  measuring: the site and `langbench sample convert` are both pure functions of the
+  file. A table a run could emit directly is a table that can outlive the samples it
+  came from.
+- **`sample convert` converts; it never aggregates.** One row per sample, the columns
+  the samples carry. The format is a *value* (`--format csv`), never a `--csv` flag: a
+  boolean would have to be mandatory — convert to what, otherwise? — and a flag you
+  always type says nothing.
 - Report min-of-N, not the median: contention noise is one-sided. Publish the
   dispersion beside it as a verdict on the campaign.
 
-**Never** ([why](METHODOLOGY.md#never-push-benchmark-metrics-to-prometheus))
+**Never** ([why](site/src/content/methodology/where-it-runs.md#never-push-benchmark-metrics-to-prometheus))
 
 - Never push benchmark metrics to Prometheus, or any TSDB. Prometheus is for the
   bench machine's health (frequency, temperature, throttling), never for the
   measurement.
 - Never publish an absolute cross-architecture timing. Within-architecture ratios only.
-  ([why](METHODOLOGY.md#the-architecture-rule))
+  ([why](site/src/content/methodology/flags-and-architectures.md#the-architecture-rule))
 - Never run a benchmark under QEMU / `binfmt` emulation.
-- **Never measure energy.** ([why](METHODOLOGY.md#why-there-is-no-energy-column)) The
+- **Never measure energy.** ([why](site/src/content/methodology/where-it-runs.md#why-there-is-no-energy-column)) The
   campaigns run on GitHub Actions runners, and RAPL is unreadable there: x86-only, and
   root-only on most kernels since PLATYPUS. Every sample of every campaign came back
   `null`. A column that is `n/a` on every row of every published campaign is not a
@@ -211,21 +223,27 @@ the ones a reader is most likely to think were violated:
 
 **The website** (`site/`)
 
-- The site is a **third rendering**, beside `csv` and `md`, and obeys the same
-  rule: a pure function of `samples.ndjson`. It measures nothing, and CI never
-  measures anything either — a shared, virtualised, frequency-scaled runner is the
-  worst benchmark target money can rent.
+- The site is **the** human rendering of a campaign — there is no second one — and it
+  obeys the rule the CSV does: a pure function of `samples.ndjson`. It measures
+  nothing, and CI never measures anything either — a shared, virtualised,
+  frequency-scaled runner is the worst benchmark target money can rent.
+- **The site's shape is the vocabulary's.** A sidebar of workloads, the campaigns of
+  each nested under it, and one page apiece: the front page says what langbench does,
+  a workload's page is its manifest (what the work is, how it is sized, what it puts
+  under the light and what it says nothing about), a campaign's page is its results.
+  A campaign hangs under its workload because that is what a campaign *is* — one
+  machine, one workload — and an architecture is never a top-level thing to pick.
 - **The site computes no statistic.** Min-of-N, the buckets, the definition of
   startup all live in `src/analysis.rs`, and what counts as a *difference* between
   two backends in `src/compare.rs` — both compiled to WebAssembly (`src/wasm.rs`)
-  and called from the browser. `langbench report md` calls the same function. A
-  re-implementation in TypeScript would be a second definition of what this
-  project measures — the same drift `bench.schema.json` is generated to prevent.
-  TypeScript sorts, formats and draws; it never does arithmetic on a sample.
+  and called from the browser. A re-implementation in TypeScript would be a second
+  definition of what this project measures — the same drift `bench.schema.json` is
+  generated to prevent. TypeScript sorts, formats and draws; it never does arithmetic
+  on a sample.
 - **A gap smaller than the dispersion is a tie, not a win.** The head-to-head
   compares two rows of one campaign; a gap that does not clear the worse of the two
   rows' dispersions is `indistinguishable`, whichever minimum came out lower.
-  ([why](METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference))
+  ([why](site/src/content/methodology/statistics.md#a-difference-smaller-than-the-dispersion-is-not-a-difference))
 - **The site is Astro, and every route is prerendered.** GitHub Pages is a file
   server: `output: 'static'`, so `/compare/` is a real `.html` and a deep link needs
   no `404.html` fallback. Anything that reads a campaign is a React island
@@ -234,12 +252,19 @@ the ones a reader is most likely to think were violated:
   pages without reloading the document, so the module singleton in `campaigns.ts`
   keeps the WASM instance and the parsed campaigns across a navigation: the samples
   are fetched once per tab, not once per page.
-- **`METHODOLOGY.md` is copied into the site, never re-written for it.**
-  `scripts/data.js` copies the file at the repository root; a second, hand-maintained
-  copy would be a methodology that drifts from the one the harness was written
-  against.
+- **The methodology is a section of the site**, and it is where it lives — prose under
+  `site/src/content/methodology/`, one route over it, the sidebar globbed from the
+  frontmatter. Every rule in this file links to the page that justifies it, and those
+  links are the point: a rule whose reasoning nobody can reach is a rule somebody will
+  delete.
+- **The campaign is the route, never a query string.** `/workloads/<workload>/<arch>/`,
+  and the island resolves it against the campaign's own *header* — never the filename,
+  and with no fallback. A page whose address says `x86_64` and whose numbers came from
+  an AArch64 run is the worst thing this project could publish, and every number on it
+  would be internally consistent. What is left in the query string is how you are
+  looking at the rows: the filters, the sort, the warmup toggle.
 - **A row is named by its triple, never by a slug.** `language`, `compiler`,
-  `interpreter` — the columns `report.md` prints, and the fields a `bench.yaml`
+  `interpreter` — the columns the results table prints, and the fields a `bench.yaml`
   declares. The `backend` slug on the wire is the handle the WASM picks rows by, and
   the site's use of it stops at that function call: never displayed, never sorted
   on, never in a URL (`?a=java/native-image/-/strict`, not `?a=java-native:strict`).
@@ -252,10 +277,13 @@ the ones a reader is most likely to think were violated:
   integer, a JavaScript number is a double, and `JSON.parse` silently rounds past
   2^53. `samples.ndjson` is fetched as *text* and parsed in Rust; checksums cross
   the wire as **strings** and are never added, only displayed and compared.
-- The site's data files **are** the campaigns in `samples/<arch>.ndjson`, byte for
-  byte, and each `reports/<arch>.md` is rendered from the campaign of the same
-  name. No export format, no intermediate file: the raw samples are the only thing
-  that cannot be recomputed, so they are what gets published.
+- The site's data files **are** the campaigns in `samples/<workload>/<arch>.ndjson`,
+  byte for byte. No export format, no intermediate file: the raw samples are the only
+  thing that cannot be recomputed, so they are what gets published. The one thing
+  beside them is the *workloads*, and they come from `langbench workload list --json` —
+  the harness is the only thing in this repository that reads a manifest, and a
+  workload page describes the work as declared *today* where a campaign page describes
+  it as it was measured.
 - **One campaign per architecture, and the site shows one at a time.** An absolute timing
   never crosses an architecture, so two architectures are never in one chart, one bar group
   or one table. The site reads the architecture out of the machine record *inside* each
@@ -297,9 +325,8 @@ the ones a reader is most likely to think were violated:
 - An interrupted campaign **exits 0**. The samples on disk are as valid as they
   were a moment before, and the file still renders; a non-zero exit would claim
   the harness broke, and it did not.
-- The default report template is `templates/report.md.liquid`, embedded with
-  `include_str!` so the binary stays self-contained. `langbench report md --template`
-  overrides it; the built-in one is always the fallback, never a required file.
+- The harness renders nothing for a human. There is no template engine, no Liquid, no
+  Markdown writer: `sample convert` writes rows, and the site does the reading.
 
 ## Testing
 
@@ -310,6 +337,6 @@ the ones a reader is most likely to think were violated:
 ## Milestones
 
 1. **Noise floor** on the target machine. Nothing else is trustworthy until this
-   number exists. ([why](METHODOLOGY.md#where-it-runs))
+   number exists. ([why](site/src/content/methodology/where-it-runs.md))
 2. The C/gcc, C/clang, Rust/LLVM triangle on Mandelbrot, `strict`, x86-64.
 3. Everything else.

@@ -2,8 +2,9 @@ name: pages
 
 # Builds the website and deploys it to GitHub Pages.
 #
-# The site is a *rendering*, beside `csv` and `md`, and it measures nothing: it is
-# a pure function of the campaigns committed under `samples/`. That is why this
+# The site is a *rendering*, beside `langbench sample convert`, and it measures
+# nothing: it is a pure function of the campaigns committed under `samples/` and of
+# the manifests that declare the work. That is why this
 # workflow is separate from `bench` -- publishing a page and measuring a backend
 # have nothing to say to each other, and a page can be republished (a CSS fix, a
 # label, a new chart) without spending an hour of runner time re-measuring
@@ -37,11 +38,14 @@ on:
     branches:
       - main
     paths:
-      # The campaigns, and the reports rendered from them. A hand-measured campaign
-      # pushed from a real bench machine is a new set of numbers on every chart.
+      # The campaigns. A hand-measured campaign pushed from a real bench machine is a
+      # new set of numbers on every chart.
       - samples/**
-      - reports/**
-      # The page itself.
+      # The work itself: the site describes a workload from its manifest, read by the
+      # harness at build time. A retuned param or a rewritten description is a page
+      # that has to be rebuilt.
+      - benchmarks/**
+      # The page itself, methodology included -- it is content under `site/src/`.
       - site/**
       # The harness's arithmetic: `analysis.rs` and `compare.rs` are compiled to
       # WebAssembly and *are* what the site computes with. A change to min-of-N is a
@@ -49,9 +53,6 @@ on:
       - src/**
       - Cargo.toml
       - Cargo.lock
-      # Prose the site renders verbatim, copied in at build time by `scripts/data.js`.
-      - METHODOLOGY.md
-      - docs/columns.md
       # And this file: a change to how the page is built is a reason to rebuild it.
       - .github/workflows/pages.yaml
   workflow_call:

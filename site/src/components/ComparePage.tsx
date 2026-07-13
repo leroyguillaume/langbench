@@ -12,7 +12,7 @@
 // here divides, compares or rounds a measurement — it picks two rows, spells what
 // the harness said about them, and colours the answer. A tie is not a formatting
 // choice; it is the campaign refusing to defend a claim it cannot afford.
-// See `METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
+// See `site/src/content/methodology/statistics.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
 
 import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../analysis";

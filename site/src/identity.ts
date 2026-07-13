@@ -1,7 +1,7 @@
 // What names a row, on this site: the triple, and never a slug.
 //
 // An implementation is `(workload, language, compiler, interpreter)` — that is what a
-// `bench.yaml` declares, and it is what `report.md` puts in its columns. The
+// `bench.yaml` declares, and it is what the results table puts in its columns. The
 // harness also carries a `backend` slug on the wire, because its Markdown template
 // needs a string to hang an anchor off; the site never shows it and never sorts on
 // it. `java-native-image` reads as "java, native" and is in fact
