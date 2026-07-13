@@ -1,6 +1,6 @@
 // What names a row, on this site: the triple, and never a slug.
 //
-// An implementation is `(algo, language, compiler, interpreter)` — that is what a
+// An implementation is `(workload, language, compiler, interpreter)` — that is what a
 // `bench.yaml` declares, and it is what `report.md` puts in its columns. The
 // harness also carries a `backend` slug on the wire, because its Markdown template
 // needs a string to hang an anchor off; the site never shows it and never sorts on

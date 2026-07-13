@@ -66,7 +66,7 @@ pub struct ContainerRecord {
 /// One measured invocation, as written to `samples.ndjson`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Sample {
-    pub algo: String,
+    pub workload: String,
     /// The implementation is its (language, compiler, interpreter) triple —
     /// there is no separate name, and no directory path, to stand in for it.
     ///
@@ -233,7 +233,7 @@ impl Stage {
 /// broke without a second file to join against.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Failure {
-    pub algo: String,
+    pub workload: String,
     pub language: String,
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
@@ -383,7 +383,7 @@ fn parse_record(line: &str, number: usize) -> Result<OwnedRecord> {
 
 /// Columns of the CSV rendering, in the order `Sample` declares them.
 const CSV_COLUMNS: &[&str] = &[
-    "algo",
+    "workload",
     "language",
     "compiler",
     "interpreter",
@@ -429,7 +429,7 @@ impl Sample {
     /// sometimes holds a word breaks every parser that reads it.
     fn csv_row(&self) -> String {
         let columns = [
-            escape(&self.algo),
+            escape(&self.workload),
             escape(&self.language),
             escape(self.compiler.as_deref().unwrap_or_default()),
             escape(self.interpreter.as_deref().unwrap_or_default()),
@@ -578,7 +578,7 @@ mod tests {
 
     fn sample(phase: Phase, checksum: Option<u64>) -> Sample {
         Sample {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             language: "c".to_owned(),
             compiler: Some("gcc".to_owned()),
             interpreter: None,
@@ -675,7 +675,7 @@ mod tests {
             .append(true)
             .open(&path)
             .unwrap();
-        file.write_all(br#"{"record":"sample","algo":"mandelb"#)
+        file.write_all(br#"{"record":"sample","workload":"mandelb"#)
             .unwrap();
         drop(file);
 
@@ -697,9 +697,9 @@ mod tests {
             .append(true)
             .open(&path)
             .unwrap();
-        file.write_all(b"{\"record\":\"sample\",\"algo\":\"mandelb\n")
+        file.write_all(b"{\"record\":\"sample\",\"workload\":\"mandelb\n")
             .unwrap();
-        file.write_all(b"{\"record\":\"sample\",\"algo\":\"mandelb\n")
+        file.write_all(b"{\"record\":\"sample\",\"workload\":\"mandelb\n")
             .unwrap();
         drop(file);
 

@@ -32,7 +32,7 @@ subject is **compiler and runtime backends**, not languages.
 
 **Flags** ([why](METHODOLOGY.md#compiler-flags))
 
-- Never `-march=native`. Pin a baseline per ISA as a build arg.
+- Never `-march=native`. Pin a baseline per architecture as a build arg.
 - Three FP modes — `strict`, `fma`, `fast` — as build args on the same source.
 - Pin `codegen-units`, `strip` and the linker explicitly.
 
@@ -41,7 +41,7 @@ subject is **compiler and runtime backends**, not languages.
 - The checksum is a **64-bit integer**, everywhere, always. Never a float, never
   through a system that stores floats.
 - In `strict` mode the checksum is bit-identical across every compiler, language
-  and ISA. One reference value. A divergence is a bug, never a rounding excuse.
+  and architecture. One reference value. A divergence is a bug, never a rounding excuse.
 - Verify the checksum on **every** run. A wrong run never enters the statistics.
 - **A backend that fails is quarantined, not propagated.**
   ([why](METHODOLOGY.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
@@ -57,7 +57,7 @@ subject is **compiler and runtime backends**, not languages.
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
 - Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
-  `algo`, `language`, `compiler`, `interpreter`, `source`, `modes`, `description`,
+  `workload`, `language`, `compiler`, `interpreter`, `source`, `modes`, `description`,
   `comments`. **Discovery is a walk for `bench.yaml`; nothing else is read.**
 - `source` names the one kernel file, and the manifest **declares** it — the harness
   never guesses which file beside the Dockerfile is the source. Guessing means
@@ -65,7 +65,7 @@ subject is **compiler and runtime backends**, not languages.
   `source` that is not a file on disk fails the campaign at discovery.
 - **The path is not metadata.** Never parse a directory name. The tree is
   free-form: move a benchmark, nest it, rename it — the campaign is unchanged.
-- **An implementation is `(algo, language, compiler, interpreter)`.** No name, no
+- **An implementation is `(workload, language, compiler, interpreter)`.** No name, no
   slug in the data. `compiler` and `interpreter` are each optional — but not both,
   and an absence is a published fact, not a hole. The same tuple declared twice is
   an error.
@@ -135,8 +135,8 @@ subject is **compiler and runtime backends**, not languages.
 - Never push benchmark metrics to Prometheus, or any TSDB. Prometheus is for the
   bench machine's health (frequency, temperature, throttling), never for the
   measurement.
-- Never publish an absolute cross-ISA timing. Within-ISA ratios only.
-  ([why](METHODOLOGY.md#the-isa-rule))
+- Never publish an absolute cross-architecture timing. Within-architecture ratios only.
+  ([why](METHODOLOGY.md#the-architecture-rule))
 - Never run a benchmark under QEMU / `binfmt` emulation.
 - **Never measure energy.** ([why](METHODOLOGY.md#why-there-is-no-energy-column)) The
   campaigns run on GitHub Actions runners, and RAPL is unreadable there: x86-only, and
@@ -192,9 +192,9 @@ subject is **compiler and runtime backends**, not languages.
   byte, and each `reports/<arch>.md` is rendered from the campaign of the same
   name. No export format, no intermediate file: the raw samples are the only thing
   that cannot be recomputed, so they are what gets published.
-- **One campaign per ISA, and the site shows one at a time.** An absolute timing
-  never crosses an ISA, so two architectures are never in one chart, one bar group
-  or one table. The site reads the ISA out of the machine record *inside* each
+- **One campaign per architecture, and the site shows one at a time.** An absolute timing
+  never crosses an architecture, so two architectures are never in one chart, one bar group
+  or one table. The site reads the architecture out of the machine record *inside* each
   campaign — never out of the filename, which is a label somebody typed. `bench`
   runs the matrix on native runners; never QEMU.
 - `src/lib.rs` carves the crate in two: the `cli` feature owns everything that

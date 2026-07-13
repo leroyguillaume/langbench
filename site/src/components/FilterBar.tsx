@@ -7,8 +7,8 @@
 // nothing else: the options are the ones this campaign actually measured, never a
 // fixed list that promises rows the file does not have.
 //
-// The ISA comes first, and it is not a filter: it is the experiment the rest of the
-// page is about. An absolute timing does not cross an ISA.
+// The architecture comes first, and it is not a filter: it is the experiment the rest of the
+// page is about. An absolute timing does not cross an architecture.
 
 import type { Aggregate, FpMode } from "../analysis";
 import { NOT_AVAILABLE } from "../format";
@@ -21,11 +21,11 @@ interface Props {
   onScope: (scope: Scope) => void;
   filters: Filters;
   onFilters: (filters: Filters) => void;
-  /** Every row of the algorithm on screen, before any filter: the options come from these. */
+  /** Every row of the workload on screen, before any filter: the options come from these. */
   rows: Aggregate[];
-  algos: string[];
-  arches: string[];
-  arch: string;
+  workloads: string[];
+  architectures: string[];
+  architecture: string;
 }
 
 /**
@@ -63,9 +63,9 @@ export function FilterBar({
   filters,
   onFilters,
   rows,
-  algos,
-  arches,
-  arch,
+  workloads,
+  architectures,
+  architecture,
 }: Props) {
   const languages = [...new Set(rows.map((row) => row.language))].sort();
 
@@ -117,14 +117,14 @@ export function FilterBar({
     <div className="filters">
       {/* First, because it scopes everything below it. A campaign is not a filter
           over the others: it is the experiment the rest of the page is about. */}
-      {arches.length > 1 && (
+      {architectures.length > 1 && (
         <label className="filter">
-          <span>ISA</span>
+          <span>architecture</span>
           <select
-            value={arch}
-            onChange={(event) => onScope({ ...scope, arch: event.target.value })}
+            value={architecture}
+            onChange={(event) => onScope({ ...scope, architecture: event.target.value })}
           >
-            {arches.map((candidate) => (
+            {architectures.map((candidate) => (
               <option key={candidate} value={candidate}>
                 {candidate}
               </option>
@@ -134,14 +134,14 @@ export function FilterBar({
       )}
 
       <label className="filter">
-        <span>Algorithm</span>
+        <span>Workload</span>
         <select
-          value={scope.algo ?? ""}
-          onChange={(event) => onScope({ ...scope, algo: event.target.value })}
+          value={scope.workload ?? ""}
+          onChange={(event) => onScope({ ...scope, workload: event.target.value })}
         >
-          {algos.map((algo) => (
-            <option key={algo} value={algo}>
-              {algo}
+          {workloads.map((workload) => (
+            <option key={workload} value={workload}>
+              {workload}
             </option>
           ))}
         </select>

@@ -89,7 +89,7 @@ mod tests {
             .unwrap();
         writer
             .write_sample(&Sample {
-                algo: "mandelbrot".to_owned(),
+                workload: "mandelbrot".to_owned(),
                 language: "c".to_owned(),
                 compiler: Some("gcc".to_owned()),
                 interpreter: None,
@@ -126,7 +126,7 @@ mod tests {
         .unwrap();
 
         let rendered = fs::read_to_string(&output).unwrap();
-        assert!(rendered.starts_with("algo,"), "{rendered}");
+        assert!(rendered.starts_with("workload,"), "{rendered}");
         assert!(rendered.contains("mandelbrot,c,gcc,"), "{rendered}");
     }
 

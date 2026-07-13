@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: rust
 compiler: rustc
 # Nothing executes the binary but the CPU.

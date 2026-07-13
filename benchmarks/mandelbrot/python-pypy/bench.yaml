@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: python
 # Nothing is compiled ahead of the run. PyPy's tracing JIT emits machine code --
 # that is the entire reason the row exists -- but it does so *during* the run, once

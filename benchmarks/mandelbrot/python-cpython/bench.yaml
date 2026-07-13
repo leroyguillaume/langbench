@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: python
 # Nothing is compiled ahead of the run. CPython compiles to bytecode, but that is
 # the interpreter's own loading step, not a separate backend: `compileall` is

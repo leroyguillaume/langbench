@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: go
 # `gc`, the compiler Go ships with -- not "go", which is the toolchain driver, and
 # not gccgo, which would be a second row and a second code generator.

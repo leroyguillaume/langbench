@@ -4,7 +4,7 @@ Generated on {{ campaign.timestamp }} by langbench {{ campaign.langbench_version
 
 ## What you are looking at
 
-langbench compiles the *same* algorithm — the same maths, written once per
+langbench compiles the *same* workload — the same maths, written once per
 language — with several compilers, then runs each build many times under the same
 conditions and records how long each run took. This report is the summary.
 
@@ -60,10 +60,10 @@ Where it ran. Timings only mean something *relative to this machine*.
 | {{ field.label }} | {{ field.value }} |
 {% endfor %}
 ## Results
-{% for algo in algos %}
-### {{ algo.algo }}
+{% for workload in workloads %}
+### {{ workload.workload }}
 
-Reference checksum in `strict` mode: `{{ algo.strict_checksum }}`.
+Reference checksum in `strict` mode: `{{ workload.strict_checksum }}`.
 
 The checksum is a single 64-bit integer summarising the whole computed image. Every
 `strict` row below produced exactly this number, bit for bit, whatever the compiler
@@ -79,7 +79,7 @@ different modes are different experiments (see **Mode**); and a gap smaller than
 
 | Language | Compiler | Interpreter | Mode | Runs | Run min | Dispersion | Compute min | Startup | CPU time | Cores | Memory | Build min | Build disp. | Source | Binary | `.text` | Δ strict |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-{% for row in algo.rows -%}
+{% for row in workload.rows -%}
 | [{{ row.language }}](#{{ row.backend_id }}) | {{ row.compiler }} | {{ row.interpreter }} | {{ row.mode }} | {{ row.run_samples }} | {{ row.run_min }} | {{ row.run_dispersion }} | {{ row.compute_min }} | {{ row.startup }} | {{ row.cpu_time }} | {{ row.cores }} | {{ row.memory }} | {{ row.build_min }} | {{ row.build_dispersion }} | {{ row.source }} | {{ row.binary }} | {{ row.text }} | {{ row.checksum_delta }} |
 {% endfor %}
 {%- endfor %}
@@ -102,10 +102,10 @@ is *wrong*, and a wrong run never enters the statistics.
 Nothing about the rows that *did* finish is affected by what is here. Each is an
 independent run of an independent image.
 
-| Algo | Language | Compiler | Interpreter | Mode | Where | What happened |
+| Workload | Language | Compiler | Interpreter | Mode | Where | What happened |
 | --- | --- | --- | --- | --- | --- | --- |
 {% for failure in failures -%}
-| {{ failure.algo }} | {{ failure.language }} | {{ failure.compiler }} | {{ failure.interpreter }} | {{ failure.mode }} | {{ failure.stage }} | {{ failure.error }} |
+| {{ failure.workload }} | {{ failure.language }} | {{ failure.compiler }} | {{ failure.interpreter }} | {{ failure.mode }} | {{ failure.stage }} | {{ failure.error }} |
 {% endfor %}
 **Where** is `build` when the image never compiled — there was nothing to run — and
 the phase and round otherwise, meaning the image was fine and the *run* was not.
@@ -133,7 +133,7 @@ experiments on the same thing, and what follows describes the thing.
 {% for backend in backends %}
 ### {{ backend.id }}
 
-*{{ backend.algo }}* — language `{{ backend.language }}`, compiler `{{ backend.compiler }}`, interpreter `{{ backend.interpreter }}`.
+*{{ backend.workload }}* — language `{{ backend.language }}`, compiler `{{ backend.compiler }}`, interpreter `{{ backend.interpreter }}`.
 
 {{ backend.description }}
 {% if backend.comments %}

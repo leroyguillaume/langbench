@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: kotlin
 compiler: kotlinc
 interpreter: openj9

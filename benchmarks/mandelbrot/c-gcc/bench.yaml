@@ -1,6 +1,6 @@
 # What this backend is. The harness reads this file and nothing else: not the
 # directory name, not the image labels. See METHODOLOGY.md#repository-layout.
-algo: mandelbrot
+workload: mandelbrot
 language: c
 compiler: gcc
 # Nothing executes the binary but the CPU.

@@ -256,7 +256,7 @@ exactly what it should say about code somebody wrote once and compiled twice.
 **Do not read it as a measure of quality, or of effort.** It is one author's kernel,
 in one style, under this repository's rules — zero dependencies, one file, threads
 handed in from `argv`. It says how much text this language needed to express *this*
-algorithm under *those* constraints. It does not say a language is verbose, and it
+workload under *those* constraints. It does not say a language is verbose, and it
 certainly does not say how much work it was to write.
 
 ### Binary
@@ -313,8 +313,8 @@ passing checksum means "no evidence of divergence at this resolution" — never
 "provably identical". Sensitivity grows with `--grid-size` and `--max-iter`, because
 both increase the number of pixels sitting right on a boundary.
 
-And the reference is not a universal constant. It is a property of *(algorithm, grid
-size, iteration ceiling, viewport)*, which is why each algorithm has its own, and why
+And the reference is not a universal constant. It is a property of *(workload, grid
+size, iteration ceiling, viewport)*, which is why each workload has its own, and why
 the value moves when you change the campaign's parameters. The invariant is
 *agreement between implementations*, never a particular number.
 

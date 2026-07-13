@@ -14,7 +14,7 @@ identical Rust, CPython versus PyPy, OpenJDK versus GraalVM `native-image`.
 > produces.** It documents what is measured, what is deliberately not measured,
 > and why a benchmark that skips those questions produces confident nonsense.
 
-**The results live in two directories**, one campaign per ISA:
+**The results live in two directories**, one campaign per architecture:
 
 - **[`samples/`](samples/)** — `samples/<arch>.ndjson`, the raw samples. The only
   artifact a campaign produces that cannot be recomputed, and the source of
@@ -23,7 +23,7 @@ identical Rust, CPython versus PyPy, OpenJDK versus GraalVM `native-image`.
   beside it. [What is in there](reports/README.md).
 
 They are kept apart by architecture and never merged: **an absolute timing does
-not cross an ISA** ([why](METHODOLOGY.md#the-isa-rule)).
+not cross an architecture** ([why](METHODOLOGY.md#the-architecture-rule)).
 
 ## Requirements
 
@@ -79,7 +79,7 @@ Common flags — every one of them also reads an environment variable:
 
 | Flag | Env | Default | Purpose |
 | --- | --- | --- | --- |
-| `--algo` | `ALGO` | all discovered | Restrict to some algorithms |
+| `--workload` | `WORKLOAD` | all discovered | Restrict to some workloads |
 | `--mode` | `FP_MODE` | `strict,fma,fast` | Floating-point semantics |
 | `--cpu` | `CPUS` | machine parallelism | Threads for kernels *and* compilers |
 | `--output`, `-o` | `SAMPLES_OUTPUT` | `samples.ndjson` | Path of the samples file the campaign writes |
@@ -89,17 +89,17 @@ Common flags — every one of them also reads an environment variable:
 | `--rounds` | `ROUNDS` | `10` | Measured run rounds |
 | `--build-rounds` | `BUILD_ROUNDS` | `3` | Measured build rounds |
 | `--warmup-rounds` | `WARMUP_ROUNDS` | `1` | Rounds recorded but flagged |
-| `--march` | `MARCH` | per-ISA baseline | ISA baseline. `native` is rejected |
+| `--march` | `MARCH` | per-architecture baseline | architecture baseline. `native` is rejected |
 | `--memory-limit-mb` | `MEMORY_LIMIT_MB` | `8192` | Memory budget of every measured container. Part of the measurement — see below |
 | `--run-timeout` | `RUN_TIMEOUT` | `600` | Seconds before a container is killed |
 | `--log-filter` | `LOG_FILTER` | `info` | [`tracing` filter directive][directives] |
 
 [directives]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
 
-Example — only the strict mode, on four threads, for one algorithm:
+Example — only the strict mode, on four threads, for one workload:
 
 ```sh
-langbench run --algo mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
+langbench run --workload mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
 ```
 
 ### Sizing a campaign
@@ -400,7 +400,7 @@ awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
-benchmark target. **One per ISA, in [`reports/`](reports/)** —
+benchmark target. **One per architecture, in [`reports/`](reports/)** —
 [`reports/aarch64.md`](reports/aarch64.md), and `reports/x86_64.md` once the
 [`bench`](.github/workflows/bench.yaml) workflow has run — each rendered from the
 campaign of the same name in [`samples/`](samples/). It renders
@@ -475,18 +475,18 @@ harness. So `samples.ndjson` is fetched as *text*, parsed in Rust by `serde_json
 and the checksums come back as strings. The page displays them and compares them;
 it never adds them.
 
-**One campaign per ISA, never merged.** An absolute timing does not cross an ISA
-([`METHODOLOGY.md#the-isa-rule`](METHODOLOGY.md#the-isa-rule)): a millisecond on
+**One campaign per architecture, never merged.** An absolute timing does not cross an architecture
+([`METHODOLOGY.md#the-architecture-rule`](METHODOLOGY.md#the-architecture-rule)): a millisecond on
 x86-64 and a millisecond on aarch64 are not the same claim. So the site loads
-every campaign and shows **one at a time**, behind an ISA selector — comparing
-backends *within* an architecture, which is what a ratio is for. The ISA travels
+every campaign and shows **one at a time**, behind an architecture selector — comparing
+backends *within* an architecture, which is what a ratio is for. The architecture travels
 with the link to `/compare/`, so a head-to-head never quietly changes architecture
 under the reader. The architecture it keys on is the one the machine recorded in
 the campaign header, never the one in the filename: a filename is a label somebody
 typed.
 
 The data it publishes is each campaign's samples, byte for byte — no export
-format, no intermediate file. They live in [`samples/`](samples/), one per ISA:
+format, no intermediate file. They live in [`samples/`](samples/), one per architecture:
 
 ```sh
 langbench run --output samples/x86_64.ndjson
@@ -539,7 +539,7 @@ pointing the page at your own numbers is a thing you can see yourself typing.
 
 Whatever `SAMPLES_DIR` points at, the `.ndjson` files under it are copied into
 `public/data/` byte for byte and indexed in `campaigns.json`; the page still reads
-each campaign's ISA out of its own machine record, never out of a path.
+each campaign's architecture out of its own machine record, never out of a path.
 
 ## Continuous integration
 
@@ -572,7 +572,7 @@ campaign, not *the* campaign. It publishes nothing. Its filter is `test`'s minus
 `benchmarks/**` and `tests/**`: a kernel is source the harness ships a Dockerfile
 for, never source it links.
 
-**[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per ISA**, on a
+**[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per architecture**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
 which measures the emulator). It commits every `samples/<arch>.ndjson` **and** its
 `reports/<arch>.md` back to `main`. Both files, never one without the other: the
@@ -615,7 +615,7 @@ pure functions of that file and will render it unchanged.
 Drop a `bench.yaml` next to a `Dockerfile`, anywhere under `benchmarks/`:
 
 ```yaml
-algo: mandelbrot
+workload: mandelbrot
 language: python
 compiler: cython      # omit if nothing is compiled ahead of the run
 interpreter: cpython  # omit if the binary runs on the bare CPU
@@ -633,7 +633,7 @@ comments: >-
 **The manifest is the only thing the harness reads.** Discovery walks the tree
 for `bench.yaml` files — the directory layout is yours to choose, and the
 directory *name* means nothing. An implementation is identified by what it is:
-`(algo, language, compiler, interpreter)`. Declare the same tuple twice and the
+`(workload, language, compiler, interpreter)`. Declare the same tuple twice and the
 campaign refuses to start.
 
 `compiler` and `interpreter` are each optional, and each absence is a published
@@ -789,7 +789,7 @@ benchmark actually measures.
 One caveat, published rather than hidden: **HotSpot has no `-march`** and JITs for
 whatever CPU it finds, so the JIT rows get a baseline the compiled rows were
 denied — the entrypoints cap vector width, which is as close as a JVM gets, and
-OpenJ9 cannot even do that. `native-image` is the only JVM backend with a real ISA
+OpenJ9 cannot even do that. `native-image` is the only JVM backend with a real architecture
 baseline. See
 [METHODOLOGY.md](METHODOLOGY.md#the-jvm-cannot-honour-this-rule-and-says-so).
 

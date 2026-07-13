@@ -1033,7 +1033,7 @@ td.muted-cell {
 /* The machine a column's numbers came from. Only ever rendered when the two sides
  * disagree about it — a column of milliseconds whose machine is not named is what
  * makes a cross-ISA table dangerous rather than merely useless. */
-.side-arch {
+.side-architecture {
   display: inline-block;
   margin-left: 0.4rem;
   padding: 0.05rem 0.4rem;

@@ -16,7 +16,7 @@ use std::thread::available_parallelism;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-/// ISA extensions worth recording. Anything else is noise in a report.
+/// architecture extensions worth recording. Anything else is noise in a report.
 const NOTABLE_FLAGS: &[&str] = &[
     "sse2", "avx", "avx2", "avx512f", "fma", "neon", "asimd", "sve", "sve2", "bf16",
 ];
@@ -59,7 +59,7 @@ pub struct Machine {
     pub virtualization: Option<String>,
     /// The harness itself is running inside a container.
     pub containerized: bool,
-    pub arch: String,
+    pub architecture: String,
     pub hostname: Option<String>,
     pub os: Option<String>,
     pub kernel: Option<String>,
@@ -102,7 +102,7 @@ impl Machine {
                 read_trim("/sys/class/dmi/id/sys_vendor").as_deref(),
             ),
             containerized: containerized(),
-            arch: std::env::consts::ARCH.to_owned(),
+            architecture: std::env::consts::ARCH.to_owned(),
             hostname: read_trim("/proc/sys/kernel/hostname").or_else(|| read_trim("/etc/hostname")),
             os: read_trim("/proc/sys/kernel/ostype"),
             kernel,
@@ -152,7 +152,7 @@ impl Machine {
         // rendering bug, whereas `n/a` is a fact about the host.
         push(
             "Architecture",
-            opt((!self.arch.is_empty()).then_some(self.arch.as_str())),
+            opt((!self.architecture.is_empty()).then_some(self.architecture.as_str())),
         );
         push("OS", opt(self.os.as_deref()));
         push("Kernel", opt(self.kernel.as_deref()));
@@ -166,7 +166,7 @@ impl Machine {
         push("SMT active", opt_bool(self.smt_active));
         push("NUMA nodes", opt_num(self.numa_nodes));
         push(
-            "ISA extensions",
+            "architecture extensions",
             if self.isa_extensions.is_empty() {
                 "n/a".to_owned()
             } else {

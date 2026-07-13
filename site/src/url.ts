@@ -8,7 +8,7 @@
 // trusted. `?mode=strict,rubbish` narrows to `strict`; `?sort=drop_table` falls
 // back to the default rather than reaching the sort with a key it has no column for.
 //
-// Three pages, one vocabulary: `arch`, `algo` and `warmup` mean the same thing on
+// Three pages, one vocabulary: `architecture`, `workload` and `warmup` mean the same thing on
 // each of them, and `compareHref` carries them across so that clicking "Compare"
 // from an aarch64 campaign does not silently land on the x86-64 one.
 
@@ -37,11 +37,11 @@ const sortKeySchema = z.enum([
   "text",
 ]);
 
-/** What both pages agree about: which campaign, which algorithm, and how it was aggregated. */
+/** What both pages agree about: which campaign, which workload, and how it was aggregated. */
 export interface Scope {
-  /** The ISA whose campaign is on screen. `null` — whichever one sorts first. */
-  arch: string | null;
-  algo: string | null;
+  /** The architecture whose campaign is on screen. `null` — whichever one sorts first. */
+  architecture: string | null;
+  workload: string | null;
   /** Warmup rounds are always recorded. This decides whether they are aggregated. */
   includeWarmup: boolean;
 }
@@ -63,13 +63,13 @@ export interface ResultsState extends Scope {
 
 export interface CompareState extends Scope {
   /**
-   * The two rows of the head-to-head, as `[arch:]language/compiler/interpreter/mode`.
+   * The two rows of the head-to-head, as `[architecture:]language/compiler/interpreter/mode`.
    * `null` — the site pairs the fastest with the fastest of another language.
    *
-   * The ISA belongs to the *row's* address, not to the page's, because the two sides
+   * The architecture belongs to the *row's* address, not to the page's, because the two sides
    * may come from two campaigns: `?a=x86_64:c/gcc/-/strict&b=aarch64:c/gcc/-/strict`
    * is a legitimate thing to ask for and an alarming thing to be handed — the page
-   * says so when it happens. Without a prefix a side falls back to `arch`, so every
+   * says so when it happens. Without a prefix a side falls back to `architecture`, so every
    * link written before this existed still opens the pair it named.
    *
    * A comparison *is* a claim, and it is the sharpest one this site makes. It gets
@@ -80,33 +80,33 @@ export interface CompareState extends Scope {
   right: string | null;
 }
 
-/** One side of the pair, as the query string spells it: an ISA, and a row on it. */
+/** One side of the pair, as the query string spells it: an architecture, and a row on it. */
 export interface SideRef {
   /** `null` — the side named none, so it belongs to whichever campaign is in scope. */
-  arch: string | null;
+  architecture: string | null;
   /** `language/compiler/interpreter/mode`, or `null` when the side names no row. */
   key: string | null;
 }
 
 /**
- * `x86_64:c/gcc/-/strict` — the ISA, then the row.
+ * `x86_64:c/gcc/-/strict` — the architecture, then the row.
  *
- * Validated, never trusted, like every other thing the query string says: an ISA this
+ * Validated, never trusted, like every other thing the query string says: an architecture this
  * build never published is dropped by whoever holds the campaigns, and so is a row.
  */
 export function readSide(raw: string | null): SideRef {
   if (raw === null) {
-    return { arch: null, key: null };
+    return { architecture: null, key: null };
   }
   const colon = raw.indexOf(":");
   if (colon < 0) {
-    return { arch: null, key: raw };
+    return { architecture: null, key: raw };
   }
-  return { arch: raw.slice(0, colon), key: raw.slice(colon + 1) };
+  return { architecture: raw.slice(0, colon), key: raw.slice(colon + 1) };
 }
 
-export function writeSide(arch: string, key: string): string {
-  return `${arch}:${key}`;
+export function writeSide(architecture: string, key: string): string {
+  return `${architecture}:${key}`;
 }
 
 /** Fastest first, on the statistic the report headlines. The same default as `report.md`. */
@@ -126,18 +126,18 @@ function params(): URLSearchParams {
 
 function readScope(query: URLSearchParams): Scope {
   return {
-    arch: query.get("arch"),
-    algo: query.get("algo"),
+    architecture: query.get("architecture"),
+    workload: query.get("workload"),
     includeWarmup: query.get("warmup") === "1",
   };
 }
 
 function writeScope(query: URLSearchParams, scope: Scope): void {
-  if (scope.arch !== null) {
-    query.set("arch", scope.arch);
+  if (scope.architecture !== null) {
+    query.set("architecture", scope.architecture);
   }
-  if (scope.algo !== null) {
-    query.set("algo", scope.algo);
+  if (scope.workload !== null) {
+    query.set("workload", scope.workload);
   }
   if (scope.includeWarmup) {
     query.set("warmup", "1");
@@ -237,9 +237,9 @@ function replace(query: URLSearchParams): void {
  * The link from the results to the head-to-head, carrying the scope.
  *
  * The filters do not travel: they narrow a table, and a pair is not a table. But
- * the campaign and the algorithm do — an absolute timing never crosses an ISA, and
+ * the campaign and the workload do — an absolute timing never crosses an architecture, and
  * a "Compare" link that quietly switched architecture would be inviting exactly the
- * comparison `METHODOLOGY.md#the-isa-rule` forbids.
+ * comparison `METHODOLOGY.md#the-architecture-rule` forbids.
  */
 export function compareHref(scope: Scope, left?: string, right?: string): string {
   const query = new URLSearchParams();

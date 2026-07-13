@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: java
 # native-image, and no interpreter at all: this is the row where the JVM disappears.
 # Graal runs ahead of the program rather than inside it -- whole-program analysis,

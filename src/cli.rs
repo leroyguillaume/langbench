@@ -10,8 +10,8 @@ use crate::mode::FpMode;
 
 /// A CPU architecture a backend can be built and measured on.
 ///
-/// The two this project supports, because they are the two the ISA rule is
-/// written for. See `METHODOLOGY.md#the-isa-rule`.
+/// The two this project supports, because they are the two the architecture rule is
+/// written for. See `METHODOLOGY.md#the-architecture-rule`.
 ///
 /// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
 /// publishes no `linux-aarch64` host compiler, so a backend using it cannot be
@@ -25,14 +25,14 @@ use crate::mode::FpMode;
 )]
 #[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
-pub enum Arch {
+pub enum Architecture {
     /// 64-bit x86. `-march=x86-64-v3` and friends.
     X86_64,
     /// 64-bit ARM. `-march=armv8.2-a` and friends.
     Aarch64,
 }
 
-impl Arch {
+impl Architecture {
     pub const ALL: [Self; 2] = [Self::X86_64, Self::Aarch64];
 
     pub fn as_str(self) -> &'static str {
@@ -44,7 +44,9 @@ impl Arch {
 
     /// Parse an architecture as a `bench.yaml` spells it.
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|arch| arch.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|architecture| architecture.as_str() == value)
     }
 
     /// The architecture the harness is running on — which is the architecture the
@@ -52,14 +54,14 @@ impl Arch {
     /// Cross-building would mean measuring under emulation, and this project does
     /// not do that.
     ///
-    /// `None` on anything else: the ISA rule only knows these two, and a campaign
+    /// `None` on anything else: the architecture rule only knows these two, and a campaign
     /// on a third has no baseline to pin.
     pub fn current() -> Option<Self> {
         Self::parse(std::env::consts::ARCH)
     }
 }
 
-impl fmt::Display for Arch {
+impl fmt::Display for Architecture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -195,9 +197,9 @@ pub struct MarkdownArgs {
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
-    /// Algorithms to measure. Defaults to every algorithm discovered on disk.
-    #[arg(long, env = "ALGO", value_delimiter = ',')]
-    pub algo: Vec<String>,
+    /// Workloads to measure. Defaults to every workload discovered on disk.
+    #[arg(long, env = "WORKLOAD", value_delimiter = ',')]
+    pub workload: Vec<String>,
 
     /// Floating-point modes to build and measure.
     #[arg(long, env = "FP_MODE", value_delimiter = ',', default_values_t = FpMode::ALL)]
@@ -249,7 +251,7 @@ pub struct RunArgs {
     #[arg(long, env = "WARMUP_ROUNDS", default_value_t = 1)]
     pub warmup_rounds: u32,
 
-    /// ISA baseline passed to the compilers as `-march`. Never `native`.
+    /// architecture baseline passed to the compilers as `-march`. Never `native`.
     #[arg(long, env = "MARCH", default_value_t = default_march(), value_parser = parse_march)]
     pub march: String,
 
@@ -288,7 +290,7 @@ fn default_cpu() -> usize {
     available_parallelism().map(|n| n.get()).unwrap_or(1)
 }
 
-/// A pinned ISA baseline per architecture. Empty means "pass no `-march`".
+/// A pinned architecture baseline per architecture. Empty means "pass no `-march`".
 fn default_march() -> String {
     match std::env::consts::ARCH {
         "x86_64" => "x86-64-v3",
@@ -302,7 +304,7 @@ fn parse_march(value: &str) -> Result<String, String> {
     if value.eq_ignore_ascii_case("native") {
         return Err(
             "`-march=native` is forbidden: the CPU model varies between \
-             runs and the ISA baseline would vary with it. Pin an explicit \
+             runs and the architecture baseline would vary with it. Pin an explicit \
              baseline, e.g. `x86-64-v3`."
                 .to_owned(),
         );

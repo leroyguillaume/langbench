@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use tracing::{error, info, warn};
 
-use crate::cli::{Arch, RunArgs};
+use crate::cli::{Architecture, RunArgs};
 use crate::discovery::{Implementation, discover};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
@@ -32,24 +32,24 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         warn!("{warning}");
     }
 
-    let implementations = discover(&args.benchmarks_dir, &args.algo)?;
+    let implementations = discover(&args.benchmarks_dir, &args.workload)?;
     ensure!(
         !implementations.is_empty(),
         "no implementation found under {}",
         args.benchmarks_dir.display(),
     );
 
-    let host = Arch::current();
+    let host = Architecture::current();
     let units = schedule(&implementations, &args.mode, host);
     ensure!(
         !units.is_empty(),
         // Two ways to schedule nothing, and they call for different fixes: a mode
         // nobody declares is a flag to change, an architecture nobody builds on is
-        // a machine to change. Blaming `modes` for what the ISA did would send the
+        // a machine to change. Blaming `modes` for what the architecture did would send the
         // reader looking in the wrong file.
         "no implementation is buildable on {} in any of the requested modes ({}). Every \
          discovered implementation either declares a narrower `modes` list, or declares an \
-         `arch` list that does not include this machine.",
+         `architecture` list that does not include this machine.",
         host.map_or_else(
             || format!("this machine ({})", std::env::consts::ARCH),
             |host| host.to_string(),
@@ -158,7 +158,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
 /// from a report with no explanation is worse than a redundant one.
 ///
 /// The architecture skip is the same idea about a harsher fact. Some toolchains
-/// are simply not published for an ISA — Kotlin/Native has no `linux-aarch64`
+/// are simply not published for an architecture — Kotlin/Native has no `linux-aarch64`
 /// host compiler — and the only ways to run one anyway are emulation, which this
 /// project forbids, or cross-building, which would measure a build that never
 /// happened here. So the manifest declares where it can be built, and a campaign
@@ -166,21 +166,21 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
 fn schedule(
     implementations: &[Implementation],
     requested: &[FpMode],
-    host: Option<Arch>,
+    host: Option<Architecture>,
 ) -> Vec<Unit> {
     let mut units = Vec::new();
     for implementation in implementations {
         if !implementation.supports(host) {
             warn!(
-                algo = %implementation.algo,
+                workload = %implementation.workload,
                 language = %implementation.language,
                 compiler = none_if_absent(implementation.compiler.as_deref()),
                 interpreter = none_if_absent(implementation.interpreter.as_deref()),
-                host = host.map_or("unknown", Arch::as_str),
+                host = host.map_or("unknown", Architecture::as_str),
                 declares = %implementation
-                    .arches
+                    .architectures
                     .iter()
-                    .map(Arch::to_string)
+                    .map(Architecture::to_string)
                     .collect::<Vec<_>>()
                     .join(","),
                 "skipping: this backend's toolchain does not exist for this architecture",
@@ -197,7 +197,7 @@ fn schedule(
                 });
             } else {
                 warn!(
-                    algo = %implementation.algo,
+                    workload = %implementation.workload,
                     language = %implementation.language,
                     compiler = none_if_absent(implementation.compiler.as_deref()),
                     interpreter = none_if_absent(implementation.interpreter.as_deref()),
@@ -229,16 +229,16 @@ struct Runner<'a, E: ContainerEngine> {
     /// Samples are streamed to disk, never accumulated: the harness holds a
     /// count, and whoever renders reads them back.
     written: usize,
-    /// The value every strict-mode run of an algorithm must agree on, bit for
-    /// bit, keyed by algorithm. Per algorithm and not per campaign: the checksum
-    /// is a property of `(algo, grid size, max_iter)`, so a shared reference
-    /// would abort the campaign on the first strict run of the second algorithm.
+    /// The value every strict-mode run of a workload must agree on, bit for
+    /// bit, keyed by workload. Per workload and not per campaign: the checksum
+    /// is a property of `(workload, grid size, max_iter)`, so a shared reference
+    /// would abort the campaign on the first strict run of the second workload.
     strict_checksums: HashMap<String, u64>,
     /// The images of the units that failed, by [`Unit::image`] — the one token
     /// that is unique per `(implementation, mode)`.
     ///
     /// A unit is quarantined, never the campaign: a compiler that does not exist
-    /// for this ISA, a kernel that segfaults, a run that hangs past the timeout,
+    /// for this architecture, a kernel that segfaults, a run that hangs past the timeout,
     /// a checksum that diverges — each of those is one backend saying something
     /// about itself, and none of them is a reason to throw away the fifty
     /// measurements the other backends got right. A quarantined unit is dropped
@@ -303,7 +303,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
                 shutdown::checkpoint()?;
 
                 // A run that crashed, hung past the timeout, printed a record the
-                // harness cannot read, or returned a checksum the algorithm does
+                // harness cannot read, or returned a checksum the workload does
                 // not agree with, is a wrong run — and a wrong run never enters
                 // the statistics. It writes no sample; it retires its unit.
                 let measured = self
@@ -330,7 +330,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
                     phase = phase.as_str(),
                     round = round + 1,
                     of = total,
-                    algo = %sample.algo,
+                    workload = %sample.workload,
                     language = %sample.language,
                     compiler = none_if_absent(sample.compiler.as_deref()),
                     interpreter = none_if_absent(sample.interpreter.as_deref()),
@@ -371,7 +371,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
         }
         let implementation = &unit.implementation;
         let failure = Failure {
-            algo: implementation.algo.clone(),
+            workload: implementation.workload.clone(),
             language: implementation.language.clone(),
             compiler: implementation.compiler.clone(),
             interpreter: implementation.interpreter.clone(),
@@ -387,7 +387,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
         };
         error!(
             stage = stage.as_str(),
-            algo = %failure.algo,
+            workload = %failure.workload,
             language = %failure.language,
             compiler = none_if_absent(failure.compiler.as_deref()),
             interpreter = none_if_absent(failure.interpreter.as_deref()),
@@ -411,7 +411,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
         for failure in &self.failures {
             error!(
                 stage = failure.stage.as_str(),
-                algo = %failure.algo,
+                workload = %failure.workload,
                 language = %failure.language,
                 compiler = none_if_absent(failure.compiler.as_deref()),
                 interpreter = none_if_absent(failure.interpreter.as_deref()),
@@ -432,7 +432,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
         })?;
         let record = execution.record;
         Ok(Sample {
-            algo: unit.implementation.algo.clone(),
+            workload: unit.implementation.workload.clone(),
             language: unit.implementation.language.clone(),
             compiler: unit.implementation.compiler.clone(),
             interpreter: unit.implementation.interpreter.clone(),
@@ -478,18 +478,19 @@ impl<E: ContainerEngine> Runner<'_, E> {
         let Some(checksum) = sample.checksum else {
             return Ok(());
         };
-        match self.strict_checksums.get(&sample.algo) {
+        match self.strict_checksums.get(&sample.workload) {
             None => {
-                self.strict_checksums.insert(sample.algo.clone(), checksum);
+                self.strict_checksums
+                    .insert(sample.workload.clone(), checksum);
                 Ok(())
             }
             Some(&reference) if reference == checksum => Ok(()),
             Some(&reference) => bail!(
                 "strict-mode checksum mismatch on {}: {} produced {checksum}, the reference is \
-                 {reference}. In strict mode every compiler, language and ISA must agree bit \
+                 {reference}. In strict mode every compiler, language and architecture must agree bit \
                  for bit; a divergence is a bug in the code or the flags, never a rounding \
                  difference.",
-                sample.algo,
+                sample.workload,
                 sample.backend(),
             ),
         }
@@ -527,9 +528,9 @@ mod tests {
 
     /// Backends are spelled as their slug — `c-gcc` — and written out as the
     /// manifest the harness actually reads.
-    fn benchmarks_for(root: &Path, algo: &str, names: &[&str]) {
+    fn benchmarks_for(root: &Path, workload: &str, names: &[&str]) {
         for name in names {
-            benchmark_declaring_for(root, algo, name, "all");
+            benchmark_declaring_for(root, workload, name, "all");
         }
     }
 
@@ -538,14 +539,14 @@ mod tests {
     }
 
     /// `modes` is `all`, or the modes a manifest would list.
-    fn benchmark_declaring_for(root: &Path, algo: &str, name: &str, modes: &str) {
+    fn benchmark_declaring_for(root: &Path, workload: &str, name: &str, modes: &str) {
         let (language, compiler) = name.split_once('-').expect("<language>-<compiler>");
         let modes = if modes == "all" {
             modes.to_owned()
         } else {
             format!("[{modes}]")
         };
-        let dir = root.join(algo).join(name);
+        let dir = root.join(workload).join(name);
         create_dir_all(&dir).unwrap();
         File::create(dir.join("Dockerfile")).unwrap();
         // The manifest declares a source, and the source is there: discovery reads
@@ -554,7 +555,7 @@ mod tests {
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
             format!(
-                "algo: {algo}\n\
+                "workload: {workload}\n\
                  language: {language}\n\
                  compiler: {compiler}\n\
                  source: {SOURCE}\n\
@@ -605,7 +606,7 @@ mod tests {
 
     fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
         RunArgs {
-            algo: vec![],
+            workload: vec![],
             mode: modes,
             cpu: 4,
             output: output.join("samples.ndjson"),
@@ -743,7 +744,7 @@ mod tests {
             "{err}"
         );
         assert!(err.to_string().contains("modes"), "{err}");
-        assert!(err.to_string().contains("arch"), "{err}");
+        assert!(err.to_string().contains("architecture"), "{err}");
     }
 
     #[test]
@@ -835,9 +836,9 @@ mod tests {
 
     #[test]
     fn two_algorithms_are_each_verified_against_their_own_reference() {
-        // The checksum is a property of (algo, grid size, max_iter), so two
-        // algorithms legitimately disagree. A campaign-wide reference would abort
-        // on the first strict run of the second algorithm.
+        // The checksum is a property of (workload, grid size, max_iter), so two
+        // workloads legitimately disagree. A campaign-wide reference would abort
+        // on the first strict run of the second workload.
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks_for(root.path(), "mandelbrot", &["c-gcc"]);
@@ -884,7 +885,7 @@ mod tests {
         execute(args, &engine).unwrap();
     }
 
-    /// A backend whose toolchain does not exist for this ISA is dropped from the
+    /// A backend whose toolchain does not exist for this architecture is dropped from the
     /// schedule *before* a `docker build` discovers it the hard way — and the drop
     /// is loud, because a row that silently vanishes from a report is worse than a
     /// row that failed.
@@ -898,12 +899,12 @@ mod tests {
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
             format!(
-                "algo: mandelbrot\n\
+                "workload: mandelbrot\n\
                  language: kotlin\n\
                  compiler: kotlin-native\n\
                  source: {SOURCE}\n\
                  modes: [strict]\n\
-                 arch: [x86_64]\n\
+                 architectures: [x86_64]\n\
                  description: No linux-aarch64 host compiler exists.\n",
             ),
         )
@@ -914,10 +915,18 @@ mod tests {
         assert_eq!(implementations.len(), 2);
 
         // On x86-64 both are scheduled; on AArch64 only the C one survives.
-        let on_x86 = schedule(&implementations, &[FpMode::Strict], Some(Arch::X86_64));
+        let on_x86 = schedule(
+            &implementations,
+            &[FpMode::Strict],
+            Some(Architecture::X86_64),
+        );
         assert_eq!(on_x86.len(), 2);
 
-        let on_arm = schedule(&implementations, &[FpMode::Strict], Some(Arch::Aarch64));
+        let on_arm = schedule(
+            &implementations,
+            &[FpMode::Strict],
+            Some(Architecture::Aarch64),
+        );
         assert_eq!(on_arm.len(), 1);
         assert_eq!(on_arm[0].implementation.language, "c");
     }

@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: ts
 # Nothing is compiled ahead of the run, and this is the subtle one: Node does not
 # *compile* TypeScript, it erases it. The types are stripped syntactically and the

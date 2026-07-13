@@ -31,7 +31,7 @@ use crate::stats::Summary;
 /// a position in a table is a property of the sort somebody clicked.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Selection {
-    pub algo: String,
+    pub workload: String,
     pub left: Row,
     pub right: Row,
 }
@@ -86,8 +86,8 @@ pub struct Metric {
     /// `right / left`. Below 1, the right-hand backend is the smaller one.
     ///
     /// A ratio, and never an absolute difference: two backends of one campaign on
-    /// one ISA is exactly the comparison this project is allowed to publish, and
-    /// the ratio is the part of it that travels. See `METHODOLOGY.md#the-isa-rule`.
+    /// one architecture is exactly the comparison this project is allowed to publish, and
+    /// the ratio is the part of it that travels. See `METHODOLOGY.md#the-architecture-rule`.
     pub ratio: Option<f64>,
     /// The gap, as a percentage of the smaller of the two. Always positive.
     pub gap_pct: Option<f64>,
@@ -123,7 +123,7 @@ pub struct Checksums {
 /// Two rows, and what may be said about the pair.
 #[derive(Clone, Debug, Serialize)]
 pub struct Comparison {
-    pub algo: String,
+    pub workload: String,
     pub left: Side,
     pub right: Side,
     pub metrics: Vec<Metric>,
@@ -131,10 +131,10 @@ pub struct Comparison {
     /// The two rows come from two architectures, and **every timing below is
     /// therefore meaningless as a comparison**. It is computed here rather than
     /// left to the caller to notice: a renderer that forgot to check would publish
-    /// exactly the claim `METHODOLOGY.md#the-isa-rule` exists to forbid. A ratio
-    /// travels between ISAs; a millisecond does not.
+    /// exactly the claim `METHODOLOGY.md#the-architecture-rule` exists to forbid. A ratio
+    /// travels between architectures; a millisecond does not.
     ///
-    /// The checksums, on the other hand, are *more* interesting across an ISA than
+    /// The checksums, on the other hand, are *more* interesting across an architecture than
     /// within one: in `strict` mode they are obliged to be bit-identical on x86-64
     /// and on AArch64 alike, and a divergence is a bug in one of them.
     pub cross_isa: bool,
@@ -151,9 +151,9 @@ pub struct Side {
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
     pub mode: FpMode,
-    /// The ISA of the campaign this row was measured on — out of the machine record
+    /// The architecture of the campaign this row was measured on — out of the machine record
     /// inside the file, never out of its name.
-    pub arch: String,
+    pub architecture: String,
 }
 
 /// Below three samples the median absolute deviation is structurally zero — the
@@ -164,7 +164,7 @@ const MINIMUM_SAMPLES_FOR_DISPERSION: usize = 3;
 /// Compare two rows of one campaign.
 ///
 /// Fails only on a selection the campaign cannot honour: a row it never measured,
-/// or two rows from two algorithms — whose timings are two different amounts of
+/// or two rows from two workloads — whose timings are two different amounts of
 /// work and whose checksums are two different reference values.
 pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison> {
     compare_across(analysis, analysis, selection)
@@ -179,23 +179,23 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
 /// hand; what the harness will not do is let the pair pass for a comparable one. A
 /// millisecond on x86-64 and a millisecond on AArch64 are two different machines
 /// answering two different questions, and no ratio of them means anything.
-/// See `METHODOLOGY.md#the-isa-rule`.
+/// See `METHODOLOGY.md#the-architecture-rule`.
 pub fn compare_across(
     left_analysis: &Analysis,
     right_analysis: &Analysis,
     selection: &Selection,
 ) -> Result<Comparison> {
-    let left_algo = algo_of(left_analysis, &selection.algo)?;
-    let right_algo = algo_of(right_analysis, &selection.algo)?;
+    let left_algo = algo_of(left_analysis, &selection.workload)?;
+    let right_algo = algo_of(right_analysis, &selection.workload)?;
 
     let left = find(&left_algo.aggregates, &selection.left)?;
     let right = find(&right_algo.aggregates, &selection.right)?;
 
     Ok(Comparison {
-        algo: left_algo.algo.clone(),
-        cross_isa: left_analysis.arch != right_analysis.arch,
-        left: side(left, &left_analysis.arch),
-        right: side(right, &right_analysis.arch),
+        workload: left_algo.workload.clone(),
+        cross_isa: left_analysis.architecture != right_analysis.architecture,
+        left: side(left, &left_analysis.architecture),
+        right: side(right, &right_analysis.architecture),
         metrics: vec![
             timing(
                 "run",
@@ -261,12 +261,15 @@ pub fn compare_across(
     })
 }
 
-fn algo_of<'a>(analysis: &'a Analysis, algo: &str) -> Result<&'a crate::analysis::AlgoAnalysis> {
+fn algo_of<'a>(
+    analysis: &'a Analysis,
+    workload: &str,
+) -> Result<&'a crate::analysis::WorkloadAnalysis> {
     analysis
-        .algos
+        .workloads
         .iter()
-        .find(|candidate| candidate.algo == algo)
-        .ok_or_else(|| anyhow::anyhow!("this campaign has no algorithm {algo}"))
+        .find(|candidate| candidate.workload == workload)
+        .ok_or_else(|| anyhow::anyhow!("this campaign has no workload {workload}"))
 }
 
 fn find<'a>(aggregates: &'a [Aggregate], row: &Row) -> Result<&'a Aggregate> {
@@ -278,7 +281,7 @@ fn find<'a>(aggregates: &'a [Aggregate], row: &Row) -> Result<&'a Aggregate> {
         )
 }
 
-fn side(aggregate: &Aggregate, arch: &str) -> Side {
+fn side(aggregate: &Aggregate, architecture: &str) -> Side {
     Side {
         backend: aggregate.backend.clone(),
         backend_id: aggregate.backend_id.clone(),
@@ -286,7 +289,7 @@ fn side(aggregate: &Aggregate, arch: &str) -> Side {
         compiler: aggregate.compiler.clone(),
         interpreter: aggregate.interpreter.clone(),
         mode: aggregate.mode,
-        arch: arch.to_owned(),
+        architecture: architecture.to_owned(),
     }
 }
 
@@ -461,7 +464,7 @@ mod tests {
     fn sample(backend: &str, mode: FpMode, wall: u64, checksum: u64) -> Sample {
         let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             language: language.to_owned(),
             compiler: Some(compiler.to_owned()),
             interpreter: None,
@@ -497,11 +500,11 @@ mod tests {
         on_arch("x86_64", samples)
     }
 
-    /// A campaign, and the machine it says it ran on. The ISA is read out of that
+    /// A campaign, and the machine it says it ran on. The architecture is read out of that
     /// record — never out of a filename, which is a label somebody typed.
-    fn on_arch(arch: &str, samples: Vec<Sample>) -> Analysis {
+    fn on_arch(architecture: &str, samples: Vec<Sample>) -> Analysis {
         let machine = Machine {
-            arch: arch.to_owned(),
+            architecture: architecture.to_owned(),
             ..Machine::default()
         };
         analyze(
@@ -517,7 +520,7 @@ mod tests {
 
     fn selection(left: &str, right: &str) -> Selection {
         Selection {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             left: Row {
                 backend: left.to_owned(),
                 mode: FpMode::Strict,
@@ -647,7 +650,7 @@ mod tests {
         let comparison = compare(
             &analysis(samples),
             &Selection {
-                algo: "mandelbrot".to_owned(),
+                workload: "mandelbrot".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
                     mode: FpMode::Strict,
@@ -678,7 +681,7 @@ mod tests {
         let comparison = compare(
             &analysis(samples),
             &Selection {
-                algo: "mandelbrot".to_owned(),
+                workload: "mandelbrot".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
                     mode: FpMode::Strict,
@@ -740,14 +743,14 @@ mod tests {
         assert!(error.to_string().contains("fortran-gfortran"), "{error:#}",);
     }
 
-    /// Two algorithms are two different amounts of work and two different
+    /// Two workloads are two different amounts of work and two different
     /// reference checksums. A ratio across them would be a number about nothing.
     #[test]
     fn an_algorithm_the_campaign_never_ran_is_refused() {
         let error = compare(
             &quiet(),
             &Selection {
-                algo: "nbody".to_owned(),
+                workload: "nbody".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
                     mode: FpMode::Strict,
@@ -764,8 +767,8 @@ mod tests {
 
     /// Two architectures, deliberately. The pair is computed — refusing would only
     /// send somebody off to divide the two numbers by hand — but it is *flagged*,
-    /// because a millisecond does not cross an ISA and a renderer that forgot to say
-    /// so would publish the one claim `METHODOLOGY.md#the-isa-rule` forbids.
+    /// because a millisecond does not cross an architecture and a renderer that forgot to say
+    /// so would publish the one claim `METHODOLOGY.md#the-architecture-rule` forbids.
     #[test]
     fn a_pair_drawn_from_two_architectures_says_so() {
         let x86 = on_arch(
@@ -779,8 +782,8 @@ mod tests {
 
         let across = compare_across(&x86, &arm, &selection("c-gcc", "rust-rustc")).unwrap();
         assert!(across.cross_isa);
-        assert_eq!(across.left.arch, "x86_64");
-        assert_eq!(across.right.arch, "aarch64");
+        assert_eq!(across.left.architecture, "x86_64");
+        assert_eq!(across.right.architecture, "aarch64");
 
         // The timings are still computed. The flag is what makes them honest.
         let run = across
@@ -792,7 +795,7 @@ mod tests {
         assert_eq!(run.right, Some(1_500_000_000));
 
         // And the one thing that *is* obliged to survive the crossing: in `strict`
-        // the checksum is bit-identical on every ISA. That is the whole invariant.
+        // the checksum is bit-identical on every architecture. That is the whole invariant.
         assert_eq!(across.checksums.same, Some(true));
         assert!(!across.checksums.violates_strict_invariant);
     }
@@ -808,10 +811,10 @@ mod tests {
         );
         let same = compare(&campaign, &selection("c-gcc", "rust-rustc")).unwrap();
         assert!(!same.cross_isa);
-        assert_eq!(same.left.arch, "x86_64");
+        assert_eq!(same.left.architecture, "x86_64");
     }
 
-    /// Two `strict` rows on two ISAs whose checksums disagree: the invariant broken,
+    /// Two `strict` rows on two architectures whose checksums disagree: the invariant broken,
     /// and it is a bug in one of them rather than a rounding excuse.
     #[test]
     fn a_strict_checksum_that_does_not_survive_the_crossing_is_a_violation() {

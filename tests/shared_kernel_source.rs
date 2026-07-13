@@ -20,19 +20,19 @@ fn implementations_of_one_language_share_their_kernel_source() {
     let benchmarks = Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmarks");
     let mut compared = 0usize;
 
-    // Keyed on (algo, language) out of the *manifests*. The directory name is not
+    // Keyed on (workload, language) out of the *manifests*. The directory name is not
     // evidence of anything — the harness does not read it, and neither does this.
     let mut by_language: BTreeMap<(String, String), Vec<PathBuf>> = BTreeMap::new();
     for manifest in manifests(&benchmarks) {
         let dir = manifest.parent().expect("a manifest sits in a directory");
         let text = fs::read_to_string(&manifest).expect("the manifest is readable");
         by_language
-            .entry((declared(&text, "algo"), declared(&text, "language")))
+            .entry((declared(&text, "workload"), declared(&text, "language")))
             .or_default()
             .push(dir.to_path_buf());
     }
 
-    for ((algo, language), implementations) in by_language {
+    for ((workload, language), implementations) in by_language {
         let Some((reference, others)) = implementations.split_first() else {
             continue;
         };
@@ -40,7 +40,7 @@ fn implementations_of_one_language_share_their_kernel_source() {
             assert_eq!(
                 kernel_source(reference),
                 kernel_source(other),
-                "`{}` and `{}` are both {language} backends of {algo}, so they must compile a \
+                "`{}` and `{}` are both {language} backends of {workload}, so they must compile a \
                  byte-identical kernel; otherwise their rows compare two programs, not two \
                  backends",
                 reference.display(),

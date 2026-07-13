@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: julia
 # Julia compiles -- the hot loop goes through LLVM and comes out as native code,
 # the same journey the C kernel makes -- but it compiles on first call, during the

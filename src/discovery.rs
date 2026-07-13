@@ -5,7 +5,7 @@
 //! name, and nothing is read back out of a built image. Move a directory, rename
 //! it, nest it three levels deeper — the campaign is unchanged.
 //!
-//! An implementation is identified by *what it is* — the algorithm it computes,
+//! An implementation is identified by *what it is* — the workload it computes,
 //! and the (language, compiler, interpreter) triple that turns it into
 //! instructions. Two directories declaring the same triple are the same
 //! implementation declared twice, and that is an error.
@@ -20,7 +20,7 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use crate::cli::Arch;
+use crate::cli::Architecture;
 use crate::mode::FpMode;
 use crate::sample::backend_slug;
 
@@ -41,9 +41,9 @@ const ALL_MODES: &str = "all";
 #[serde(deny_unknown_fields)]
 #[schemars(title = "langbench benchmark manifest")]
 struct Manifest {
-    /// The algorithm this implementation computes. Implementations of the same
-    /// algorithm are comparable; implementations of different ones are not.
-    algo: String,
+    /// The workload this implementation computes. Implementations of the same
+    /// workload are comparable; implementations of different ones are not.
+    workload: String,
     /// The language the kernel is written in.
     language: String,
     /// The compiler, when something is compiled ahead of the run.
@@ -73,7 +73,7 @@ struct Manifest {
     /// other architecture skips the row loudly instead of failing at `docker
     /// build`.
     #[serde(default)]
-    arch: Arches,
+    architectures: Architectures,
     /// What this backend is, in one paragraph. It is printed beside its rows.
     description: String,
     /// Free-form caveats: what a reader needs to know before quoting this row.
@@ -110,22 +110,22 @@ enum Modes {
     List(#[schemars(with = "Vec<FpMode>")] Vec<String>),
 }
 
-/// `arch: all`, or `arch: [x86_64]`.
+/// `architectures: all`, or `architectures: [x86_64]`.
 ///
 /// The same shape as `Modes`, and for the same reason: the list holds *strings*
 /// so that a typo can be reported as the typo it is, while the schema is told the
-/// list really holds `Arch`es, so an editor completes them.
+/// list really holds `Architecture`s, so an editor completes them.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
-enum Arches {
+enum Architectures {
     /// Every architecture the harness knows. The default, and the ordinary case.
     #[schemars(extend("enum" = [ALL_MODES]))]
     Keyword(String),
     /// The architectures this backend can actually be built on, e.g. `[x86_64]`.
-    List(#[schemars(with = "Vec<Arch>")] Vec<String>),
+    List(#[schemars(with = "Vec<Architecture>")] Vec<String>),
 }
 
-impl Default for Arches {
+impl Default for Architectures {
     /// A manifest that says nothing about architecture is claiming to build
     /// anywhere — which is true of every toolchain here but one.
     fn default() -> Self {
@@ -136,7 +136,7 @@ impl Default for Arches {
 /// One benchmark implementation, as its manifest declares it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Implementation {
-    pub algo: String,
+    pub workload: String,
     pub language: String,
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
@@ -156,8 +156,8 @@ pub struct Implementation {
     /// semantics, so the other two would be the same run under another name.
     pub fp_modes: Vec<FpMode>,
     /// The architectures this implementation can be built on. Almost always both;
-    /// a backend whose toolchain does not exist for an ISA says so here.
-    pub arches: Vec<Arch>,
+    /// a backend whose toolchain does not exist for an architecture says so here.
+    pub architectures: Vec<Architecture>,
 }
 
 impl Implementation {
@@ -173,7 +173,7 @@ impl Implementation {
     /// One image per (implementation, FP mode). The mode is a build arg, so the
     /// Dockerfile is shared — only the tag differs.
     pub fn image(&self, mode: FpMode) -> String {
-        format!("langbench/{}-{}:{mode}", self.algo, self.slug())
+        format!("langbench/{}-{}:{mode}", self.workload, self.slug())
     }
 
     /// Can this implementation be built on this machine at all?
@@ -181,8 +181,8 @@ impl Implementation {
     /// A `None` host is an architecture the harness does not know, and nothing can
     /// be claimed about it — not even by a manifest that says `all`, because `all`
     /// means "both of the two", not "whatever you happen to be running".
-    pub fn supports(&self, host: Option<Arch>) -> bool {
-        host.is_some_and(|host| self.arches.contains(&host))
+    pub fn supports(&self, host: Option<Architecture>) -> bool {
+        host.is_some_and(|host| self.architectures.contains(&host))
     }
 
     /// The requested modes this implementation actually distinguishes, in the
@@ -225,8 +225,8 @@ impl Implementation {
         let fp_modes = fp_modes(&manifest.modes)
             .with_context(|| format!("reading `modes` from {}", path.display()))?;
 
-        let arches = arches(&manifest.arch)
-            .with_context(|| format!("reading `arch` from {}", path.display()))?;
+        let architectures = architectures(&manifest.architectures)
+            .with_context(|| format!("reading `architectures` from {}", path.display()))?;
 
         if !dir.join("Dockerfile").is_file() {
             bail!(
@@ -259,7 +259,7 @@ impl Implementation {
             })?;
 
         Ok(Self {
-            algo: manifest.algo,
+            workload: manifest.workload,
             language: manifest.language,
             compiler: manifest.compiler,
             interpreter: manifest.interpreter,
@@ -269,7 +269,7 @@ impl Implementation {
             source,
             source_bytes,
             fp_modes,
-            arches,
+            architectures,
         })
     }
 }
@@ -310,25 +310,25 @@ fn fp_modes(modes: &Modes) -> Result<Vec<FpMode>> {
 /// misspelled mode is: a typo here silently drops a backend out of every campaign
 /// on one architecture, and a missing row is exactly the kind of absence nobody
 /// notices in a table.
-fn arches(arches: &Arches) -> Result<Vec<Arch>> {
-    let declared = match arches {
-        Arches::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
-            return Ok(Arch::ALL.to_vec());
+fn architectures(architectures: &Architectures) -> Result<Vec<Architecture>> {
+    let declared = match architectures {
+        Architectures::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
+            return Ok(Architecture::ALL.to_vec());
         }
-        Arches::Keyword(keyword) => bail!(
+        Architectures::Keyword(keyword) => bail!(
             "`{keyword}` is not an architecture list; write `{ALL_MODES}` or a list such as \
              [x86_64]",
         ),
-        Arches::List(declared) => declared,
+        Architectures::List(declared) => declared,
     };
 
-    let mut parsed: Vec<Arch> = Vec::new();
+    let mut parsed: Vec<Architecture> = Vec::new();
     for token in declared {
-        let arch = Arch::parse(token.trim()).with_context(|| {
+        let architecture = Architecture::parse(token.trim()).with_context(|| {
             format!("`{token}` is not a known architecture; expected one of x86_64, aarch64")
         })?;
-        if !parsed.contains(&arch) {
-            parsed.push(arch);
+        if !parsed.contains(&architecture) {
+            parsed.push(architecture);
         }
     }
     ensure!(
@@ -340,21 +340,21 @@ fn arches(arches: &Arches) -> Result<Vec<Arch>> {
 
 /// Every implementation declared under `root`, whatever the shape of the tree.
 ///
-/// `algos` filters on the algorithm the *manifest* names; empty means "every
-/// algorithm found".
-pub fn discover(root: &Path, algos: &[String]) -> Result<Vec<Implementation>> {
+/// `workloads` filters on the workload the *manifest* names; empty means "every
+/// workload found".
+pub fn discover(root: &Path, workloads: &[String]) -> Result<Vec<Implementation>> {
     let mut manifests = Vec::new();
     collect_manifests(root, &mut manifests)?;
 
     let mut found = Vec::new();
     for path in manifests {
         let implementation = Implementation::load(&path)?;
-        if !algos.is_empty() && !algos.contains(&implementation.algo) {
-            debug!(algo = %implementation.algo, "skipping: not selected by --algo");
+        if !workloads.is_empty() && !workloads.contains(&implementation.workload) {
+            debug!(workload = %implementation.workload, "skipping: not selected by --workload");
             continue;
         }
         debug!(
-            algo = %implementation.algo,
+            workload = %implementation.workload,
             language = %implementation.language,
             compiler = implementation.compiler.as_deref().unwrap_or("none"),
             interpreter = implementation.interpreter.as_deref().unwrap_or("none"),
@@ -368,18 +368,18 @@ pub fn discover(root: &Path, algos: &[String]) -> Result<Vec<Implementation>> {
 
     // A stable schedule, ordered by identity rather than by where the files
     // happen to sit: moving a directory must not reorder a campaign.
-    found.sort_by_key(|implementation| (implementation.algo.clone(), implementation.slug()));
+    found.sort_by_key(|implementation| (implementation.workload.clone(), implementation.slug()));
     Ok(found)
 }
 
-/// The same (algo, language, compiler, interpreter) declared twice is not two
+/// The same (workload, language, compiler, interpreter) declared twice is not two
 /// implementations — it is one, described in two places, and the two would share
 /// an image tag and collapse into a single row. Which of them the table would be
 /// describing is a coin toss, so refuse instead.
 fn reject_duplicates(found: &[Implementation]) -> Result<()> {
     let mut seen: HashMap<(String, String), &Path> = HashMap::new();
     for implementation in found {
-        let identity = (implementation.algo.clone(), implementation.slug());
+        let identity = (implementation.workload.clone(), implementation.slug());
         if let Some(first) = seen.insert(identity, &implementation.context) {
             bail!(
                 "{} and {} declare the same implementation ({} / {}): \
@@ -387,7 +387,7 @@ fn reject_duplicates(found: &[Implementation]) -> Result<()> {
                  exactly one of it",
                 first.display(),
                 implementation.context.display(),
-                implementation.algo,
+                implementation.workload,
                 implementation.slug(),
             );
         }
@@ -473,7 +473,7 @@ mod tests {
 
     use super::*;
 
-    const C_GCC: &str = "algo: mandelbrot\n\
+    const C_GCC: &str = "workload: mandelbrot\n\
                          language: c\n\
                          compiler: gcc\n\
                          source: kernel.txt\n\
@@ -527,7 +527,7 @@ mod tests {
     /// must never invent. Loud, at discovery, and not an hour into the campaign.
     #[test]
     fn a_source_that_is_not_there_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
              language: c\n\
              compiler: gcc\n\
              source: typo.c\n\
@@ -543,7 +543,7 @@ mod tests {
     /// another name, and the path is not metadata.
     #[test]
     fn a_manifest_that_declares_no_source_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
              language: c\n\
              compiler: gcc\n\
              source:\n\
@@ -554,13 +554,13 @@ mod tests {
     }
 
     /// The path locates the manifest and says nothing else. Every fact about the
-    /// implementation — including which algorithm it computes — comes out of the
+    /// implementation — including which workload it computes — comes out of the
     /// file, at whatever depth the file happens to sit.
     #[test]
     fn the_manifest_and_not_the_path_describes_the_implementation() {
         let root = tree(&[(
             "some/deeply/nested/folder",
-            "algo: mandelbrot\n\
+            "workload: mandelbrot\n\
              language: python\n\
              compiler: cython\n\
              interpreter: cpython\n\
@@ -571,7 +571,7 @@ mod tests {
         let found = discover(root.path(), &[]).unwrap();
 
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].algo, "mandelbrot");
+        assert_eq!(found[0].workload, "mandelbrot");
         assert_eq!(found[0].language, "python");
         assert_eq!(found[0].compiler.as_deref(), Some("cython"));
         assert_eq!(found[0].interpreter.as_deref(), Some("cpython"));
@@ -591,7 +591,7 @@ mod tests {
             "langbench/mandelbrot-c-gcc:strict"
         );
 
-        let interpreted = one("algo: mandelbrot\n\
+        let interpreted = one("workload: mandelbrot\n\
                                language: python\n\
                                interpreter: cpython\n\
                                modes: [strict]\n\
@@ -599,7 +599,7 @@ mod tests {
         .unwrap();
         assert_eq!(interpreted[0].slug(), "python-cpython");
 
-        let both = one("algo: mandelbrot\n\
+        let both = one("workload: mandelbrot\n\
                         language: python\n\
                         compiler: cython\n\
                         interpreter: cpython\n\
@@ -614,9 +614,9 @@ mod tests {
     #[test]
     fn a_manifest_that_says_nothing_about_arch_builds_on_both() {
         let found = one(C_GCC).unwrap();
-        assert_eq!(found[0].arches, Arch::ALL);
-        assert!(found[0].supports(Some(Arch::X86_64)));
-        assert!(found[0].supports(Some(Arch::Aarch64)));
+        assert_eq!(found[0].architectures, Architecture::ALL);
+        assert!(found[0].supports(Some(Architecture::X86_64)));
+        assert!(found[0].supports(Some(Architecture::Aarch64)));
     }
 
     /// Kotlin/Native publishes no `linux-aarch64` host compiler. That is not a
@@ -624,21 +624,21 @@ mod tests {
     /// backend declares where it can be built, and an AArch64 campaign skips it.
     #[test]
     fn a_backend_may_declare_it_only_builds_on_one_architecture() {
-        let found = one("algo: mandelbrot\n\
+        let found = one("workload: mandelbrot\n\
                          language: kotlin\n\
                          compiler: kotlin-native\n\
                          modes: [strict]\n\
-                         arch: [x86_64]\n\
+                         architectures: [x86_64]\n\
                          description: No linux-aarch64 host compiler exists.\n")
         .unwrap();
 
-        assert_eq!(found[0].arches, [Arch::X86_64]);
-        assert!(found[0].supports(Some(Arch::X86_64)));
-        assert!(!found[0].supports(Some(Arch::Aarch64)));
+        assert_eq!(found[0].architectures, [Architecture::X86_64]);
+        assert!(found[0].supports(Some(Architecture::X86_64)));
+        assert!(!found[0].supports(Some(Architecture::Aarch64)));
     }
 
     /// `all` means "both of the two the harness knows", never "whatever this host
-    /// happens to be": a third architecture has no ISA baseline to pin, so nothing
+    /// happens to be": a third architecture has no architecture baseline to pin, so nothing
     /// can be claimed about it.
     #[test]
     fn an_unknown_host_architecture_supports_nothing() {
@@ -647,12 +647,12 @@ mod tests {
 
     #[test]
     fn a_misspelled_architecture_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
                          language: c\n\
                          compiler: gcc\n\
                          modes: all\n\
-                         arch: [x86-64]\n\
-                         description: An ISA spelled the -march way, not the uname way.\n")
+                         architectures: [x86-64]\n\
+                         description: An architecture spelled the -march way, not the uname way.\n")
         .unwrap_err();
         assert!(format!("{error:#}").contains("x86-64"), "{error:#}");
     }
@@ -673,7 +673,7 @@ mod tests {
             ("zzz", C_GCC),
             (
                 "aaa",
-                "algo: mandelbrot\n\
+                "workload: mandelbrot\n\
                  language: python\n\
                  interpreter: cpython\n\
                  modes: [strict]\n\
@@ -692,12 +692,15 @@ mod tests {
     fn filters_on_the_algorithm_the_manifest_names() {
         let root = tree(&[
             ("one", C_GCC),
-            ("two", &C_GCC.replace("algo: mandelbrot", "algo: nbody")),
+            (
+                "two",
+                &C_GCC.replace("workload: mandelbrot", "workload: nbody"),
+            ),
         ]);
 
         let found = discover(root.path(), &["nbody".to_owned()]).unwrap();
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].algo, "nbody");
+        assert_eq!(found[0].workload, "nbody");
 
         assert_eq!(discover(root.path(), &[]).unwrap().len(), 2);
     }
@@ -709,7 +712,7 @@ mod tests {
 
     #[test]
     fn modes_may_be_an_explicit_list() {
-        let found = one("algo: mandelbrot\n\
+        let found = one("workload: mandelbrot\n\
                          language: go\n\
                          compiler: gc\n\
                          modes:\n\
@@ -727,7 +730,7 @@ mod tests {
     /// nobody meant to publish.
     #[test]
     fn an_unknown_mode_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
                          language: c\n\
                          compiler: gcc\n\
                          modes: [stcirt]\n\
@@ -738,7 +741,7 @@ mod tests {
 
     #[test]
     fn a_backend_that_neither_compiles_nor_interprets_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
                          language: c\n\
                          modes: all\n\
                          description: Nothing turns this into instructions.\n")
@@ -748,7 +751,7 @@ mod tests {
 
     #[test]
     fn an_unknown_key_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
+        let error = one("workload: mandelbrot\n\
                          language: c\n\
                          compiler: gcc\n\
                          modes: all\n\
@@ -760,7 +763,8 @@ mod tests {
 
     #[test]
     fn a_missing_description_fails_the_campaign() {
-        let error = one("algo: mandelbrot\nlanguage: c\ncompiler: gcc\nmodes: all\n").unwrap_err();
+        let error =
+            one("workload: mandelbrot\nlanguage: c\ncompiler: gcc\nmodes: all\n").unwrap_err();
         assert!(format!("{error:#}").contains("description"), "{error:#}");
     }
 
@@ -787,19 +791,22 @@ mod tests {
         assert!(format!("{error:#}").contains("c-gcc"), "{error:#}");
     }
 
-    /// The same triple under a different algorithm is a different implementation.
+    /// The same triple under a different workload is a different implementation.
     #[test]
     fn the_same_backend_may_compute_two_algorithms() {
         let root = tree(&[
             ("mandelbrot/c", C_GCC),
-            ("nbody/c", &C_GCC.replace("algo: mandelbrot", "algo: nbody")),
+            (
+                "nbody/c",
+                &C_GCC.replace("workload: mandelbrot", "workload: nbody"),
+            ),
         ]);
         assert_eq!(discover(root.path(), &[]).unwrap().len(), 2);
     }
 
     #[test]
     fn selected_modes_intersect_the_request_with_the_declaration() {
-        let found = one("algo: mandelbrot\n\
+        let found = one("workload: mandelbrot\n\
                          language: python\n\
                          interpreter: cpython\n\
                          modes: [strict]\n\
@@ -820,7 +827,7 @@ mod tests {
             ("good", C_GCC),
             (
                 "typo",
-                "algo: mandelbrot\n\
+                "workload: mandelbrot\n\
                  language: rust\n\
                  compiler: llvm\n\
                  modes: [stcirt]\n\
@@ -828,7 +835,7 @@ mod tests {
             ),
             (
                 "nameless",
-                "algo: mandelbrot\n\
+                "workload: mandelbrot\n\
                  language: go\n\
                  modes: all\n\
                  description: Neither compiled nor interpreted.\n",
@@ -861,7 +868,13 @@ mod tests {
     #[test]
     fn the_schema_describes_the_manifest_the_harness_parses() {
         let schema = schema().unwrap();
-        for key in ["algo", "language", "compiler", "interpreter", "description"] {
+        for key in [
+            "workload",
+            "language",
+            "compiler",
+            "interpreter",
+            "description",
+        ] {
             assert!(schema.contains(&format!("\"{key}\"")), "{key} is missing");
         }
         // The three modes are offered to an editor as constants, not as "a
@@ -872,8 +885,11 @@ mod tests {
         // A misspelled key must fail the campaign, and the schema must say so.
         assert!(schema.contains("\"additionalProperties\": false"));
         // The two architectures are offered as constants too, for the same reason.
-        for arch in Arch::ALL {
-            assert!(schema.contains(&format!("\"const\": \"{arch}\"")), "{arch}");
+        for architecture in Architecture::ALL {
+            assert!(
+                schema.contains(&format!("\"const\": \"{architecture}\"")),
+                "{architecture}"
+            );
         }
     }
 }

@@ -21,7 +21,7 @@ describe("reading the results view out of the URL", () => {
 
   it("defaults to every mode, fastest first — the order the report ranks in", () => {
     const state = readResults();
-    expect(state.arch).toBeNull();
+    expect(state.architecture).toBeNull();
     expect(state.filters).toStrictEqual(NO_FILTERS);
     expect(state.sort).toStrictEqual({ key: "run", descending: false });
     expect(state.includeWarmup).toBe(false);
@@ -54,8 +54,8 @@ describe("reading the results view out of the URL", () => {
 
   it("round-trips a view, so a filtered table is a link somebody else can open", () => {
     const state: ResultsState = {
-      arch: "x86_64",
-      algo: "mandelbrot",
+      architecture: "x86_64",
+      workload: "mandelbrot",
       includeWarmup: true,
       filters: {
         language: "python",
@@ -74,8 +74,8 @@ describe("reading the results view out of the URL", () => {
   // and the second one has an answer: every ahead-of-time backend in the table.
   it("round-trips a filter on an *absent* half of the triple", () => {
     const state: ResultsState = {
-      arch: null,
-      algo: null,
+      architecture: null,
+      workload: null,
       includeWarmup: false,
       filters: { ...NO_FILTERS, interpreter: "-" },
       sort: { key: "run", descending: false },
@@ -87,8 +87,8 @@ describe("reading the results view out of the URL", () => {
 
   it("leaves the default view out of the URL entirely", () => {
     writeResults({
-      arch: null,
-      algo: null,
+      architecture: null,
+      workload: null,
       includeWarmup: false,
       filters: NO_FILTERS,
       sort: { key: "run", descending: false },
@@ -111,8 +111,8 @@ describe("reading the head-to-head out of the URL", () => {
 
   it("round-trips a pair", () => {
     const state: CompareState = {
-      arch: "aarch64",
-      algo: "mandelbrot",
+      architecture: "aarch64",
+      workload: "mandelbrot",
       includeWarmup: false,
       left: "java/native-image/-/strict",
       right: "java/javac/openjdk/strict",
@@ -124,21 +124,23 @@ describe("reading the head-to-head out of the URL", () => {
 
 // The filters narrow a table; a pair is not a table. But the campaign does travel:
 // a "Compare" link that quietly switched architecture would invite exactly the
-// comparison `METHODOLOGY.md#the-isa-rule` forbids.
+// comparison `METHODOLOGY.md#the-architecture-rule` forbids.
 describe("the link from the results to the head-to-head", () => {
-  it("carries the ISA and the algorithm, and nothing else", () => {
+  it("carries the architecture and the workload, and nothing else", () => {
     const href = compareHref({
-      arch: "aarch64",
-      algo: "mandelbrot",
+      architecture: "aarch64",
+      workload: "mandelbrot",
       includeWarmup: false,
     });
     expect(href).toContain("compare/");
-    expect(href).toContain("arch=aarch64");
-    expect(href).toContain("algo=mandelbrot");
+    expect(href).toContain("architecture=aarch64");
+    expect(href).toContain("workload=mandelbrot");
     expect(href).not.toContain("language=");
   });
 
   it("says nothing when there is nothing to say", () => {
-    expect(compareHref({ arch: null, algo: null, includeWarmup: false })).not.toContain("?");
+    expect(compareHref({ architecture: null, workload: null, includeWarmup: false })).not.toContain(
+      "?",
+    );
   });
 });

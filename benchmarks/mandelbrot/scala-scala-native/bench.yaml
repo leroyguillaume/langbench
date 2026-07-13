@@ -1,4 +1,4 @@
-algo: mandelbrot
+workload: mandelbrot
 language: scala
 # Scala Native: a compiler, not a JVM backend. It never emits bytecode -- Scala goes
 # to its own IR, then to LLVM, then to an ELF linked against a reimplemented subset
