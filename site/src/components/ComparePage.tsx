@@ -49,8 +49,18 @@ export function ComparePage() {
     return <p className="status">Reading the campaigns…</p>;
   }
 
+  // A campaign is one machine measuring one workload: it takes both to name one.
+  // See the same selection in `Results.tsx` — keying on the architecture alone would
+  // pick whichever workload's campaign happened to be published first.
   const loaded =
-    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ?? campaigns[0];
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === state.architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    ) ??
+    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
+    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
+    campaigns[0];
   if (loaded === undefined) {
     return (
       <main className="page">
@@ -86,9 +96,20 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
 
   // Each side names its own campaign. A side that names none belongs to the one in
   // scope — which is what every link written before this page could cross an architecture says.
+  //
+  // A side names an *architecture*, never a workload: the two sides of a head-to-head
+  // are two backends doing the same work, and comparing a Mandelbrot to a JSON parse
+  // would not be a slow backend, it would be a category error. So the workload comes
+  // from the scope, and both sides are read out of a campaign that measured it.
   const sideOf = (raw: string | null): LoadedCampaign => {
     const { architecture } = readSide(raw);
-    return campaigns.find((entry) => entry.analysis.architecture === architecture) ?? loaded;
+    return (
+      campaigns.find(
+        (entry) =>
+          entry.analysis.architecture === architecture &&
+          entry.analysis.campaign.workload.id === state.workload,
+      ) ?? loaded
+    );
   };
   const leftCampaign = sideOf(state.left);
   const rightCampaign = sideOf(state.right);
@@ -163,7 +184,13 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   // it: "the same backend, on the other machine" is the question somebody switching
   // architecture is asking. Otherwise it lands on that campaign's fastest row.
   const moveTo = (side: "left" | "right", architecture: string) => {
-    const campaign = campaigns.find((entry) => entry.analysis.architecture === architecture);
+    // The other machine, the *same* work: switching architecture asks "and how does
+    // this backend do over there", which is only a question about one workload.
+    const campaign = campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    );
     if (campaign === undefined) {
       return;
     }
@@ -198,11 +225,15 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
             value={workload?.workload ?? ""}
             onChange={(event) => setState({ ...state, workload: event.target.value })}
           >
-            {analysis.workloads.map((entry) => (
-              <option key={entry.workload} value={entry.workload}>
-                {entry.workload}
-              </option>
-            ))}
+            {/* Every workload this build published, not the one on screen: a selector
+                that only offers what is already selected is not a selector. */}
+            {[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))].map(
+              (id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ),
+            )}
           </select>
         </label>
       </div>
