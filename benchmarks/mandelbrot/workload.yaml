@@ -5,8 +5,34 @@ description: >-
   Escape-time Mandelbrot over a square grid: for every pixel, iterate z = z^2 + c
   until |z| > 2 or the iteration ceiling is reached, and sum the iteration counts.
   The work is imbalanced by construction -- the pixels inside the set cost the full
-  ceiling, the ones outside bail out early -- so chunks are handed out dynamically
-  and a backend that cannot parallelise says so in the Cores column.
+  ceiling, the ones outside bail out early -- so rows are handed out dynamically off
+  an atomic cursor rather than split evenly ahead of time.
+
+
+  What it puts under the light. A tight scalar floating-point loop with no
+  allocation, no branching to speak of and a working set that fits in registers: what
+  it measures is the quality of the machine code a backend produces for double
+  arithmetic, and how fast it can be produced at all. Because every backend computes
+  the same answer to the bit, `strict` mode turns the checksum into a correctness
+  gate rather than a formality -- a compiler that reassociates or fuses a
+  multiply-add to go faster is caught by it, not rewarded. Around the loop, the same
+  run also prices the things a runtime charges whatever the work is: the gap between
+  the program's own clock and the container's, which is startup; the cost of
+  compiling one file, which is the build phase; the memory a runtime needs before it
+  can add two doubles; and whether the backend can keep every core it was handed busy
+  on a load that refuses to divide evenly.
+
+
+  What it says nothing about. There is no allocation in the hot loop, so it tells you
+  nothing about a garbage collector under pressure -- the JVM rows here are running
+  the one workload a GC never has to work for. There is no pointer chasing, no
+  dynamic dispatch, no cache pressure, no I/O, no syscalls, no strings and no
+  parsing. It exercises a fork-join over one flat grid, not a concurrency model. It
+  is a batch program that starts, computes and exits, so it says nothing about a
+  server that has been warm for six hours, nor about a JIT that has had time to
+  reach a steady state. A backend that wins this workload has told you it can add
+  doubles quickly and start quickly; it has told you nothing whatever about what it
+  would do with a JSON parser, a hash map, or an HTTP handler.
 # How the work is sized. The order is the order the kernels receive them:
 #   run <grid_size> <max_iter> <threads>
 # The thread count is not here: it is a property of the machine, resolved by the

@@ -17,7 +17,6 @@ description: >-
   source is unchanged, the multiprocessing pool is unchanged; the difference is a
   tracing JIT that turns the hot loop into machine code while it runs.
 comments: >-
-  The JIT's compile time is inside the measured run, because that is where it
-  happens -- there is no warm-up phase to hide it in, and hiding it would be a
-  different benchmark. Read this row against python-cpython (same source, no JIT)
-  and python-cython (same source, compiled ahead of time, and slower than both).
+  The JIT compiles the hot loop inside the measured run, because that is where it
+  happens: there is no warm-up phase to hide it in, and hiding it would be a different
+  benchmark. The source and the multiprocessing pool are python-cpython's, unchanged.

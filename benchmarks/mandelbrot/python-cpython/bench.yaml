@@ -16,5 +16,5 @@ description: >-
   from multiprocessing with the fork start method, because the GIL serialises
   CPU-bound bytecode -- threading here would measure the GIL, not the machine.
 comments: >-
-  Forking the pool is inside the timer on purpose: what a parallel runtime costs
-  to start is part of what that runtime costs.
+  Forking the pool is inside the timer on purpose: what a parallel runtime costs to
+  start is part of what that runtime costs.

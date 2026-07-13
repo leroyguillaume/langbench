@@ -18,10 +18,7 @@ description: >-
   same javac and run on the same HotSpot -- with Graal replacing C2 as the JIT.
   Same bytecode, same VM, same GC: the code generator is the only variable.
 comments: >-
-  The cleanest A/B on a JIT this table can construct, and the reason the entrypoint
-  passes -XX:+UseJVMCICompiler explicitly rather than trusting a default: a silent
-  fall back to C2 would make this row java-javac-openjdk under another name, and
-  publish noise as a finding. Do not expect Graal to beat C2 here by default -- on a
-  tight numeric loop the two land close together, and this row is worth having for
-  the comparison rather than for a winner. Like every HotSpot row, it has no true -march; the
-  entrypoint caps vector width instead.
+  The entrypoint passes -XX:+UseJVMCICompiler explicitly rather than trusting a
+  default: a silent fall back to C2 would make this row java-javac-openjdk under
+  another name. Like every HotSpot row it has no true ISA baseline — the entrypoint
+  caps vector width instead.

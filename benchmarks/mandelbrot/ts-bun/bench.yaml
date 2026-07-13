@@ -14,7 +14,6 @@ description: >-
   on JavaScriptCore. The only TypeScript row not running on V8, which makes it the
   only one where a gap in compute time is about the engine.
 comments: >-
-  Read it against js-bun to price the types (nothing, at run time) and against
-  ts-nodejs and ts-deno to price the engine. The Build column is `bun build`, a
-  transpile and bundle: not the parse Node reports, and not the type check Deno
-  reports.
+  Bun strips the types on load and hands the JavaScript to JavaScriptCore: nothing
+  type-checks this kernel here. The build phase is `bun build`, a transpile and a
+  bundle — not the parse Node reports, and not the type check Deno reports.

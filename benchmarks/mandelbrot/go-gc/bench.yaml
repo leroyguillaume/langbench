@@ -20,8 +20,9 @@ description: >-
   machine: Go 1.25 reads the cgroup quota by itself, and this benchmark refuses to
   ask that question.
 comments: >-
-  Written the natural way, this kernel returns 33209560 where the rest of the table
-  returns 33209574 -- gc fuses the multiply-adds, and the arithmetic quietly stops
-  being everyone else's. The float64() conversions in the source are rounding
-  points, not casts, and they are load-bearing. Go also links a GC and a scheduler
-  into every binary, which inflates Binary: compare `.text`.
+  The float64() conversions in the source are rounding points, not casts, and they are
+  load-bearing: written the natural way this kernel checksums 33209560 where every
+  other backend produces 33209574, because gc fuses the multiply-adds and the
+  arithmetic quietly stops being everyone else's. gc also links the garbage collector
+  and the scheduler into every binary — nothing is loaded from a shared runtime at
+  startup.

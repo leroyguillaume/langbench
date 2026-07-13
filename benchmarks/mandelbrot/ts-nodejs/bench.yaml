@@ -16,7 +16,6 @@ description: >-
   the JavaScript underneath. Same worker_threads, same SharedArrayBuffer row queue,
   same arithmetic as js-nodejs -- the annotations are the only difference.
 comments: >-
-  Read this row against js-nodejs and expect the compute time to be identical: type
-  erasure costs nothing at run time, by construction. What it can cost is startup,
-  because the types must be stripped before the first line executes -- and every
-  worker isolate strips them again.
+  Node erases the types syntactically and hands the JavaScript to V8 — no tsc, no
+  emit, no type check. Every worker isolate loads the file and erases them again. The
+  source is js-nodejs's, with annotations and nothing else added.

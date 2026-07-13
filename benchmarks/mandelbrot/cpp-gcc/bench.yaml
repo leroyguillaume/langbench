@@ -12,6 +12,5 @@ description: >-
   GCC at -O3 on the same base image. The arithmetic is identical; the abstractions
   are not.
 comments: >-
-  `cpp` and not `c++`: the identity becomes an image tag, and a Docker tag admits
-  no `+`. Read this row against c-gcc to price the abstractions, and against
-  cpp-clang to price the code generator.
+  `cpp` and not `c++`: the identity becomes an image tag, and a Docker tag admits no
+  `+`.

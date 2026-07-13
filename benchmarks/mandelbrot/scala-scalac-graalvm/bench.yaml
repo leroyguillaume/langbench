@@ -10,7 +10,6 @@ description: >-
   same scalac -- with Graal replacing C2 as the JIT. One cell of the (language x
   JVM) grid.
 comments: >-
-  Read it against java-javac-graalvm and scala-scalac-openjdk: if the language and
-  the JIT are orthogonal, as the identical bytecode suggests they must be, this row
-  is predictable from those two and confirms it. A row that confirms is cheaper than
-  an assumption that is never checked.
+  One cell of the (language × JVM) grid. The entrypoint passes -XX:+UseJVMCICompiler
+  explicitly rather than trusting a default: a silent fall back to C2 would make this
+  row scala-scalac-openjdk under another name.

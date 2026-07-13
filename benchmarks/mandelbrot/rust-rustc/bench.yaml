@@ -16,6 +16,6 @@ description: >-
   no rayon, no dependency: one file, one rustc invocation.
 comments: >-
   rustc only *warns* when it does not recognise an ISA baseline, then hands back a
-  generic binary -- so the entrypoint translates the harness's gcc-spelled -march
-  into LLVM's spelling and fails outright on anything it does not know. It also
-  links std statically, which inflates Binary against the C rows: compare `.text`.
+  generic binary — so the entrypoint translates the harness's gcc-spelled -march into
+  LLVM's spelling and fails outright on anything it does not know. It links std
+  statically: the binary carries the Rust runtime rather than loading it.

@@ -19,8 +19,7 @@ description: >-
   threads and an AtomicInteger work queue. No Maven, no Gradle, no jar: one file,
   one javac invocation, so the Build column times the compiler and nothing else.
 comments: >-
-  HotSpot has no -march: C2 compiles for whatever CPU it finds, which is the
-  `native` targeting this project forbids everywhere else. The closest the JVM
-  offers is a cap on vector width (-XX:UseAVX / -XX:UseSVE) and that is what the
-  entrypoint pins -- an approximation, published as one. The JVM's startup is the
-  largest in the table, and it is a result, not overhead to subtract.
+  HotSpot has no -march: C2 compiles for whatever CPU it finds, which is the `native`
+  targeting this project forbids everywhere else. The closest the JVM offers is a cap
+  on vector width (-XX:UseAVX / -XX:UseSVE), and that is what the entrypoint pins — an
+  approximation, published as one.

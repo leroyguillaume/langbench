@@ -17,8 +17,6 @@ description: >-
   SharedArrayBuffer and Atomics.add handing rows out, which is as close to the C
   kernel's atomic cursor as the language gets.
 comments: >-
-  The same mandelbrot.mjs runs under js-deno and js-bun, byte for byte, so those
-  three rows measure runtimes rather than programs. The Build column is `node
-  --check` -- parse and compile, no execution -- and it is not the same operation
-  as Deno's type check or Bun's bundle: read each against its own runtime, never
-  across the three.
+  The build phase is `node --check` — parse and compile, no execution. The same
+  mandelbrot.mjs runs under js-deno and js-bun, byte for byte, so what those three
+  rows vary is the runtime and not the program.

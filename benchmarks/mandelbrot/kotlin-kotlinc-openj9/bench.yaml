@@ -9,6 +9,6 @@ description: >-
   The same Mandelbrot.kt as kotlin-kotlinc-openjdk, byte for byte, compiled by the
   same kotlinc and executed by Eclipse OpenJ9 instead of HotSpot.
 comments: >-
-  Like every OpenJ9 row, it has NO ISA baseline: OpenJ9 silently ignores unknown
-  -XX: options, so the HotSpot vector caps would have pinned nothing while claiming
-  to. The gap is published rather than papered over.
+  Like every OpenJ9 row, it has NO ISA baseline: OpenJ9 silently ignores unknown -XX:
+  options, so the HotSpot vector caps would have pinned nothing while claiming to. The
+  gap is published rather than papered over.
