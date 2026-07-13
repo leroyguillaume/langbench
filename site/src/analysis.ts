@@ -137,7 +137,7 @@ export const paramSchema = z.object({
  * is. And because it is a snapshot, editing the manifest afterwards cannot rewrite
  * what a campaign from three months ago says it measured.
  *
- * `strict_checksum` is a string here for the reason every checksum on this wire is:
+ * `checksum` is a string here for the reason every checksum on this wire is:
  * it is a 64-bit integer, and a JavaScript number is a double.
  */
 export const workloadSchema = z.object({
@@ -145,7 +145,7 @@ export const workloadSchema = z.object({
   description: z.string(),
   implementations: z.array(z.string()),
   params: z.array(paramSchema),
-  strict_checksum: z.string().nullable(),
+  checksum: z.string().nullable(),
 });
 
 export const campaignSchema = z.object({

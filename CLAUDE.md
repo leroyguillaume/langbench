@@ -22,7 +22,7 @@ the wire, in the report, on the site, in a commit message. Every rule below is
 written in them.
 
 - **workload** — the work itself, declared in a `workload.yaml`: what it is, how it
-  is sized (`params`), what the right answer is (`strict-checksum`), and which
+  is sized (`params`), what the right answer is (`checksum`), and which
   directories implement it. **A workload is not an algorithm.** Mandelbrot is one;
   a JSON parser, an HTTP server, a cold start are others. Nothing in the harness may
   assume the work is a computation over a grid.
@@ -80,10 +80,18 @@ the ones a reader is most likely to think were violated:
 **Correctness** ([why](METHODOLOGY.md#the-strict-mode-invariant))
 
 - The checksum is a **64-bit integer**, everywhere, always. Never a float, never
-  through a system that stores floats.
+  through a system that stores floats. A workload whose answer *is* a float bit-casts
+  it; it does not print it.
 - In `strict` mode the checksum is bit-identical across every compiler, language
   and architecture. One reference value. A divergence is a bug, never a rounding excuse.
 - Verify the checksum on **every** run. A wrong run never enters the statistics.
+- **A deterministic workload declares its `checksum`.** It is `Option` only because
+  some work has no answer — a throughput, a cold start, anything the scheduler
+  decides — and a campaign on a workload that declares none **warns**, loudly: without
+  it there is no correctness gate at all, and a backend that computes nothing and
+  returns instantly tops the table. It is not called `strict_checksum`, because
+  `strict` is a floating-point mode and a JSON parser has no floating-point semantics
+  to be strict about; the answer is the answer whatever the mode.
 - **A backend that fails is quarantined, not propagated.**
   ([why](METHODOLOGY.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
   that fails, a container that crashes or hangs past the timeout, unreadable
@@ -98,7 +106,7 @@ the ones a reader is most likely to think were violated:
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
 - Every workload declares itself in a `workload.yaml`: `id`, `description`, `params`,
-  `implementations`, and an optional `strict-checksum`. **The walk for
+  `implementations`, and an optional `checksum`. **The walk for
   `workload.yaml` is the only search the harness does.**
 - Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
   `language`, `compiler`, `interpreter`, `source`, `modes`, `architectures`,
@@ -110,7 +118,7 @@ the ones a reader is most likely to think were violated:
   the machine, resolved by the harness.
 - **How the work is sized is a property of the work.** Never a flag of the harness:
   `--grid-size` was Mandelbrot leaking into the CLI. `--param name=value` overrides a
-  declared param, and doing so drops the declared `strict-checksum` — it is the answer
+  declared param, and doing so drops the declared `checksum` — it is the answer
   to the declared work, not to this one.
 - `source` names the one kernel file, and the manifest **declares** it — the harness
   never guesses which file beside the Dockerfile is the source. Guessing means

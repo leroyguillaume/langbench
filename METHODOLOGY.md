@@ -308,7 +308,7 @@ params:
     value: 2048
   - name: max_iter
     value: 1000
-strict-checksum: 1038538536
+checksum: 1038538536
 implementations:
   - python-cython
   - c-gcc
@@ -367,7 +367,7 @@ believe.
 
 ### The answer belongs to the work
 
-`strict-checksum` is a property of `(workload, params)` — of the work and how it is
+`checksum` is a property of `(workload, params)` — of the work and how it is
 sized — so it lives with the workload, and not in the harness, and not in a
 backend.
 

@@ -37,8 +37,11 @@ pub const MANIFEST: &str = "workload.yaml";
 /// `samples.ndjson`, the CSV, the browser — and that wire speaks `snake_case` end to
 /// end, so that `jq '.elapsed_ns'` works and no consumer needs a translation table.
 /// This struct sits on the boundary because it is *both*: the file you write and the
-/// snapshot the campaign records. So it reads one and writes the other, and only one
-/// key is even affected today.
+/// snapshot the campaign records.
+///
+/// As it happens, **no key here is currently affected**: every one of them is a single
+/// word, which kebab and snake spell identically. The declaration stands anyway, so
+/// that the first two-word key does not have to rediscover which side it belongs to.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all(deserialize = "kebab-case"))]
 #[schemars(title = "langbench workload manifest", rename_all = "kebab-case")]
@@ -69,40 +72,40 @@ pub struct Workload {
     /// list is the only YAML shape that is ordered by construction. A mapping would
     /// leave the kernels' arguments at the mercy of whatever sorted its keys.
     pub params: Vec<Param>,
-    /// The value every `strict` run of this workload must produce, for *these*
-    /// params.
+    /// **The answer.** The one 64-bit integer every honest implementation of this
+    /// workload produces, for *these* params.
     ///
-    /// Optional, and the distinction matters. Without it, a campaign can only check
-    /// that its backends agree *with each other* — which a campaign where every
-    /// backend is wrong the same way passes with flying colours, and which makes no
-    /// claim at all across two campaigns. With it, the answer is pinned to a value
-    /// that outlives any single run.
+    /// Not `strict_checksum`: `strict` is a floating-point mode, and a workload that
+    /// parses JSON or serves HTTP has no floating-point semantics to be strict about.
+    /// What this is, is the value that says a backend computed the right thing —
+    /// whatever "the thing" is. Where the work *is* floating-point, `strict` is the
+    /// mode in which every backend must agree on it bit for bit; where it is not, the
+    /// mode is beside the point and the answer still is not.
+    ///
+    /// Optional, and only because some work has no answer: a throughput, a cold start,
+    /// anything whose output depends on the scheduler. **Every deterministic workload
+    /// must declare it**, and a campaign on a workload that does not says so loudly —
+    /// without it there is no correctness gate at all, and a backend that computes
+    /// nothing and returns instantly wins the table.
     ///
     /// It is a property of `(workload, params)`, never of the workload alone:
     /// override a param and this no longer applies to what ran. The campaign says so
     /// rather than checking against a number that describes different work.
     ///
-    /// **A string on every wire, an integer in the manifest.** It is 64 bits wide and
-    /// a JavaScript number is a double, so a checksum that crossed into a browser as
-    /// a number would silently lose its low bits past 2^53 — and this one is the
+    /// **A string on the wire, an integer in the manifest.** It is 64 bits wide and a
+    /// JavaScript number is a double, so a checksum that crossed into a browser as a
+    /// number would silently lose its low bits past 2^53 — and this one is the
     /// correctness gate of the whole project. `workload.yaml` is written by a human,
-    /// so it takes a plain integer; everything downstream of it is read by a machine
-    /// with a 53-bit mantissa, so it gets a string. The harness never does arithmetic
-    /// on it: it compares it, and it prints it.
-    ///
-    /// The manifest spells it `strict-checksum`; the campaign header it was written
-    /// into spells it `strict_checksum`. The alias is what lets one struct read both
-    /// — and it is not a courtesy to old files: this struct *round-trips*, so without
-    /// it `langbench report` could not read back the header the campaign it just ran
-    /// wrote.
+    /// so it takes a plain integer; everything downstream is read by a machine with a
+    /// 53-bit mantissa, so it gets a string. The harness never does arithmetic on it:
+    /// it compares it, and it prints it.
     #[serde(
         default,
-        alias = "strict_checksum",
         deserialize_with = "checksum",
         serialize_with = "crate::analysis::as_string"
     )]
     #[schemars(with = "Option<u64>")]
-    pub strict_checksum: Option<u64>,
+    pub checksum: Option<u64>,
 }
 
 /// A checksum as either the manifest or the wire spells it: an integer, or a string
@@ -235,7 +238,7 @@ impl Workload {
         }
 
         if overridden.params != self.params {
-            overridden.strict_checksum = None;
+            overridden.checksum = None;
         }
         Ok(overridden)
     }
@@ -275,7 +278,7 @@ impl Workload {
                     value: ParamValue::Integer(1000),
                 },
             ],
-            strict_checksum: None,
+            checksum: None,
         }
     }
 }
@@ -314,7 +317,7 @@ mod tests {
                               \x20   value: 2048\n\
                               \x20 - name: max_iter\n\
                               \x20   value: 1000\n\
-                              strict-checksum: 1038538536\n";
+                              checksum: 1038538536\n";
 
     fn mandelbrot() -> Workload {
         Workload::parse(MANDELBROT).unwrap()
@@ -324,7 +327,7 @@ mod tests {
     fn a_manifest_declares_the_work_and_how_it_is_sized() {
         let workload = mandelbrot();
         assert_eq!(workload.id, "mandelbrot");
-        assert_eq!(workload.strict_checksum, Some(1_038_538_536));
+        assert_eq!(workload.checksum, Some(1_038_538_536));
         assert_eq!(
             workload.params,
             [
@@ -370,7 +373,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(overridden.argv(), ["256", "1000"]);
-        assert_eq!(overridden.strict_checksum, None);
+        assert_eq!(overridden.checksum, None);
     }
 
     /// Re-stating a param at the value it already has is not a change, and must not
@@ -382,7 +385,7 @@ mod tests {
             .with_overrides(&[("grid_size".to_owned(), "2048".to_owned())])
             .unwrap();
 
-        assert_eq!(overridden.strict_checksum, Some(1_038_538_536));
+        assert_eq!(overridden.checksum, Some(1_038_538_536));
     }
 
     /// A typo in a param name must fail the campaign. Ignored, it would publish a
@@ -413,10 +416,10 @@ mod tests {
             "id: mandelbrot\n\
              description: Fine.\n\
              params: []\n\
-             strict-cheksum: 1\n",
+             cheksum: 1\n",
         )
         .unwrap_err();
-        assert!(format!("{error:#}").contains("strict-cheksum"));
+        assert!(format!("{error:#}").contains("cheksum"));
     }
 
     /// The schema is generated from the struct the harness deserializes. If this
@@ -426,7 +429,7 @@ mod tests {
         let schema = schema().unwrap();
         // The schema describes the file a person *writes*, so it spells the keys the
         // way the file does: kebab.
-        for key in ["id", "description", "params", "strict-checksum"] {
+        for key in ["id", "description", "params", "checksum"] {
             assert!(schema.contains(&format!("\"{key}\"")), "{key} is missing");
         }
         assert!(schema.contains("\"additionalProperties\": false"));
@@ -439,18 +442,10 @@ mod tests {
     fn the_manifest_reads_kebab_and_the_wire_writes_snake() {
         let workload = mandelbrot();
         let json = serde_json::to_string(&workload).unwrap();
-        assert!(json.contains("\"strict_checksum\""), "{json}");
-        assert!(!json.contains("strict-checksum"), "{json}");
+        assert!(json.contains("\"checksum\""), "{json}");
+        assert!(!json.contains("strict_checksum"), "{json}");
 
         let round_tripped: Workload = serde_json::from_str(&json).unwrap();
         assert_eq!(round_tripped, workload);
-    }
-
-    /// The old spelling is not accepted in a manifest by accident: it is the one the
-    /// header carries, and the alias is what lets the header be read back.
-    #[test]
-    fn a_manifest_that_spells_it_the_wire_way_is_still_read() {
-        let workload = Workload::parse(&MANDELBROT.replace("strict-checksum", "strict_checksum"));
-        assert_eq!(workload.unwrap().strict_checksum, Some(1_038_538_536));
     }
 }

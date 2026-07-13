@@ -441,7 +441,7 @@ pub fn backend_id(workload: &str, backend: &str) -> String {
 /// See `METHODOLOGY.md#the-strict-mode-invariant`.
 fn strict_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
     let mut references = HashMap::new();
-    if let Some(declared) = workload.strict_checksum {
+    if let Some(declared) = workload.checksum {
         references.insert(workload.id.clone(), declared);
     }
     for sample in samples {

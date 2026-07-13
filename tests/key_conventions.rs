@@ -68,15 +68,19 @@ fn every_key_on_the_wire_is_snake_case() {
     }
 }
 
-/// The manifest spells it `strict-checksum`, the header spells it `strict_checksum`,
-/// and **the same struct reads both** — because it wrote the second one itself. Lose
-/// the alias and `langbench report` stops being able to read the campaign that
-/// `langbench workload run` just finished.
+/// [`Workload`] round-trips: it *wrote* the campaign header, and it has to read it
+/// back — `langbench report` on the campaign `langbench workload run` just finished is
+/// exactly that. It reads kebab and writes snake, so this is where the two
+/// conventions could quietly stop meeting.
+///
+/// Today every key is a single word, spelled identically either way, and nothing
+/// bridges anything. The day one is not, this test is what says so — rather than a
+/// campaign that suddenly cannot be rendered.
 #[test]
 fn the_header_a_campaign_writes_is_a_header_it_can_read_back() {
     let workload = workload();
     let header = serde_json::to_string(&workload).unwrap();
-    assert!(header.contains("\"strict_checksum\""), "{header}");
+    assert!(header.contains("\"checksum\""), "{header}");
 
     let read_back: Workload = serde_json::from_str(&header).unwrap();
     assert_eq!(read_back, workload);
@@ -91,7 +95,7 @@ fn workload() -> Workload {
             name: "grid_size".to_owned(),
             value: ParamValue::Integer(2048),
         }],
-        strict_checksum: Some(1_038_538_536),
+        checksum: Some(1_038_538_536),
     }
 }
 

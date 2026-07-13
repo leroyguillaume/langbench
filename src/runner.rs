@@ -43,14 +43,29 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         .workload;
     let workload = declared.with_overrides(&workload::overrides(&args.params)?)?;
 
-    if workload.strict_checksum.is_none() && declared.strict_checksum.is_some() {
-        warn!(
+    // A campaign with no answer to check against has no correctness gate — only the
+    // weaker claim that its backends agreed with each other, whatever they agreed on.
+    // Both ways of ending up there are loud, and they are different mistakes: one is a
+    // workload that never declared an answer, the other is a campaign that asked for
+    // work the declared answer is not the answer to.
+    match (declared.checksum, workload.checksum) {
+        (Some(_), None) => warn!(
             workload = %workload.id,
-            "params were overridden, so the workload's declared strict checksum does not apply \
-             to this campaign — it is the answer to the declared work, not to this one. Strict \
-             mode is still enforced *within* the campaign: every backend must agree with the \
-             first one. Nothing pins that agreement to a value from outside it.",
-        );
+            "params were overridden, so the workload's declared checksum does not apply to this \
+             campaign — it is the answer to the declared work, not to this one. Correctness is \
+             still enforced *within* the campaign: every backend must agree with the first one. \
+             Nothing pins that agreement to a value from outside it. Publish from the declared \
+             params.",
+        ),
+        (None, _) => warn!(
+            workload = %workload.id,
+            "this workload declares no `checksum`, so this campaign has NO correctness gate. It \
+             can only establish that its backends agree with each other — which a campaign where \
+             every one of them is wrong the same way passes, and which claims nothing at all \
+             against any other campaign. A backend that computes nothing and returns instantly \
+             would top this table. If the work is deterministic, declare the answer.",
+        ),
+        (Some(_), Some(_)) => {}
     }
 
     let implementations = discover(&args.benchmarks_dir, &args.workload)?;
@@ -106,8 +121,8 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     let mut runner = Runner {
         engine,
         args: &args,
-        strict_checksum: workload.strict_checksum,
-        reference_is_declared: workload.strict_checksum.is_some(),
+        strict_checksum: workload.checksum,
+        reference_is_declared: workload.checksum.is_some(),
         workload,
         writer,
         written: 0,
@@ -256,7 +271,7 @@ struct Runner<'a, E: ContainerEngine> {
     written: usize,
     /// The value every strict-mode run must agree on, bit for bit.
     ///
-    /// Seeded from the workload's declared `strict_checksum` when it has one — and
+    /// Seeded from the workload's declared `checksum` when it has one — and
     /// then the *first* backend is checked against it, like every other. Without one,
     /// the first strict sample becomes the reference and the campaign can only
     /// establish that its backends agree with each other, which a campaign where they
@@ -536,7 +551,7 @@ impl<E: ContainerEngine> Runner<'_, E> {
                 "strict-mode checksum mismatch on {}: {} produced {checksum}, and the backends \
                  before it produced {reference}. In strict mode every compiler, language and \
                  architecture must agree bit for bit; a divergence is a bug in the code or the \
-                 flags, never a rounding difference. Note that `{}` declares no `strict_checksum`, \
+                 flags, never a rounding difference. Note that `{}` declares no `checksum`, \
                  so the reference here is simply whichever backend ran first — declare one and the \
                  answer stops depending on the schedule.",
                 sample.workload,
@@ -648,7 +663,7 @@ mod tests {
              \x20   value: 10\n",
         );
         if let Some(checksum) = strict_checksum {
-            yaml.push_str(&format!("strict-checksum: {checksum}\n"));
+            yaml.push_str(&format!("checksum: {checksum}\n"));
         }
         yaml.push_str("implementations:\n");
         for name in names {

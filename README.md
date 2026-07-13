@@ -126,7 +126,7 @@ langbench workload run mandelbrot --param grid_size=256 --rounds 2
 ```
 
 That has a price, and the harness says so: **the workload's declared
-`strict-checksum` is the answer to the declared work**, not to this one. Override a
+`checksum` is the answer to the declared work**, not to this one. Override a
 param and the reference no longer applies — strict mode still requires every backend
 to agree with every other, but nothing pins that agreement to a value from outside
 the campaign. Publish numbers from the declared params, and only from those.
@@ -636,7 +636,7 @@ params:                 # the order is the order the kernels receive them:
     value: 2048
   - name: max_iter
     value: 1000
-strict-checksum: 1038538536   # optional; the answer, for these params
+checksum: 1038538536   # optional, but declare it: it is the correctness gate
 implementations:              # declared, never walked for
   - c-gcc
   - python-cython
