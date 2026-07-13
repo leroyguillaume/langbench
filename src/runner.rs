@@ -136,7 +136,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         runner.measure_phase(&units, Phase::Run, args.rounds)
     })();
 
-    // The campaign produces the samples and stops there. The CSV and the report
+    // The campaign produces the samples and stops there. The CSV and the website
     // are renderings, recomputed on demand from this file — including from a
     // campaign that was interrupted, which is exactly when you want them.
     let interrupted = match campaign {
@@ -145,7 +145,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
                 samples = runner.written,
                 quarantined = runner.failures.len(),
                 path = %args.output.display(),
-                "campaign complete; render it with `langbench report csv` or `langbench report md`",
+                "campaign complete; read it on the website, or convert it with `langbench sample convert`",
             );
             false
         }
@@ -158,7 +158,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
                 samples = runner.written,
                 path = %args.output.display(),
                 "campaign interrupted; the samples written so far are intact and \
-                 render with `langbench report csv` or `langbench report md`",
+                 render, on the website and through `langbench sample convert` alike",
             );
             true
         }
@@ -764,10 +764,9 @@ mod tests {
         let args = args(root.path(), out.path(), vec![FpMode::Strict, FpMode::Fast]);
         execute(args, &engine).unwrap();
 
-        // The samples, and strictly nothing else: rendering is a separate command
-        // now, so a campaign cannot emit a report it did not measure.
+        // The samples, and strictly nothing else: converting is a separate command,
+        // so a campaign cannot emit a table it did not measure.
         assert!(out.path().join("samples.ndjson").is_file());
-        assert!(!out.path().join("report.md").exists());
         assert!(!out.path().join("samples.csv").exists());
     }
 
