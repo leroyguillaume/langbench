@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: cpp
 compiler: gcc
 # Nothing executes the binary but the CPU.

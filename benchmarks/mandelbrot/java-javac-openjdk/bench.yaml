@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: java
 # Both, and the pair is the whole story of the JVM: javac compiles the source to
 # bytecode ahead of the run, and HotSpot executes that bytecode -- interpreting it

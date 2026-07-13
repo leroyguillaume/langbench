@@ -47,15 +47,10 @@
     "source": {
       "description": "The kernel, relative to this manifest's directory. One file, because the\nbenchmark rule is one file — and its size in bytes is a published metric.\n\nDeclared rather than guessed: the harness would otherwise have to decide\nwhich of the files beside the manifest is *the source*, and the only way to\ndo that is to pattern-match a name — which is parsing the path, under\nanother name. See `METHODOLOGY.md#repository-layout`.",
       "type": "string"
-    },
-    "workload": {
-      "description": "The workload this implementation computes. Implementations of the same\nworkload are comparable; implementations of different ones are not.",
-      "type": "string"
     }
   },
   "additionalProperties": false,
   "required": [
-    "workload",
     "language",
     "source",
     "modes",

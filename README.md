@@ -16,10 +16,10 @@ identical Rust, CPython versus PyPy, OpenJDK versus GraalVM `native-image`.
 
 **The results live in two directories**, one campaign per architecture:
 
-- **[`samples/`](samples/)** — `samples/<arch>.ndjson`, the raw samples. The only
+- **[`samples/`](samples/)** — `samples/<workload>/<arch>.ndjson`, the raw samples. The only
   artifact a campaign produces that cannot be recomputed, and the source of
   everything below.
-- **[`reports/`](reports/)** — `reports/<arch>.md`, each rendered from the samples
+- **[`reports/`](reports/)** — `reports/<workload>/<arch>.md`, each rendered from the samples
   beside it. [What is in there](reports/README.md).
 
 They are kept apart by architecture and never merged: **an absolute timing does
@@ -65,27 +65,29 @@ No warning: this host looks like a usable target.
 
 ## Run
 
+A campaign is **one machine measuring one workload**, so `run` takes the workload:
+
 ```sh
-langbench run
+langbench workload list             # what is there to measure?
+langbench workload run mandelbrot
 ```
 
-By default that discovers everything under `benchmarks/`, builds each
-implementation in every floating-point mode its `bench.yaml` declares it
-distinguishes (all three unless it says otherwise), and measures with the machine's
-thread count. It writes `samples.ndjson` and nothing else; `langbench csv` and
-`langbench md` turn that file into a table or a report, whenever you like.
+That builds every implementation the workload declares, in every floating-point mode
+its `bench.yaml` says it distinguishes (all three unless it says otherwise), sized by
+the params the `workload.yaml` declares, and measured with the machine's thread
+count. It writes `samples.ndjson` and nothing else; `langbench report csv` and
+`langbench report md` turn that file into a table or a report, whenever you like.
 
 Common flags — every one of them also reads an environment variable:
 
 | Flag | Env | Default | Purpose |
 | --- | --- | --- | --- |
-| `--workload` | `WORKLOAD` | all discovered | Restrict to some workloads |
+| *(positional)* | `WORKLOAD` | — | The workload to measure. Required, and exactly one |
+| `--param` | — | as declared | Override a workload param: `--param grid_size=256`. Repeatable |
 | `--mode` | `FP_MODE` | `strict,fma,fast` | Floating-point semantics |
 | `--cpu` | `CPUS` | machine parallelism | Threads for kernels *and* compilers |
 | `--output`, `-o` | `SAMPLES_OUTPUT` | `samples.ndjson` | Path of the samples file the campaign writes |
 | `--benchmarks-dir` | `BENCHMARKS_DIR` | `benchmarks` | Root of the benchmark tree |
-| `--grid-size` | `GRID_SIZE` | `2048` | Side of the N×N grid |
-| `--max-iter` | `MAX_ITER` | `1000` | Iteration ceiling |
 | `--rounds` | `ROUNDS` | `10` | Measured run rounds |
 | `--build-rounds` | `BUILD_ROUNDS` | `3` | Measured build rounds |
 | `--warmup-rounds` | `WARMUP_ROUNDS` | `1` | Rounds recorded but flagged |
@@ -96,34 +98,43 @@ Common flags — every one of them also reads an environment variable:
 
 [directives]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
 
-Example — only the strict mode, on four threads, for one workload:
+Example — only the strict mode, on four threads:
 
 ```sh
-langbench run --workload mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
+langbench workload run mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
 ```
 
 ### Sizing a campaign
 
-`--grid-size` and `--max-iter` are the same for every implementation, and they
-have to be: the strict-mode checksum is a function of both, so a campaign cannot
-give each backend its own grid without giving up the correctness gate.
+**How the work is sized is a property of the work, not a flag of the harness.** A
+grid and an iteration ceiling are Mandelbrot's business; a workload that parses JSON
+has neither. So the params live in `workload.yaml`, they are the same for every
+implementation of that workload, and they have to be: the strict-mode checksum is a
+function of them, so a campaign cannot give each backend its own grid without giving
+up the correctness gate.
 
-**Size for the slowest backend.** The work scales as `grid_size² × max_iter`, and
-what a campaign actually waits on is CPython, not C. At `4096` / `1000` a C run
-takes about a second and a CPython run takes forty; multiply by the rounds and
-the modes and you get an hour of CPython for a single campaign.
+**Size for the slowest backend.** Mandelbrot's work scales as `grid_size² × max_iter`,
+and what a campaign actually waits on is CPython, not C. At `4096` / `1000` a C run
+takes about a second and a CPython run takes forty; multiply by the rounds and the
+modes and you get an hour of CPython for a single campaign.
 
-The defaults above are therefore sized for **iteration speed** — a quarter-grid,
-ten rounds, one warmup — which puts a full three-mode campaign in the minutes. For
-numbers you intend to publish, buy back the resolution:
+`--param` overrides a declared param, for iterating — a full-size campaign is a slow
+way to discover a Dockerfile has a typo:
 
 ```sh
-langbench run --grid-size 4096 --rounds 30 --warmup-rounds 2 --build-rounds 5
+langbench workload run mandelbrot --param grid_size=256 --rounds 2
 ```
 
-Nothing about the smaller default is *wrong*: the estimate is a min-of-N, so more
-rounds can only ever lower it, and the dispersion printed beside it tells you
-whether N was large enough. A short campaign is pessimistic, never incorrect.
+That has a price, and the harness says so: **the workload's declared
+`strict_checksum` is the answer to the declared work**, not to this one. Override a
+param and the reference no longer applies — strict mode still requires every backend
+to agree with every other, but nothing pins that agreement to a value from outside
+the campaign. Publish numbers from the declared params, and only from those.
+
+Cutting the *rounds* is a different matter, and it is safe: the estimate is a
+min-of-N, so more rounds can only ever lower it, and the dispersion printed beside it
+tells you whether N was large enough. A short campaign is pessimistic, never
+incorrect — where a resized one measures different work.
 
 The harness logs one line per invocation so you can watch this happen; if nothing
 has moved after `--run-timeout` seconds, the container is killed and that backend
@@ -180,7 +191,7 @@ measuring the others. Nothing is retried: whatever broke in round one breaks in
 round nine.
 
 The failure is not swept up, either. It is written to `samples.ndjson` as a
-`failure` record, and every rendering shows it — `langbench md` grows a *What did
+`failure` record, and every rendering shows it — `langbench report md` grows a *What did
 not finish* section, and so does the website. A benchmark that silently drops what
 did not work flatters itself, and a missing row looks exactly like a backend nobody
 ever wrote.
@@ -197,7 +208,7 @@ container in flight, stops, and **exits 0** — the samples it already wrote are
 untouched and still render:
 
 ```sh
-langbench md    # a campaign you interrupted after ten minutes is still a report
+langbench report md    # a campaign you interrupted after ten minutes is still a report
 ```
 
 The run it was in the middle of is discarded rather than recorded: a killed
@@ -277,7 +288,7 @@ docker run --rm \
   --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume "$PWD/results:/var/lib/langbench" \
-  langbench run --mode strict
+  langbench workload run mandelbrot --mode strict
 ```
 
 **macOS** (Docker Desktop, OrbStack, Colima). The daemon lives in a Linux VM,
@@ -290,7 +301,7 @@ docker run --rm \
   --group-add 0 \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume "$PWD/results:/var/lib/langbench" \
-  langbench run --mode strict
+  langbench workload run mandelbrot --mode strict
 ```
 
 Do not port the Linux line across by swapping `stat -c` for BSD's `stat -f '%g'`:
@@ -309,7 +320,7 @@ are pure functions of the samples file, so no `--group-add` either:
 ```sh
 docker run --rm \
   --volume "$PWD/results:/var/lib/langbench" \
-  langbench md          # samples.ndjson -> report.md, both in results/
+  langbench report md          # samples.ndjson -> report.md, both in results/
 ```
 
 ### Benchmarking your own tree
@@ -326,7 +337,7 @@ docker run --rm \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume "$PWD/results:/var/lib/langbench" \
   --volume "$PWD/benchmarks:/usr/local/share/langbench/benchmarks:ro" \
-  langbench run
+  langbench workload run mandelbrot
 ```
 
 `/usr/local/share/langbench/benchmarks` is where the image keeps them, and
@@ -367,10 +378,10 @@ is the point: a report can only ever show what a run actually recorded, and the
 same file re-renders identically on any host, months later.
 
 ```sh
-langbench csv       # the samples, flat, into samples.csv
-langbench md        # the samples, as a report, into report.md
+langbench report csv       # the samples, flat, into samples.csv
+langbench report md        # the samples, as a report, into report.md
 
-langbench md results/strict-4.ndjson --output results/strict-4.md
+langbench report md results/strict-4.ndjson --output results/strict-4.md
 ```
 
 Each command reads the samples the campaign wrote and writes a file of its own.
@@ -395,13 +406,13 @@ source of truth.
 
 ```sh
 # Median run time per mode, straight from the samples.
-langbench csv
+langbench report csv
 awk -F, 'NR>1 && $6=="run" && $8=="false" { print $5, $10 }' samples.csv
 ```
 
 **Markdown.** A human-facing view that leads with any reason this host is a poor
 benchmark target. **One per architecture, in [`reports/`](reports/)** —
-[`reports/aarch64.md`](reports/aarch64.md), and `reports/x86_64.md` once the
+[`reports/mandelbrot/aarch64.md`](reports/mandelbrot/aarch64.md), and `reports/mandelbrot/x86_64.md` once the
 [`bench`](.github/workflows/bench.yaml) workflow has run — each rendered from the
 campaign of the same name in [`samples/`](samples/). It renders
 `templates/report.md.liquid`, embedded in the binary; `--template` swaps in your
@@ -409,7 +420,7 @@ own [Liquid][liquid] template, which receives exactly the same variables:
 
 ```sh
 cp templates/report.md.liquid mine.liquid   # the built-in one, as a starting point
-langbench md --template mine.liquid         # renders into report.md
+langbench report md --template mine.liquid         # renders into report.md
 ```
 
 [liquid]: https://shopify.github.io/liquid/
@@ -440,7 +451,7 @@ much easier not to do:
 
 **The site computes no statistic of its own.** Min-of-N, the buckets, the
 definition of startup — all of it is `src/analysis.rs`, the same code
-`langbench md` calls, compiled to WebAssembly and called from the browser. A
+`langbench report md` calls, compiled to WebAssembly and called from the browser. A
 second implementation of min-of-N in TypeScript would be a second definition of
 what this project measures, and the two would drift the first time one of them
 was "fixed". The site sorts, formats and draws; it does not do arithmetic on the
@@ -489,8 +500,8 @@ The data it publishes is each campaign's samples, byte for byte — no export
 format, no intermediate file. They live in [`samples/`](samples/), one per architecture:
 
 ```sh
-langbench run --output samples/x86_64.ndjson
-langbench md samples/x86_64.ndjson --output reports/x86_64.md
+langbench workload run mandelbrot --output samples/mandelbrot/x86_64.ndjson
+langbench report md samples/mandelbrot/x86_64.ndjson --output reports/mandelbrot/x86_64.md
 ```
 
 Every `samples/*.ndjson` is picked up and published. Locally:
@@ -528,7 +539,7 @@ Two environment variables move the paths, and neither changes what is published:
 business in `samples/`, which is what the bench runners publish:
 
 ```sh
-langbench run --output samples.local/$(uname -m).ndjson
+langbench workload run mandelbrot --output samples.local/$(uname -m).ndjson
 cd site && SAMPLES_DIR=samples.local npm run dev   # serves your campaign, not the committed one
 SAMPLES_DIR=/mnt/bench/campaigns BASE_PATH=/langbench/ npm run build
 ```
@@ -574,8 +585,8 @@ for, never source it links.
 
 **[`bench`](.github/workflows/bench.yaml)** — runs **one campaign per architecture**, on a
 matrix of native runners (`ubuntu-24.04` and `ubuntu-24.04-arm`; **never QEMU**,
-which measures the emulator). It commits every `samples/<arch>.ndjson` **and** its
-`reports/<arch>.md` back to `main`. Both files, never one without the other: the
+which measures the emulator). It commits every `samples/<workload>/<arch>.ndjson` **and** its
+`reports/<workload>/<arch>.md` back to `main`. Both files, never one without the other: the
 samples are the only artefact that cannot be recomputed, and committing a report
 without its evidence publishes a conclusion nobody can check. Then it calls
 `pages` with the SHA of that commit, so a campaign still ends with a published
@@ -607,22 +618,42 @@ them would race a second, identical deploy of the same commit. And **on
 runner is shared, virtualised and frequency-scaled — the worst benchmark target
 money can rent. It says so itself: the report and the page both lead with every
 reason the host was a poor target. For a number worth trusting, run a campaign on
-a real machine and commit its `samples/<arch>.ndjson`; the report and the site are
+a real machine and commit its `samples/<workload>/<arch>.ndjson`; the report and the site are
 pure functions of that file and will render it unchanged.
 
 ## Adding an implementation
 
-Drop a `bench.yaml` next to a `Dockerfile`, anywhere under `benchmarks/`:
+Two manifests, and they say different things. A **workload** declares the work: what
+it is, how it is sized, what the right answer is, and which directories implement it.
 
 ```yaml
-workload: mandelbrot
+# benchmarks/mandelbrot/workload.yaml
+id: mandelbrot
+description: >-
+  Escape-time Mandelbrot over a square grid, summing the iteration counts.
+params:                 # the order is the order the kernels receive them:
+  - name: grid_size     #   run <grid_size> <max_iter> <threads>
+    value: 2048
+  - name: max_iter
+    value: 1000
+strict_checksum: 1038538536   # optional; the answer, for these params
+implementations:              # declared, never walked for
+  - c-gcc
+  - python-cython
+```
+
+An **implementation** declares a backend that does that work, in a `bench.yaml`
+beside its `Dockerfile`:
+
+```yaml
+# benchmarks/mandelbrot/python-cython/bench.yaml
 language: python
 compiler: cython      # omit if nothing is compiled ahead of the run
 interpreter: cpython  # omit if the binary runs on the bare CPU
 source: mandelbrot.py # the one kernel file, beside this manifest
 modes:
   - strict            # or `modes: all`
-arch: all             # the default; omit it unless the toolchain does not exist somewhere
+architectures: all    # the default; omit it unless the toolchain does not exist somewhere
 description: >-
   The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
   a C extension module instead of interpreted.
@@ -630,11 +661,16 @@ comments: >-
   It is slower than the interpreter it compiles, and that is a result, not a bug.
 ```
 
-**The manifest is the only thing the harness reads.** Discovery walks the tree
-for `bench.yaml` files — the directory layout is yours to choose, and the
-directory *name* means nothing. An implementation is identified by what it is:
-`(workload, language, compiler, interpreter)`. Declare the same tuple twice and the
-campaign refuses to start.
+Then add the directory to the workload's `implementations`. **Nothing is measured
+because of where it sits.** The harness walks the tree for `workload.yaml` files, and
+after that it reads declarations: a workload lists the directories it is implemented
+in, an implementation names its own source file. A `bench.yaml` that no workload lists
+is caught by `langbench validate` — it would otherwise be a backend that is never
+built, never measured, and never missed, and a row that is absent from a table reads
+exactly like a backend nobody wrote.
+
+An implementation is identified by what it is: `(workload, language, compiler,
+interpreter)`. Declare the same tuple twice and the campaign refuses to start.
 
 `compiler` and `interpreter` are each optional, and each absence is a published
 fact rather than a gap: gcc compiles and nothing interprets, CPython interprets
@@ -651,7 +687,7 @@ of the *language*, not of the backend: `c-gcc` and `c-clang` compile the same fi
 report the same number, which is exactly what it should say about code written once
 and compiled twice. It is not a measure of quality, and it is not a measure of effort.
 
-`arch` is `all` unless the backend's **toolchain does not exist** for an
+`architectures` is `all` unless the backend's **toolchain does not exist** for an
 architecture — and that is a fact, not a preference. Kotlin/Native, for instance,
 publishes no `linux-aarch64` host compiler, so `arch: [x86_64]` is simply the
 truth about it; the only ways to run it on an ARM machine would be emulation
@@ -693,24 +729,31 @@ langbench validate            # every failure a campaign would hit at discovery
 
 It parses every `bench.yaml` on disk and reports **all** the problems at once —
 a misspelled key, an unknown FP mode, a backend that neither compiles nor
-interprets, two manifests claiming the same identity — without building a single
-image. Point it at a file or a directory; it defaults to the whole tree.
+interprets, two manifests claiming the same identity, a `bench.yaml` no workload
+lists — without building a single image. It takes directories and defaults to the
+whole tree, and it needs the whole tree: two backends collide with *each other*, and
+an undeclared manifest is only visible to someone holding both the tree and every
+workload's list of what it claims.
 
-`bench.schema.json`, at the repo root, is the manifest's JSON Schema. It is
-generated from the Rust struct the harness actually deserializes, never written
-by hand:
+`bench.schema.json` and `workload.schema.json`, at the repo root, are the two
+manifests' JSON Schemas. Both are generated from the Rust structs the harness
+actually deserializes, never written by hand:
 
 ```sh
-langbench jsonschema          # rewrites bench.schema.json
+langbench implementation jsonschema   # rewrites bench.schema.json
+langbench workload jsonschema         # rewrites workload.schema.json
 ```
 
-A pre-commit hook regenerates it and fails if the checked-in copy has drifted, so
+A pre-commit hook regenerates each and fails if the checked-in copy has drifted, so
 the schema your editor completes from cannot disagree with what the campaign
-accepts. To get that completion, point your editor at it — for VS Code's YAML
+accepts. To get that completion, point your editor at them — for VS Code's YAML
 extension:
 
 ```json
-{"yaml.schemas": {"./bench.schema.json": "**/bench.yaml"}}
+{"yaml.schemas": {
+  "./bench.schema.json": "**/bench.yaml",
+  "./workload.schema.json": "**/workload.yaml"
+}}
 ```
 
 ## Development

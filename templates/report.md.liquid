@@ -35,6 +35,16 @@ look slower than it is. Small differences here are noise, not results. Compare
 orders of magnitude ("this one is 20x slower"), never percentages ("this one is 3%
 faster").
 {% endif %}
+## Workload
+
+**{{ campaign.workload.id }}** — the work every backend below was asked to do.
+
+{{ campaign.workload.description }}
+
+This is the workload *as this campaign ran it*, copied into the samples file when
+the campaign started. Editing `workload.yaml` afterwards does not change what these
+numbers measured.
+
 ## Campaign
 
 The knobs this run was launched with. Change any of them and the numbers below
@@ -43,9 +53,10 @@ change with them — including the reference checksum.
 | Parameter | Value | What it is |
 | --- | --- | --- |
 | Threads (`--cpu`) | {{ campaign.cpu }} | How many worker threads each kernel was told to use. The harness passes this explicitly; kernels never guess. |
-| Grid | {{ campaign.grid_size }} x {{ campaign.grid_size }} | Size of the image computed, in pixels. This is the problem size. |
-| Max iterations | {{ campaign.max_iter }} | Work ceiling per pixel. Higher means more maths per pixel. |
-| ISA baseline (`-march`) | {{ campaign.march }} | The CPU instruction set every compiler was allowed to target. Pinned, so no compiler gets a private head start. |
+{% for param in campaign.workload.params -%}
+| `{{ param.name }}` | {{ param.value }} | How the work was sized. The `{{ campaign.workload.id }}` workload declares it, and every kernel was handed it identically. |
+{% endfor -%}
+| architecture baseline (`-march`) | {{ campaign.march }} | The CPU instruction set every compiler was allowed to target. Pinned, so no compiler gets a private head start. |
 | FP modes | {{ campaign.modes | join: ", " }} | The floating-point rule sets used. See **Mode** below. |
 | Run rounds | {{ campaign.rounds }} (+ {{ campaign.warmup_rounds }} warmup) | How many times each build was measured. Warmup runs are recorded but excluded. |
 | Build rounds | {{ campaign.build_rounds }} (+ {{ campaign.warmup_rounds }} warmup) | Same, for the timed recompiles. |

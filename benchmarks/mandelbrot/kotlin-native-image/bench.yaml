@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: kotlin
 compiler: native-image
 interpreter: ~

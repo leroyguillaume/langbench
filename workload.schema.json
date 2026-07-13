@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "langbench workload manifest",
+  "description": "What `workload.yaml` declares — and, verbatim, what a campaign snapshots into\nits header.\n\n`deny_unknown_fields`, like the implementation manifest: a misspelled key must\nfail the campaign rather than be quietly ignored. The numbers would still come\nout; they would just be wrong about what produced them.",
+  "type": "object",
+  "properties": {
+    "description": {
+      "description": "What the work *is*, in one paragraph. It is published beside the results,\nbecause a timing without the work it timed is a number about nothing.",
+      "type": "string"
+    },
+    "id": {
+      "description": "What this workload is called. Declared, never parsed out of the directory\nname — the path locates the file, the file says what it is.",
+      "type": "string"
+    },
+    "implementations": {
+      "description": "The directories holding this workload's implementations, each relative to\nthis manifest.\n\nDeclared, not walked for. The harness could perfectly well recurse from here\nand take every `bench.yaml` it found, and that would mean the *position* of a\ndirectory decides whether it is measured — which is the path being metadata\nagain, the thing this project refuses everywhere else. `source:` is declared\nfor the same reason: the manifest says what is in, and nothing is in by\naccident.\n\nA directory that holds no `bench.yaml` is warned about and skipped: it is an\nimplementation somebody started, or moved, and a campaign that failed on it\nwould be a campaign held hostage by an empty folder.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "params": {
+      "description": "How the work is sized, and what the kernels are handed on the command line.\n\nA list and not a mapping, because **the order is the `argv` order** and a\nlist is the only YAML shape that is ordered by construction. A mapping would\nleave the kernels' arguments at the mercy of whatever sorted its keys.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Param"
+      }
+    },
+    "strict_checksum": {
+      "description": "The value every `strict` run of this workload must produce, for *these*\nparams.\n\nOptional, and the distinction matters. Without it, a campaign can only check\nthat its backends agree *with each other* — which a campaign where every\nbackend is wrong the same way passes with flying colours, and which makes no\nclaim at all across two campaigns. With it, the answer is pinned to a value\nthat outlives any single run.\n\nIt is a property of `(workload, params)`, never of the workload alone:\noverride a param and this no longer applies to what ran. The campaign says so\nrather than checking against a number that describes different work.\n\n**A string on every wire, an integer in the manifest.** It is 64 bits wide and\na JavaScript number is a double, so a checksum that crossed into a browser as\na number would silently lose its low bits past 2^53 — and this one is the\ncorrectness gate of the whole project. `workload.yaml` is written by a human,\nso it takes a plain integer; everything downstream of it is read by a machine\nwith a 53-bit mantissa, so it gets a string. The harness never does arithmetic\non it: it compares it, and it prints it.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "default": null,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "description",
+    "implementations",
+    "params"
+  ],
+  "$defs": {
+    "Param": {
+      "description": "One knob of a workload, and the value this campaign ran it at.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ParamValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "ParamValue": {
+      "description": "A param's value: whatever scalar the manifest wrote.\n\nThe harness does no arithmetic on it. It reaches a kernel as one `argv` token\nand reaches a report as one cell, so what it must do is survive the trip and\nprint as it was written — never `2048.0` for a grid of `2048`.",
+      "anyOf": [
+        {
+          "description": "Tried first: `2048` is an integer, and a grid is not `2048.0` pixels wide.",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

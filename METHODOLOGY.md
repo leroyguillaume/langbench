@@ -292,13 +292,36 @@ missing row without one is a bug.
 
 ## Repository layout
 
-Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
+Two manifests, because there are two things to declare, and they are not the same
+thing. A **workload** is the work. An **implementation** is a backend that does it.
+
+A workload declares what the work is, how it is sized, what the right answer is, and
+which directories implement it:
 
 ```yaml
-workload: mandelbrot
+# benchmarks/mandelbrot/workload.yaml
+id: mandelbrot
+description: >-
+  Escape-time Mandelbrot over a square grid, summing the iteration counts.
+params:
+  - name: grid_size
+    value: 2048
+  - name: max_iter
+    value: 1000
+strict_checksum: 1038538536
+implementations:
+  - python-cython
+  - c-gcc
+```
+
+An implementation declares a backend, in a `bench.yaml` beside its Dockerfile:
+
+```yaml
+# benchmarks/mandelbrot/python-cython/bench.yaml
 language: python
 compiler: cython
 interpreter: cpython
+source: mandelbrot.py
 modes:
   - strict
 description: >-
@@ -308,9 +331,11 @@ comments: >-
   It is slower than the interpreter it compiles, and that is a result, not a bug.
 ```
 
-**The manifest is the only thing the harness reads.** Discovery is a walk for
-`bench.yaml` files: no manifest, no benchmark. Everything else about a directory
-is inert.
+**The manifests are the only thing the harness reads.** It walks the tree for
+`workload.yaml` files — that is the one search left — and after that it reads
+declarations, never the tree: the workload lists the directories it is implemented
+in, and each implementation names its own source file. Everything else about a
+directory is inert.
 
 ### The path is not metadata
 
@@ -326,8 +351,37 @@ language **and an interpreter** with `python-cpython` and differs only in the
 compiler. A naming convention had no slot for the fact that makes the experiment
 clean.
 
-So the tree is now free-form. Move a directory, nest it, rename it: the campaign
-is unchanged, because nothing reads it.
+So the tree is free-form. Move a directory, nest it, rename it: the campaign is
+unchanged, because nothing reads it. What decides that a directory is measured is
+that a workload **lists** it — not that it happens to sit somewhere. Recursing from
+the workload and taking every `bench.yaml` underneath would have made the *position*
+of a directory load-bearing again, which is the path being metadata under another
+name.
+
+The cost of declaring is that a manifest can be forgotten: a `bench.yaml` on disk
+that no workload lists would never be built, never measured, and never missed. So
+`langbench validate` walks the tree, compares it against every workload's list, and
+fails on anything unclaimed. A row that is absent from a table reads exactly like a
+backend nobody wrote, and that is the one thing a benchmark must never let a reader
+believe.
+
+### The answer belongs to the work
+
+`strict_checksum` is a property of `(workload, params)` — of the work and how it is
+sized — so it lives with the workload, and not in the harness, and not in a
+backend.
+
+Without it, a campaign can only check that its backends agree *with each other*. That
+is weaker than it sounds: it passes a campaign where every backend is wrong the same
+way, and it makes no claim at all across two campaigns, because each one's reference
+is simply whichever backend happened to run first. Declared, the answer outlives any
+run, and a backend that disagrees with it is quarantined on the spot — not slow,
+wrong.
+
+Override a param and the declared reference stops applying, because it is the answer
+to different work. The campaign says so, records no reference in its header, and falls
+back to the weaker check. That is why the numbers this repository publishes come from
+the declared params, and only from those.
 
 ### Identity is what a backend *is*
 

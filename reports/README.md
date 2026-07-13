@@ -1,12 +1,12 @@
 # Reports
 
-One report per architecture, each rendered by `langbench md` from the campaign of the same
+One report per architecture, each rendered by `langbench report md` from the campaign of the same
 name in [`samples/`](../samples/) — never from anything else, and never by hand.
 
 | Report | architecture | Campaign |
 | --- | --- | --- |
-| [`aarch64.md`](aarch64.md) | ARM64 | [`samples/aarch64.ndjson`](../samples/aarch64.ndjson) |
-| [`x86_64.md`](x86_64.md) | x86-64 | [`samples/x86_64.ndjson`](../samples/x86_64.ndjson) |
+| [`aarch64.md`](aarch64.md) | ARM64 | [`samples/mandelbrot/aarch64.ndjson`](../samples/mandelbrot/aarch64.ndjson) |
+| [`x86_64.md`](x86_64.md) | x86-64 | [`samples/mandelbrot/x86_64.ndjson`](../samples/mandelbrot/x86_64.ndjson) |
 
 A row whose link is dead is a campaign that has not been run yet — the
 [`bench`](../.github/workflows/bench.yaml) workflow writes both files together, or

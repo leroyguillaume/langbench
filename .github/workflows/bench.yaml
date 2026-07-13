@@ -1,19 +1,20 @@
 name: bench
 
-# Runs a campaign per ISA, commits what each recorded, and publishes them.
+# Runs a campaign per architecture, commits what each recorded, and publishes them.
 #
 # Two architectures, two runners, **never QEMU**: emulation measures the emulator.
-# Each campaign stays whole and separate -- `samples/x86_64.ndjson` and
-# `samples/aarch64.ndjson`, side by side, never merged. An absolute timing does
-# not cross an ISA, and the site enforces that by showing one campaign at a time.
-# See `METHODOLOGY.md#the-isa-rule`.
+# Each campaign stays whole and separate -- `samples/<workload>/x86_64.ndjson` and
+# `samples/<workload>/aarch64.ndjson`, side by side, never merged. An absolute timing does
+# not cross an architecture, and the site enforces that by showing one campaign at a
+# time.
+# See `METHODOLOGY.md#the-architecture-rule`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces
 # are *indicative*, and they say so themselves: `langbench` records the host in
 # the campaign header, and both the report and the website lead with every reason
 # it was a poor target. For a number worth publishing, run a campaign on a real
-# machine and commit its `samples/<arch>.ndjson` -- the report and the site are
+# machine and commit its `samples/<workload>/<arch>.ndjson` -- the report and the site are
 # pure functions of that file and will render it unchanged.
 #
 # `workflow_dispatch` only. A campaign is a deliberate act, not a side effect of a
@@ -23,14 +24,17 @@ name: bench
 on:
   workflow_dispatch:
     inputs:
-      grid_size:
-        description: side of the N x N grid
+      workload:
+        description: the workload to measure, by the id its workload.yaml declares
         type: string
-        default: "2048"
-      max_iter:
-        description: iteration ceiling before a pixel is declared inside the set
+        default: mandelbrot
+      params:
+        description: >-
+          override the workload's params, space-separated (e.g. `grid_size=256
+          max_iter=100`). Leave empty to measure the work as the workload declares
+          it -- which is the only way the declared reference checksum applies.
         type: string
-        default: "1000"
+        default: ""
       rounds:
         description: measured rounds of the run phase
         type: string
@@ -48,7 +52,8 @@ concurrency:
 jobs:
   bench:
     strategy:
-      # One ISA failing does not invalidate the other: they are two experiments,
+      # One architecture failing does not invalidate the other: they are two
+      # experiments,
       # and the one that finished is still a result.
       fail-fast: false
       matrix:
@@ -72,30 +77,41 @@ jobs:
         run: cargo build --release
 
       # `docker build` prepares, `docker run` measures. The campaign writes its
-      # samples file and nothing else. The ISA in the name is a convenience for a
-      # human reading `ls`: the architecture of record is the one the machine
-      # reported into the campaign header, and that is what the site keys on.
+      # samples file and nothing else. One machine, one workload: the path is a
+      # convenience for a human reading `ls`, and neither half of it is what the site
+      # keys on -- the workload and the architecture are both read out of the header
+      # the run recorded.
       - name: run the campaign
-        run: ./target/release/langbench run --output "samples/${{ matrix.arch }}.ndjson"
         env:
-          GRID_SIZE: ${{ inputs.grid_size }}
-          MAX_ITER: ${{ inputs.max_iter }}
+          WORKLOAD: ${{ inputs.workload }}
+          PARAMS: ${{ inputs.params }}
           ROUNDS: ${{ inputs.rounds }}
+        run: |
+          overrides=()
+          for override in ${PARAMS}; do
+            overrides+=(--param "${override}")
+          done
+          ./target/release/langbench workload run "${WORKLOAD}" \
+            --output "samples/${WORKLOAD}/${{ matrix.arch }}.ndjson" \
+            "${overrides[@]}"
 
       # Rendering is not part of measuring: a separate command, a pure function of
       # the file above.
       - name: render the report
+        env:
+          WORKLOAD: ${{ inputs.workload }}
         run: |
-          ./target/release/langbench md "samples/${{ matrix.arch }}.ndjson" \
-            --output "reports/${{ matrix.arch }}.md"
+          ./target/release/langbench report md \
+            "samples/${WORKLOAD}/${{ matrix.arch }}.ndjson" \
+            --output "reports/${WORKLOAD}/${{ matrix.arch }}.md"
 
       - name: upload the campaign
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: campaign-${{ matrix.arch }}
+          name: campaign-${{ inputs.workload }}-${{ matrix.arch }}
           path: |
-            samples/${{ matrix.arch }}.ndjson
-            reports/${{ matrix.arch }}.md
+            samples/${{ inputs.workload }}/${{ matrix.arch }}.ndjson
+            reports/${{ inputs.workload }}/${{ matrix.arch }}.md
           if-no-files-found: error
 
   # One job, one push. Two matrix jobs committing to `main` would race, and the
@@ -144,7 +160,7 @@ jobs:
       - name: check the campaigns against the hooks
         run: |
           pre-commit run --show-diff-on-failure \
-            --files samples/*.ndjson reports/*.md
+            --files samples/*/*.ndjson reports/*/*.md
 
       # The samples with the report, never one without the other. A campaign's
       # samples are the only artefact that cannot be recomputed -- the report and

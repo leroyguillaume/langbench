@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: js
 # Nothing is compiled ahead of the run. V8 compiles -- it is a JIT, and the hot
 # loop ends up as machine code -- but it does so *during* the run, which is why

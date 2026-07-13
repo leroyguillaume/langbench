@@ -123,12 +123,36 @@ export const failureSchema = z.object({
   error: z.string(),
 });
 
+/** One knob of a workload, and the value the campaign ran it at. */
+export const paramSchema = z.object({
+  name: z.string(),
+  value: z.union([z.number(), z.string(), z.boolean()]),
+});
+
+/**
+ * The workload a campaign measured, snapshotted into its header when it started.
+ *
+ * The site reads campaigns and nothing else — it never sees a `workload.yaml`. This
+ * is how it knows what the work was, how it was sized, and what the right answer
+ * is. And because it is a snapshot, editing the manifest afterwards cannot rewrite
+ * what a campaign from three months ago says it measured.
+ *
+ * `strict_checksum` is a string here for the reason every checksum on this wire is:
+ * it is a 64-bit integer, and a JavaScript number is a double.
+ */
+export const workloadSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  implementations: z.array(z.string()),
+  params: z.array(paramSchema),
+  strict_checksum: z.string().nullable(),
+});
+
 export const campaignSchema = z.object({
   langbench_version: z.string(),
   timestamp: z.string(),
+  workload: workloadSchema,
   cpu: z.number().int(),
-  grid_size: z.number().int(),
-  max_iter: z.number().int(),
   rounds: z.number().int(),
   build_rounds: z.number().int(),
   warmup_rounds: z.number().int(),

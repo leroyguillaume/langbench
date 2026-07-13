@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use langbench::cli::{Cli, Command};
+use langbench::cli::{Cli, Command, ImplementationCommand, ReportCommand, WorkloadCommand};
 use langbench::engine::DockerEngine;
 use langbench::machine::Machine;
 use langbench::{discovery, output, runner, shutdown};
@@ -25,11 +25,23 @@ fn main() -> Result<()> {
     shutdown::install()?;
 
     match cli.command {
-        Command::Run(args) => runner::execute(args, &DockerEngine::new()),
-        Command::Csv(args) => output::csv(&args),
-        Command::Md(args) => output::markdown(&args),
+        Command::Workload(WorkloadCommand::List(args)) => output::list_workloads(&args),
+        Command::Workload(WorkloadCommand::Run(args)) => {
+            runner::execute(*args, &DockerEngine::new())
+        }
+        Command::Workload(WorkloadCommand::Jsonschema(args)) => output::workload_schema(&args),
+
+        Command::Implementation(ImplementationCommand::List(args)) => {
+            output::list_implementations(&args)
+        }
+        Command::Implementation(ImplementationCommand::Jsonschema(args)) => {
+            output::bench_schema(&args)
+        }
+
+        Command::Report(ReportCommand::Csv(args)) => output::csv(&args),
+        Command::Report(ReportCommand::Md(args)) => output::markdown(&args),
+
         Command::Validate(args) => discovery::validate(&args.paths).map(|_| ()),
-        Command::Jsonschema(args) => output::jsonschema(&args),
         Command::Machine => {
             // Program output, not a diagnostic: stdout, not `tracing`.
             print!("{}", Machine::collect().console_report());

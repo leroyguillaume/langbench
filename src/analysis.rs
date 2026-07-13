@@ -2,7 +2,7 @@
 //!
 //! Bucketing samples into `(workload, backend, mode)` and summarizing each bucket is
 //! the one piece of arithmetic in this repository that has more than one
-//! consumer: `langbench md` formats it into a table, and the WebAssembly build
+//! consumer: `langbench report md` formats it into a table, and the WebAssembly build
 //! hands it to a browser that re-sorts and re-plots it. Both call [`analyze`].
 //!
 //! That is deliberate, and it is the same rule as `bench.schema.json`: a second
@@ -22,6 +22,7 @@ use crate::machine::Field;
 use crate::mode::FpMode;
 use crate::sample::{Campaign, Phase, Recording, Sample, Stage};
 use crate::stats::{Summary, summarize};
+use crate::workload::Workload;
 
 /// What the caller is allowed to vary about an analysis.
 ///
@@ -245,7 +246,7 @@ struct Bucket {
 
 pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     let samples = &recording.samples;
-    let references = strict_references(samples);
+    let references = strict_references(&recording.campaign.workload, samples);
 
     // Insertion order comes from the first round, which is the schedule order.
     let mut order: Vec<(String, String, FpMode)> = Vec::new();
@@ -423,17 +424,26 @@ pub fn backend_id(workload: &str, backend: &str) -> String {
     format!("{workload}-{backend}")
 }
 
-/// The value every strict-mode run of a given workload agreed on, keyed by
-/// workload.
+/// The value every strict-mode run of this campaign's workload agreed on.
 ///
-/// The campaign already refused to record a divergent one — `Runner::verify`
-/// aborts on the spot — so any strict sample of a workload carries its
-/// reference and the first one is as good as the last. The reference is per
-/// workload because the checksum is a property of `(workload, grid size,
-/// max_iter)`: measuring one workload's delta against another's would be
-/// meaningless. See `METHODOLOGY.md#the-strict-mode-invariant`.
-fn strict_references(samples: &[Sample]) -> HashMap<String, u64> {
+/// **The workload's own `strict_checksum` wins**, when it declares one: it is the
+/// answer to the work, established once and outliving any run, and the campaign
+/// already refused to record a sample that diverged from it.
+///
+/// Without one, the reference is whatever the first strict sample produced — which
+/// is all a campaign can establish on its own, and it is weaker than it looks: it
+/// says the backends agreed with each other, not that any of them was right. It is
+/// read out of the samples rather than recomputed, because `Runner::verify` aborted
+/// on the spot for any divergence, so the first is as good as the last.
+///
+/// Keyed by workload id all the same, because that is the key the samples carry and
+/// the renderers look up. A campaign has exactly one.
+/// See `METHODOLOGY.md#the-strict-mode-invariant`.
+fn strict_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
     let mut references = HashMap::new();
+    if let Some(declared) = workload.strict_checksum {
+        references.insert(workload.id.clone(), declared);
+    }
     for sample in samples {
         if sample.mode != FpMode::Strict {
             continue;
@@ -485,8 +495,7 @@ mod tests {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-09T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 4096,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 30,
             build_rounds: 5,
             warmup_rounds: 2,

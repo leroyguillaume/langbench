@@ -445,14 +445,14 @@ mod tests {
     use crate::analysis::{Options, analyze};
     use crate::machine::Machine;
     use crate::sample::{Campaign, Phase, Recording, Sample};
+    use crate::workload::Workload;
 
     fn campaign() -> Campaign {
         Campaign {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-11T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 4096,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 30,
             build_rounds: 5,
             warmup_rounds: 2,

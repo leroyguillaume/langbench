@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: python
 compiler: cython
 # Both, and this is the whole point of the row: Cython compiles the kernel to a

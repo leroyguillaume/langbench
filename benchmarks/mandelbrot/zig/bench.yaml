@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: zig
 # Zig's compiler is called `zig`. There is no second name to give it, and the
 # identity is the (language, compiler, interpreter) triple regardless -- so this

@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: js
 # Nothing is compiled ahead of the run. JavaScriptCore compiles during it, through
 # four tiers, and the hot loop ends up as machine code -- but never as a file, and

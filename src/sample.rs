@@ -2,8 +2,8 @@
 //!
 //! `samples.ndjson` is the **only** thing a campaign writes, and it is the only
 //! thing that cannot be recomputed. Every other artifact — the CSV, the report —
-//! is a rendering of these lines, produced after the fact by `langbench csv` and
-//! `langbench md`. Aggregates never replace the samples; a discarded sample is
+//! is a rendering of these lines, produced after the fact by `langbench report csv` and
+//! `langbench report md`. Aggregates never replace the samples; a discarded sample is
 //! gone forever. See `METHODOLOGY.md#sampling`.
 
 use std::fs::File;
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::machine::Machine;
 use crate::mode::FpMode;
+use crate::workload::Workload;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -189,9 +190,22 @@ impl Sample {
 pub struct Campaign {
     pub langbench_version: String,
     pub timestamp: String,
+    /// The workload this campaign measured — **the whole manifest, snapshotted**,
+    /// not its id.
+    ///
+    /// A campaign measures one workload, so the workload belongs here rather than on
+    /// every line: the samples carry its `id` as their key, and this is what that key
+    /// refers to.
+    ///
+    /// Snapshotted because `workload.yaml` is a file that will be edited: params get
+    /// retuned, a description gets rewritten, a reference checksum arrives. None of
+    /// that is retroactive. A campaign says what it *ran* — the params it was sized
+    /// with, the description that was true of it, the reference it was checked
+    /// against — and a reader a year later does not have to guess which revision of
+    /// a YAML file produced these numbers. The site, which only ever fetches the
+    /// samples, has no other way of knowing.
+    pub workload: Workload,
     pub cpu: usize,
-    pub grid_size: u32,
-    pub max_iter: u32,
     pub rounds: u32,
     pub build_rounds: u32,
     pub warmup_rounds: u32,
@@ -292,7 +306,7 @@ enum OwnedRecord {
 /// Everything one campaign recorded: its context, every measured invocation, and
 /// every backend it lost on the way.
 ///
-/// This is what `langbench csv` and `langbench md` consume. Both are pure
+/// This is what `langbench report csv` and `langbench report md` consume. Both are pure
 /// functions of this value, which is why the campaign never renders anything
 /// itself.
 #[derive(Debug)]
@@ -332,7 +346,7 @@ pub fn parse(raw: &str) -> Result<Recording> {
     let OwnedRecord::Header { machine, campaign } = parse_record(first, 1)? else {
         anyhow::bail!(
             "the campaign does not start with a header record; it was not written by \
-             `langbench run`",
+             `langbench workload run`",
         );
     };
 
@@ -621,8 +635,7 @@ mod tests {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-11T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 2048,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 10,
             build_rounds: 3,
             warmup_rounds: 1,
@@ -639,7 +652,7 @@ mod tests {
         ];
         let recording = round_trip(&campaign(), &samples).unwrap();
 
-        assert_eq!(recording.campaign.grid_size, 2048);
+        assert_eq!(recording.campaign.workload.id, "mandelbrot");
         assert_eq!(recording.campaign.march, "x86-64-v3");
         assert_eq!(recording.samples.len(), 2);
         assert_eq!(recording.samples[0].mode, FpMode::Strict);

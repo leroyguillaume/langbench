@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: scala
 compiler: native-image
 interpreter: ~

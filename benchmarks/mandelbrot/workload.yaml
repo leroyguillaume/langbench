@@ -1,0 +1,56 @@
+# What the work is. Every backend under `implementations` computes exactly this,
+# and in `strict` mode every one of them produces exactly `strict_checksum`.
+id: mandelbrot
+description: >-
+  Escape-time Mandelbrot over a square grid: for every pixel, iterate z = z^2 + c
+  until |z| > 2 or the iteration ceiling is reached, and sum the iteration counts.
+  The work is imbalanced by construction -- the pixels inside the set cost the full
+  ceiling, the ones outside bail out early -- so chunks are handed out dynamically
+  and a backend that cannot parallelise says so in the Cores column.
+# How the work is sized. The order is the order the kernels receive them:
+#   run <grid_size> <max_iter> <threads>
+# The thread count is not here: it is a property of the machine, resolved by the
+# harness and passed explicitly, never guessed by a kernel.
+params:
+  - name: grid_size
+    value: 2048
+  - name: max_iter
+    value: 1000
+# The answer, for the params above and for them alone. A 64-bit integer, and the
+# correctness gate of the whole project: in `strict` mode every compiler, every
+# language and every architecture produces this, bit for bit. A backend that
+# disagrees is not slow, it is wrong, and it is quarantined out of the campaign.
+strict_checksum: 1038538536
+# The backends that implement this workload. Declared, never walked for: a
+# directory is measured because this list says so, not because of where it sits.
+implementations:
+  - c-clang
+  - c-gcc
+  - cpp-clang
+  - cpp-gcc
+  - go-gc
+  - java-javac-graalvm
+  - java-javac-openj9
+  - java-javac-openjdk
+  - java-native-image
+  - js-bun
+  - js-deno
+  - js-nodejs
+  - julia
+  - kotlin-kotlinc-graalvm
+  - kotlin-kotlinc-openj9
+  - kotlin-kotlinc-openjdk
+  - kotlin-native-image
+  - python-cpython
+  - python-cython
+  - python-pypy
+  - rust-rustc
+  - scala-native-image
+  - scala-scala-native
+  - scala-scalac-graalvm
+  - scala-scalac-openj9
+  - scala-scalac-openjdk
+  - ts-bun
+  - ts-deno
+  - ts-nodejs
+  - zig

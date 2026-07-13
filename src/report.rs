@@ -319,6 +319,7 @@ mod tests {
     use crate::machine::Machine;
     use crate::mode::FpMode;
     use crate::sample::{Phase, Sample};
+    use crate::workload::Workload;
 
     fn implementations(data: &ReportData) -> Vec<&str> {
         data.workloads[0]
@@ -371,8 +372,7 @@ mod tests {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-09T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 4096,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 30,
             build_rounds: 5,
             warmup_rounds: 2,

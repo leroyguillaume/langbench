@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: js
 # Nothing is compiled ahead of the run. V8 compiles during it, exactly as under
 # js-nodejs: same engine, different runtime around it. That is the experiment.

@@ -3,7 +3,7 @@
 //! Deliberately sequential. Running two benchmarks concurrently would destroy
 //! the measurement, so there is no async here and no `tokio`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::time::Duration;
 
@@ -12,12 +12,13 @@ use chrono::Utc;
 use tracing::{error, info, warn};
 
 use crate::cli::{Architecture, RunArgs};
-use crate::discovery::{Implementation, discover};
+use crate::discovery::{Implementation, discover, workloads};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
 use crate::mode::FpMode;
 use crate::sample::{Campaign, Failure, Phase, Sample, SampleWriter, Stage};
 use crate::shutdown;
+use crate::workload::{self, Workload};
 
 /// One (implementation, FP mode) pair: the atom of the schedule.
 struct Unit {
@@ -32,11 +33,31 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         warn!("{warning}");
     }
 
+    // The workload as it will actually run: its declared params, with whatever the
+    // command line overrode. A campaign records *this*, never the file — the file
+    // will be edited, and these numbers will not change when it is.
+    let declared = workloads(&args.benchmarks_dir)?
+        .into_iter()
+        .find(|root| root.workload.id == args.workload)
+        .with_context(|| format!("no workload `{}`", args.workload))?
+        .workload;
+    let workload = declared.with_overrides(&workload::overrides(&args.params)?)?;
+
+    if workload.strict_checksum.is_none() && declared.strict_checksum.is_some() {
+        warn!(
+            workload = %workload.id,
+            "params were overridden, so the workload's declared strict checksum does not apply \
+             to this campaign — it is the answer to the declared work, not to this one. Strict \
+             mode is still enforced *within* the campaign: every backend must agree with the \
+             first one. Nothing pins that agreement to a value from outside it.",
+        );
+    }
+
     let implementations = discover(&args.benchmarks_dir, &args.workload)?;
     ensure!(
         !implementations.is_empty(),
-        "no implementation found under {}",
-        args.benchmarks_dir.display(),
+        "the `{}` workload declares no implementation that exists on disk",
+        workload.id,
     );
 
     let host = Architecture::current();
@@ -70,9 +91,8 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     let campaign = Campaign {
         langbench_version: env!("CARGO_PKG_VERSION").to_owned(),
         timestamp: Utc::now().to_rfc3339(),
+        workload: workload.clone(),
         cpu: args.cpu,
-        grid_size: args.grid_size,
-        max_iter: args.max_iter,
         rounds: args.rounds,
         build_rounds: args.build_rounds,
         warmup_rounds: args.warmup_rounds,
@@ -86,9 +106,11 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     let mut runner = Runner {
         engine,
         args: &args,
+        strict_checksum: workload.strict_checksum,
+        reference_is_declared: workload.strict_checksum.is_some(),
+        workload,
         writer,
         written: 0,
-        strict_checksums: HashMap::new(),
         quarantined: HashSet::new(),
         failures: Vec::new(),
     };
@@ -108,7 +130,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
                 samples = runner.written,
                 quarantined = runner.failures.len(),
                 path = %args.output.display(),
-                "campaign complete; render it with `langbench csv` or `langbench md`",
+                "campaign complete; render it with `langbench report csv` or `langbench report md`",
             );
             false
         }
@@ -121,7 +143,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
                 samples = runner.written,
                 path = %args.output.display(),
                 "campaign interrupted; the samples written so far are intact and \
-                 render with `langbench csv` or `langbench md`",
+                 render with `langbench report csv` or `langbench report md`",
             );
             true
         }
@@ -225,15 +247,24 @@ fn none_if_absent(value: Option<&str>) -> &str {
 struct Runner<'a, E: ContainerEngine> {
     engine: &'a E,
     args: &'a RunArgs,
+    /// The workload as it ran: its params are the kernels' `argv`, and its
+    /// reference is what `strict` is checked against.
+    workload: Workload,
     writer: SampleWriter,
     /// Samples are streamed to disk, never accumulated: the harness holds a
     /// count, and whoever renders reads them back.
     written: usize,
-    /// The value every strict-mode run of a workload must agree on, bit for
-    /// bit, keyed by workload. Per workload and not per campaign: the checksum
-    /// is a property of `(workload, grid size, max_iter)`, so a shared reference
-    /// would abort the campaign on the first strict run of the second workload.
-    strict_checksums: HashMap<String, u64>,
+    /// The value every strict-mode run must agree on, bit for bit.
+    ///
+    /// Seeded from the workload's declared `strict_checksum` when it has one — and
+    /// then the *first* backend is checked against it, like every other. Without one,
+    /// the first strict sample becomes the reference and the campaign can only
+    /// establish that its backends agree with each other, which a campaign where they
+    /// are all wrong the same way passes.
+    strict_checksum: Option<u64>,
+    /// Whether that reference came from the workload rather than from a run. It
+    /// changes what a divergence *means*, so it changes what the error says.
+    reference_is_declared: bool,
     /// The images of the units that failed, by [`Unit::image`] — the one token
     /// that is unique per `(implementation, mode)`.
     ///
@@ -458,15 +489,22 @@ impl<E: ContainerEngine> Runner<'_, E> {
         })
     }
 
+    /// What the container is run with: the phase, then the workload's params in
+    /// declaration order, then the thread count.
+    ///
+    /// The params come from the workload and not from a flag, because how the work
+    /// is sized is a property of the work — a grid and an iteration ceiling are
+    /// Mandelbrot's business, and mean nothing to a workload that parses JSON. The
+    /// thread count is the harness's: it is a property of the machine, resolved here
+    /// and passed explicitly, because a kernel that auto-detects would be measuring
+    /// its runtime's opinion of a cgroup quota.
     fn container_args(&self, phase: Phase) -> Vec<String> {
         match phase {
             Phase::Build => vec!["build".to_owned(), self.args.cpu.to_string()],
-            Phase::Run => vec![
-                "run".to_owned(),
-                self.args.grid_size.to_string(),
-                self.args.max_iter.to_string(),
-                self.args.cpu.to_string(),
-            ],
+            Phase::Run => std::iter::once("run".to_owned())
+                .chain(self.workload.argv())
+                .chain(std::iter::once(self.args.cpu.to_string()))
+                .collect(),
         }
     }
 
@@ -478,20 +516,32 @@ impl<E: ContainerEngine> Runner<'_, E> {
         let Some(checksum) = sample.checksum else {
             return Ok(());
         };
-        match self.strict_checksums.get(&sample.workload) {
+        match self.strict_checksum {
             None => {
-                self.strict_checksums
-                    .insert(sample.workload.clone(), checksum);
+                self.strict_checksum = Some(checksum);
                 Ok(())
             }
-            Some(&reference) if reference == checksum => Ok(()),
-            Some(&reference) => bail!(
-                "strict-mode checksum mismatch on {}: {} produced {checksum}, the reference is \
-                 {reference}. In strict mode every compiler, language and architecture must agree bit \
-                 for bit; a divergence is a bug in the code or the flags, never a rounding \
-                 difference.",
+            Some(reference) if reference == checksum => Ok(()),
+            Some(reference) if self.reference_is_declared => bail!(
+                "strict-mode checksum mismatch on {}: {} produced {checksum}, but the `{}` \
+                 workload declares the answer is {reference}. This backend is wrong — not slow, \
+                 wrong — and a wrong run never enters the statistics. In strict mode every \
+                 compiler, language and architecture agrees bit for bit; a divergence is a bug in \
+                 the code or the flags, never a rounding difference.",
                 sample.workload,
                 sample.backend(),
+                self.workload.id,
+            ),
+            Some(reference) => bail!(
+                "strict-mode checksum mismatch on {}: {} produced {checksum}, and the backends \
+                 before it produced {reference}. In strict mode every compiler, language and \
+                 architecture must agree bit for bit; a divergence is a bug in the code or the \
+                 flags, never a rounding difference. Note that `{}` declares no `strict_checksum`, \
+                 so the reference here is simply whichever backend ran first — declare one and the \
+                 answer stops depending on the schedule.",
+                sample.workload,
+                sample.backend(),
+                self.workload.id,
             ),
         }
     }
@@ -522,8 +572,11 @@ mod tests {
         }
     }
 
+    /// The workload every fixture runs, unless it says otherwise.
+    const WORKLOAD: &str = "mandelbrot";
+
     fn benchmarks(root: &Path, names: &[&str]) {
-        benchmarks_for(root, "mandelbrot", names);
+        benchmarks_for(root, WORKLOAD, names);
     }
 
     /// Backends are spelled as their slug — `c-gcc` — and written out as the
@@ -535,7 +588,7 @@ mod tests {
     }
 
     fn benchmark_declaring(root: &Path, name: &str, modes: &str) {
-        benchmark_declaring_for(root, "mandelbrot", name, modes);
+        benchmark_declaring_for(root, WORKLOAD, name, modes);
     }
 
     /// `modes` is `all`, or the modes a manifest would list.
@@ -555,8 +608,7 @@ mod tests {
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
             format!(
-                "workload: {workload}\n\
-                 language: {language}\n\
+                "language: {language}\n\
                  compiler: {compiler}\n\
                  source: {SOURCE}\n\
                  modes: {modes}\n\
@@ -564,6 +616,45 @@ mod tests {
             ),
         )
         .unwrap();
+
+        declare_workload(root, workload, None);
+    }
+
+    /// (Re)write the workload manifest, declaring every implementation that exists
+    /// beside it.
+    ///
+    /// The fixture is allowed to look at the directory; the harness is not. That is
+    /// the whole point of the change these tests cover — a campaign reads the list a
+    /// workload declares, so the fixture has to *build* that list, and it rebuilds it
+    /// each time a benchmark is added so that tests can compose them freely.
+    fn declare_workload(root: &Path, workload: &str, strict_checksum: Option<u64>) {
+        let dir = root.join(workload);
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.join(crate::discovery::MANIFEST).is_file())
+            .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
+            .collect();
+        names.sort();
+
+        let mut yaml = format!(
+            "id: {workload}\n\
+             description: {workload}, as the fixture declares it.\n\
+             params:\n\
+             \x20 - name: grid_size\n\
+             \x20   value: 64\n\
+             \x20 - name: max_iter\n\
+             \x20   value: 10\n",
+        );
+        if let Some(checksum) = strict_checksum {
+            yaml.push_str(&format!("strict_checksum: {checksum}\n"));
+        }
+        yaml.push_str("implementations:\n");
+        for name in names {
+            yaml.push_str(&format!("  - {name}\n"));
+        }
+        std::fs::write(dir.join(crate::workload::MANIFEST), yaml).unwrap();
     }
 
     /// The kernel every fixture declares, and its size on disk.
@@ -606,13 +697,12 @@ mod tests {
 
     fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
         RunArgs {
-            workload: vec![],
+            workload: WORKLOAD.to_owned(),
+            params: Vec::new(),
             mode: modes,
             cpu: 4,
             output: output.join("samples.ndjson"),
             benchmarks_dir: benchmarks_dir.to_path_buf(),
-            grid_size: 64,
-            max_iter: 10,
             rounds: 2,
             build_rounds: 1,
             warmup_rounds: 1,
@@ -624,15 +714,19 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_benchmark_tree_is_an_error() {
+    fn a_workload_that_declares_no_implementation_is_an_error() {
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
-        create_dir_all(root.path().join("mandelbrot")).unwrap();
+        create_dir_all(root.path().join(WORKLOAD)).unwrap();
+        declare_workload(root.path(), WORKLOAD, None);
 
         let engine = MockContainerEngine::new();
         let err =
             execute(args(root.path(), out.path(), vec![FpMode::Strict]), &engine).unwrap_err();
-        assert!(err.to_string().contains("no implementation found"));
+        assert!(
+            err.to_string().contains("declares no implementation"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -899,8 +993,7 @@ mod tests {
         std::fs::write(
             dir.join(crate::discovery::MANIFEST),
             format!(
-                "workload: mandelbrot\n\
-                 language: kotlin\n\
+                "language: kotlin\n\
                  compiler: kotlin-native\n\
                  source: {SOURCE}\n\
                  modes: [strict]\n\
@@ -911,7 +1004,7 @@ mod tests {
         .unwrap();
         benchmarks(root.path(), &["c-gcc"]);
 
-        let implementations = discover(root.path(), &[]).unwrap();
+        let implementations = discover(root.path(), WORKLOAD).unwrap();
         assert_eq!(implementations.len(), 2);
 
         // On x86-64 both are scheduled; on AArch64 only the C one survives.

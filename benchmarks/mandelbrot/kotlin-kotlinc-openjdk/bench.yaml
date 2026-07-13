@@ -1,4 +1,3 @@
-workload: mandelbrot
 language: kotlin
 # Both, as for every JVM row: kotlinc compiles the source to bytecode ahead of the
 # run, and HotSpot executes it -- interpreting first, then JIT-compiling the hot

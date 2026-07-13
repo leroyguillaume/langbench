@@ -59,8 +59,23 @@ export function Results({ columns }: ResultsProps) {
   // claim, and a chart that puts them in one bar group invites exactly the
   // comparison `METHODOLOGY.md#the-architecture-rule` forbids. The reader picks an architecture; the
   // site never adds one to another.
+  // A campaign is one machine measuring one workload, so it takes **both** to name
+  // one. Keying on the architecture alone was enough when Mandelbrot was the only
+  // work there was; with two workloads on one architecture it would show whichever
+  // campaign happened to be published first, under the other one's name.
+  //
+  // The fallbacks widen one field at a time — the workload on this architecture, then
+  // anything at all — so a stale link keeps as much of what it asked for as still
+  // exists, rather than falling all the way back to the first campaign in the list.
   const loaded =
-    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ?? campaigns[0];
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === state.architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    ) ??
+    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
+    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
+    campaigns[0];
   if (loaded === undefined) {
     return (
       <main className="page">
@@ -246,8 +261,10 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         filters={state.filters}
         onFilters={(filters) => setState({ ...state, filters })}
         rows={aggregates}
-        workloads={analysis.workloads.map((entry) => entry.workload)}
-        architectures={campaigns.map((entry) => entry.analysis.architecture)}
+        // Every workload this build published, not the one campaign on screen: the
+        // selector's job is to offer the others.
+        workloads={[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))]}
+        architectures={[...new Set(campaigns.map((entry) => entry.analysis.architecture))]}
         architecture={analysis.architecture}
       />
 
@@ -403,10 +420,15 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
               <dd>{field.value}</dd>
             </div>
           ))}
-          <dt>grid</dt>
-          <dd>
-            {campaign.grid_size} × {campaign.grid_size}, max_iter {campaign.max_iter}
-          </dd>
+          {/* How the work was sized, as the workload declared it — whatever its knobs
+              happen to be called. A grid and an iteration ceiling are Mandelbrot's
+              business; the site knows only that a workload has params. */}
+          {campaign.workload.params.map((param) => (
+            <div key={param.name} style={{ display: "contents" }}>
+              <dt>{param.name}</dt>
+              <dd>{String(param.value)}</dd>
+            </div>
+          ))}
           <dt>-march</dt>
           <dd>{campaign.march === "" ? "none" : campaign.march}</dd>
           <dt>threads</dt>
