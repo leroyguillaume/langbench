@@ -1,7 +1,7 @@
 // One campaign, read out: the tiles, the charts, the table, and what it lost.
 //
 // The head-to-head used to be a card at the bottom of this page. It has a page of
-// its own now, and this one links to it carrying the ISA and the algorithm — never
+// its own now, and this one links to it carrying the architecture and the workload — never
 // the filters. A pair is not a table, and a reader who narrowed this table to one
 // language has not thereby declined to compare it with another.
 
@@ -54,19 +54,35 @@ export function Results({ columns }: ResultsProps) {
     return <p className="status">Reading the campaigns…</p>;
   }
 
-  // One ISA at a time, always. Two campaigns from two architectures are two
+  // One architecture at a time, always. Two campaigns from two architectures are two
   // experiments: an x86-64 millisecond and an aarch64 millisecond are not the same
   // claim, and a chart that puts them in one bar group invites exactly the
-  // comparison `METHODOLOGY.md#the-isa-rule` forbids. The reader picks an ISA; the
+  // comparison `METHODOLOGY.md#the-architecture-rule` forbids. The reader picks an architecture; the
   // site never adds one to another.
-  const loaded = campaigns.find((entry) => entry.analysis.arch === state.arch) ?? campaigns[0];
+  // A campaign is one machine measuring one workload, so it takes **both** to name
+  // one. Keying on the architecture alone was enough when Mandelbrot was the only
+  // work there was; with two workloads on one architecture it would show whichever
+  // campaign happened to be published first, under the other one's name.
+  //
+  // The fallbacks widen one field at a time — the workload on this architecture, then
+  // anything at all — so a stale link keeps as much of what it asked for as still
+  // exists, rather than falling all the way back to the first campaign in the list.
+  const loaded =
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === state.architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    ) ??
+    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
+    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
+    campaigns[0];
   if (loaded === undefined) {
     return (
       <main className="page">
         <div className="warnings">
           <h2>This build publishes no campaign</h2>
           <p>
-            No <code>samples/&lt;arch&gt;.ndjson</code> was found when the site was built.
+            No <code>samples/&lt;architecture&gt;.ndjson</code> was found when the site was built.
           </p>
         </div>
       </main>
@@ -99,8 +115,9 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
   const { analysis } = loaded;
   const { campaign } = analysis;
 
-  const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
-  const aggregates = useMemo(() => algo?.aggregates ?? [], [algo]);
+  const workload =
+    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
+  const aggregates = useMemo(() => workload?.aggregates ?? [], [workload]);
 
   // What the filters left standing, in the order the harness ranked it: fastest
   // first, on the statistic the report headlines. This is what the charts draw.
@@ -124,10 +141,10 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
   const failures = useMemo(
     () =>
       filterRows(
-        analysis.failures.filter((failure) => failure.algo === algo?.algo),
+        analysis.failures.filter((failure) => failure.workload === workload?.workload),
         state.filters,
       ),
-    [analysis.failures, algo, state.filters],
+    [analysis.failures, workload, state.filters],
   );
 
   const onSort = (key: SortKey) => {
@@ -185,8 +202,8 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .map((row) => chartRow(row, [row.run_peak_bytes?.min ?? null]));
 
   const scope = {
-    arch: analysis.arch,
-    algo: algo?.algo ?? null,
+    architecture: analysis.architecture,
+    workload: workload?.workload ?? null,
     includeWarmup: state.includeWarmup,
   };
 
@@ -195,7 +212,7 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
       <header className="masthead">
         <h1>langbench</h1>
         <p>
-          Compiler and runtime backends, measured on <strong>{analysis.arch}</strong>
+          Compiler and runtime backends, measured on <strong>{analysis.architecture}</strong>
           {analysis.hostname !== null && ` (${analysis.hostname})`} on{" "}
           {new Date(campaign.timestamp).toLocaleDateString()}. Every number below is derived from
           the raw samples by the harness itself — the site computes no statistic of its own.
@@ -204,12 +221,15 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
 
       {campaigns.length > 1 && (
         <p className="isa-note">
-          This build publishes {campaigns.length} campaigns, one per ISA, and never shows them
-          together: an <strong>absolute timing does not cross an ISA</strong>. A millisecond here
-          and a millisecond on{" "}
-          {campaigns.find((entry) => entry.analysis.arch !== analysis.arch)?.analysis.arch} are not
-          the same claim. Compare implementations <em>within</em> one architecture — the ratio is
-          what travels.
+          This build publishes {campaigns.length} campaigns, one per architecture, and never shows
+          them together: an <strong>absolute timing does not cross an architecture</strong>. A
+          millisecond here and a millisecond on{" "}
+          {
+            campaigns.find((entry) => entry.analysis.architecture !== analysis.architecture)
+              ?.analysis.architecture
+          }{" "}
+          are not the same claim. Compare implementations <em>within</em> one architecture — the
+          ratio is what travels.
         </p>
       )}
 
@@ -233,17 +253,19 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         onScope={(next) =>
           setState({
             ...state,
-            arch: next.arch,
-            algo: next.algo,
+            architecture: next.architecture,
+            workload: next.workload,
             includeWarmup: next.includeWarmup,
           })
         }
         filters={state.filters}
         onFilters={(filters) => setState({ ...state, filters })}
         rows={aggregates}
-        algos={analysis.algos.map((entry) => entry.algo)}
-        arches={campaigns.map((entry) => entry.analysis.arch)}
-        arch={analysis.arch}
+        // Every workload this build published, not the one campaign on screen: the
+        // selector's job is to offer the others.
+        workloads={[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))]}
+        architectures={[...new Set(campaigns.map((entry) => entry.analysis.architecture))]}
+        architecture={analysis.architecture}
       />
 
       {/* Not in the filter bar, deliberately: a filter changes which rows you are
@@ -357,7 +379,7 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         </p>
         <div className="impls">
           {analysis.backends
-            .filter((entry) => entry.algo === algo?.algo)
+            .filter((entry) => entry.workload === workload?.workload)
             .map((entry) => (
               // The anchor a table row links to. Its `id` is the triple, like every
               // other thing on this site a reader can point at.
@@ -398,10 +420,15 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
               <dd>{field.value}</dd>
             </div>
           ))}
-          <dt>grid</dt>
-          <dd>
-            {campaign.grid_size} × {campaign.grid_size}, max_iter {campaign.max_iter}
-          </dd>
+          {/* How the work was sized, as the workload declared it — whatever its knobs
+              happen to be called. A grid and an iteration ceiling are Mandelbrot's
+              business; the site knows only that a workload has params. */}
+          {campaign.workload.params.map((param) => (
+            <div key={param.name} style={{ display: "contents" }}>
+              <dt>{param.name}</dt>
+              <dd>{String(param.value)}</dd>
+            </div>
+          ))}
           <dt>-march</dt>
           <dd>{campaign.march === "" ? "none" : campaign.march}</dd>
           <dt>threads</dt>
@@ -411,7 +438,7 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
             {campaign.rounds} run / {campaign.build_rounds} build / {campaign.warmup_rounds} warmup
           </dd>
           <dt>strict checksum</dt>
-          <dd>{algo?.strict_checksum ?? "n/a"}</dd>
+          <dd>{workload?.strict_checksum ?? "n/a"}</dd>
           <dt>langbench</dt>
           <dd>{campaign.langbench_version}</dd>
         </dl>
@@ -419,8 +446,8 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
 
       <p className="footnote">
         The samples this page is built from are{" "}
-        <a href={`${import.meta.env.BASE_URL}data/${analysis.arch}.ndjson`}>
-          samples/{analysis.arch}.ndjson
+        <a href={`${import.meta.env.BASE_URL}data/${analysis.architecture}.ndjson`}>
+          samples/{analysis.architecture}.ndjson
         </a>{" "}
         — this campaign's only artefact. Everything above is recomputed from it, in Rust, in your
         browser.

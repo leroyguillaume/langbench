@@ -1,4 +1,3 @@
-algo: mandelbrot
 language: ts
 # Nothing is compiled ahead of the run: Bun's transpiler strips the types on load
 # and hands the JavaScript to JavaScriptCore. No tsc, no emit, no type check.

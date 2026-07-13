@@ -10,8 +10,8 @@ use crate::mode::FpMode;
 
 /// A CPU architecture a backend can be built and measured on.
 ///
-/// The two this project supports, because they are the two the ISA rule is
-/// written for. See `METHODOLOGY.md#the-isa-rule`.
+/// The two this project supports, because they are the two the architecture rule is
+/// written for. See `METHODOLOGY.md#the-architecture-rule`.
 ///
 /// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
 /// publishes no `linux-aarch64` host compiler, so a backend using it cannot be
@@ -25,14 +25,14 @@ use crate::mode::FpMode;
 )]
 #[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
-pub enum Arch {
+pub enum Architecture {
     /// 64-bit x86. `-march=x86-64-v3` and friends.
     X86_64,
     /// 64-bit ARM. `-march=armv8.2-a` and friends.
     Aarch64,
 }
 
-impl Arch {
+impl Architecture {
     pub const ALL: [Self; 2] = [Self::X86_64, Self::Aarch64];
 
     pub fn as_str(self) -> &'static str {
@@ -44,7 +44,9 @@ impl Arch {
 
     /// Parse an architecture as a `bench.yaml` spells it.
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|arch| arch.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|architecture| architecture.as_str() == value)
     }
 
     /// The architecture the harness is running on — which is the architecture the
@@ -52,14 +54,14 @@ impl Arch {
     /// Cross-building would mean measuring under emulation, and this project does
     /// not do that.
     ///
-    /// `None` on anything else: the ISA rule only knows these two, and a campaign
+    /// `None` on anything else: the architecture rule only knows these two, and a campaign
     /// on a third has no baseline to pin.
     pub fn current() -> Option<Self> {
         Self::parse(std::env::consts::ARCH)
     }
 }
 
-impl fmt::Display for Arch {
+impl fmt::Display for Architecture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -78,32 +80,39 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// Three resources, and the verbs that act on them.
+///
+/// `workload` and `implementation` read the tree — what could be measured.
+/// `report` reads a campaign — what was. Neither family can be folded into the
+/// other: a workload does not render, and a campaign is not on disk until one has
+/// run. The two that are left over, `validate` and `machine`, belong to no resource
+/// because they are about *everything* — every manifest at once, and the host under
+/// all of them.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Build every selected implementation and measure it.
+    /// The work: list the workloads, or run a campaign on one.
+    #[command(subcommand)]
+    Workload(WorkloadCommand),
+
+    /// The backends that do the work, for a given workload.
+    #[command(subcommand, alias = "impl")]
+    Implementation(ImplementationCommand),
+
+    /// Render a recorded campaign. Never measures anything.
+    #[command(subcommand)]
+    Report(ReportCommand),
+
+    /// Check every manifest on disk, and report all of them at once.
     ///
-    /// Writes `samples.ndjson` and nothing else. Render it with `csv` or `md`.
-    Run(RunArgs),
-
-    /// Render a campaign's samples as CSV, for a spreadsheet or a dataframe.
-    Csv(CsvArgs),
-
-    /// Render a campaign's samples as a Markdown report.
-    Md(MarkdownArgs),
-
-    /// Check every `bench.yaml` on disk, and report all of them at once.
+    /// Every failure a campaign would hit at discovery time — a misspelled key, an
+    /// unknown FP mode, a backend that neither compiles nor interprets, two
+    /// manifests declaring the same identity, a `bench.yaml` no workload lists —
+    /// without building anything.
     ///
-    /// Every failure a campaign would hit at discovery time — a misspelled key,
-    /// an unknown FP mode, a backend that neither compiles nor interprets, two
-    /// manifests declaring the same identity — without building anything.
+    /// It takes the whole tree, and not the files that changed: two backends collide
+    /// with *each other*, and an undeclared manifest can only be seen by someone
+    /// holding both the tree and the declarations.
     Validate(ValidateArgs),
-
-    /// Write the JSON Schema of a `bench.yaml`.
-    ///
-    /// Generated from the struct the harness deserializes, so it cannot drift
-    /// from what the campaign actually accepts. Point an editor at it and get
-    /// completion and validation as you type a manifest.
-    Jsonschema(JsonSchemaArgs),
 
     /// Describe this machine, and why it may be a poor benchmark target.
     ///
@@ -112,21 +121,87 @@ pub enum Command {
     Machine,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum WorkloadCommand {
+    /// Every workload declared on disk: its id, what it is, how it is sized.
+    List(ListArgs),
+
+    /// Build every implementation of a workload and measure it.
+    ///
+    /// Writes `samples.ndjson` and nothing else — one machine, one workload, one
+    /// campaign. Render it with `langbench report`.
+    Run(Box<RunArgs>),
+
+    /// Write the JSON Schema of a `workload.yaml`.
+    Jsonschema(JsonSchemaArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ImplementationCommand {
+    /// Every implementation a workload declares, and what each one is.
+    List(ImplementationListArgs),
+
+    /// Write the JSON Schema of a `bench.yaml`.
+    ///
+    /// Generated from the struct the harness deserializes, so it cannot drift
+    /// from what the campaign actually accepts. Point an editor at it and get
+    /// completion and validation as you type a manifest.
+    Jsonschema(JsonSchemaArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ReportCommand {
+    /// Render a campaign's samples as CSV, for a spreadsheet or a dataframe.
+    Csv(CsvArgs),
+
+    /// Render a campaign's samples as a Markdown report.
+    Md(MarkdownArgs),
+}
+
+/// A listing is read by a person *and* by a script. `--json` because a listing that
+/// is not parsable ends up re-parsed with `awk`, and then the format is load-bearing
+/// without anybody having decided it was.
+#[derive(Args, Debug)]
+pub struct ListArgs {
+    /// Root of the tree to walk for `workload.yaml` manifests.
+    #[arg(long, env = "BENCHMARKS_DIR", default_value_os_t = PathBuf::from("benchmarks"))]
+    pub benchmarks_dir: PathBuf,
+
+    /// Emit JSON rather than a table.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ImplementationListArgs {
+    /// The workload whose implementations to list.
+    #[arg(value_name = "WORKLOAD", env = "WORKLOAD")]
+    pub workload: String,
+
+    #[command(flatten)]
+    pub list: ListArgs,
+}
+
 /// The one file a campaign writes, and the one file a rendering reads.
 /// `SAMPLES_OUTPUT` names it on both sides, so a `run` and the `md` that follows
 /// agree without being told twice.
 pub const DEFAULT_SAMPLES_OUTPUT: &str = "samples.ndjson";
 
-/// Where `langbench csv` writes its table.
+/// Where `langbench report csv` writes its table.
 pub const DEFAULT_CSV_OUTPUT: &str = "samples.csv";
 
-/// Where `langbench md` writes its report.
+/// Where `langbench report md` writes its report.
 pub const DEFAULT_MD_OUTPUT: &str = "report.md";
 
-/// Where `langbench jsonschema` writes the manifest schema. At the repo root,
-/// because that is where an editor's `yaml.schemas` mapping looks for it, and a
-/// pre-commit hook keeps it honest.
-pub const DEFAULT_SCHEMA_OUTPUT: &str = "bench.schema.json";
+/// Where the two schemas are written. At the repo root, because that is where an
+/// editor's `yaml.schemas` mapping looks for them, and a pre-commit hook keeps them
+/// honest.
+///
+/// One per manifest, because there are two manifests: a workload declares the work,
+/// an implementation declares a backend that does it. Each resource writes its own —
+/// `langbench workload jsonschema`, `langbench implementation jsonschema`.
+pub const DEFAULT_BENCH_SCHEMA_OUTPUT: &str = "bench.schema.json";
+pub const DEFAULT_WORKLOAD_SCHEMA_OUTPUT: &str = "workload.schema.json";
 
 #[derive(Args, Debug)]
 pub struct ValidateArgs {
@@ -142,11 +217,23 @@ pub struct ValidateArgs {
     pub paths: Vec<PathBuf>,
 }
 
+/// Where a schema is written. The default differs per resource, so it is not here:
+/// each subcommand fills it in.
 #[derive(Args, Debug)]
 pub struct JsonSchemaArgs {
     /// Path of the schema to write. Missing parent directories are created.
-    #[arg(long, short, env = "SCHEMA_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_SCHEMA_OUTPUT))]
-    pub output: PathBuf,
+    #[arg(long, short, env = "SCHEMA_OUTPUT")]
+    pub output: Option<PathBuf>,
+}
+
+impl JsonSchemaArgs {
+    /// The path this schema is written to, defaulting to the one the pre-commit
+    /// hook and an editor's `yaml.schemas` both expect.
+    pub fn output_or(&self, default: &str) -> PathBuf {
+        self.output
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(default))
+    }
 }
 
 /// Reading a campaign back. Rendering is never part of measuring: the samples
@@ -195,9 +282,29 @@ pub struct MarkdownArgs {
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
-    /// Algorithms to measure. Defaults to every algorithm discovered on disk.
-    #[arg(long, env = "ALGO", value_delimiter = ',')]
-    pub algo: Vec<String>,
+    /// The workload to measure, by the `id` its `workload.yaml` declares.
+    ///
+    /// Exactly one, and required. A campaign is one machine measuring one workload:
+    /// its header snapshots that workload, its samples are all of it, and its
+    /// reference checksum is the answer to *that* work. Two workloads in one file
+    /// would be two experiments pretending to be one.
+    #[arg(value_name = "WORKLOAD", env = "WORKLOAD")]
+    pub workload: String,
+
+    /// Override a param the workload declares: `--param grid_size=256`. Repeatable.
+    ///
+    /// How the work is sized belongs to the workload, not to the harness — a grid
+    /// and an iteration ceiling mean nothing to a workload that parses JSON. This
+    /// is the escape hatch for iterating: a full-size campaign waits on the slowest
+    /// backend for an hour, and that is a poor way to find out the Dockerfile has a
+    /// typo.
+    ///
+    /// A param the workload never declared is an error. Changing any param drops the
+    /// workload's declared `strict_checksum` — it is the answer to the declared
+    /// work, not to this one — and the campaign says so, then falls back to checking
+    /// that its backends agree with each other.
+    #[arg(long = "param", value_name = "NAME=VALUE")]
+    pub params: Vec<String>,
 
     /// Floating-point modes to build and measure.
     #[arg(long, env = "FP_MODE", value_delimiter = ',', default_values_t = FpMode::ALL)]
@@ -216,22 +323,9 @@ pub struct RunArgs {
     #[arg(long, short, env = "SAMPLES_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_SAMPLES_OUTPUT))]
     pub output: PathBuf,
 
-    /// Root of the tree to walk for `bench.yaml` manifests.
+    /// Root of the tree to walk for `workload.yaml` manifests.
     #[arg(long, env = "BENCHMARKS_DIR", default_value_os_t = PathBuf::from("benchmarks"))]
     pub benchmarks_dir: PathBuf,
-
-    /// Side of the N x N grid.
-    ///
-    /// The default is sized for iteration speed, not for a final campaign: the
-    /// work scales as `grid_size^2 * max_iter`, and the slowest backend
-    /// (CPython) is what a campaign actually waits on. Raise it to `4096` when
-    /// publishing numbers.
-    #[arg(long, env = "GRID_SIZE", default_value_t = 2048)]
-    pub grid_size: u32,
-
-    /// Iteration ceiling before a pixel is declared inside the set.
-    #[arg(long, env = "MAX_ITER", default_value_t = 1000)]
-    pub max_iter: u32,
 
     /// Measured rounds of the run phase.
     ///
@@ -249,7 +343,7 @@ pub struct RunArgs {
     #[arg(long, env = "WARMUP_ROUNDS", default_value_t = 1)]
     pub warmup_rounds: u32,
 
-    /// ISA baseline passed to the compilers as `-march`. Never `native`.
+    /// architecture baseline passed to the compilers as `-march`. Never `native`.
     #[arg(long, env = "MARCH", default_value_t = default_march(), value_parser = parse_march)]
     pub march: String,
 
@@ -288,7 +382,7 @@ fn default_cpu() -> usize {
     available_parallelism().map(|n| n.get()).unwrap_or(1)
 }
 
-/// A pinned ISA baseline per architecture. Empty means "pass no `-march`".
+/// A pinned architecture baseline per architecture. Empty means "pass no `-march`".
 fn default_march() -> String {
     match std::env::consts::ARCH {
         "x86_64" => "x86-64-v3",
@@ -302,7 +396,7 @@ fn parse_march(value: &str) -> Result<String, String> {
     if value.eq_ignore_ascii_case("native") {
         return Err(
             "`-march=native` is forbidden: the CPU model varies between \
-             runs and the ISA baseline would vary with it. Pin an explicit \
+             runs and the architecture baseline would vary with it. Pin an explicit \
              baseline, e.g. `x86-64-v3`."
                 .to_owned(),
         );

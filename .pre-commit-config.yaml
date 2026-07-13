@@ -66,15 +66,25 @@ repos:
       # running them in parallel with everything else. A hook checks what is cheap
       # to check and expensive to get wrong -- formatting, lints, generated files.
 
-      # The schema is generated, never edited. This hook rewrites it in place, so
-      # pre-commit fails the commit exactly when the checked-in copy had drifted
+      # The schemas are generated, never edited. These hooks rewrite them in place,
+      # so pre-commit fails the commit exactly when a checked-in copy had drifted
       # from the struct the harness parses -- and leaves the corrected file in the
       # working tree, ready to stage.
+      #
+      # Two manifests, two schemas: a workload declares the work, an implementation
+      # declares a backend that does it.
       - id: bench-schema
         name: bench.schema.json is up to date
-        entry: cargo run --quiet -- jsonschema
+        entry: cargo run --quiet -- implementation jsonschema
         language: system
         files: ^(src/discovery\.rs|src/cli\.rs|bench\.schema\.json)$
+        pass_filenames: false
+
+      - id: workload-schema
+        name: workload.schema.json is up to date
+        entry: cargo run --quiet -- workload jsonschema
+        language: system
+        files: ^(src/workload\.rs|workload\.schema\.json)$
         pass_filenames: false
 
       # Every failure a campaign would hit at discovery time, without building
@@ -83,13 +93,14 @@ repos:
       #
       # `pass_filenames: false` on purpose: the hook only *runs* when a manifest
       # moved (`files:` below), but it then checks the whole tree. Handing it the
-      # changed files alone would blind the duplicate-identity rule, which needs
-      # to see both halves of a collision -- and the second half never changed.
+      # changed files alone would blind two rules at once: the duplicate-identity
+      # one, which needs both halves of a collision, and the undeclared-manifest
+      # one, which needs the tree *and* every workload's list of what it claims.
       - id: bench-validate
-        name: validate bench.yaml manifests
+        name: validate the workload and implementation manifests
         entry: cargo run --quiet -- validate
         language: system
-        files: (^|/)bench\.yaml$
+        files: (^|/)(bench|workload)\.yaml$
         pass_filenames: false
 
       # Biome -- formatter and linter, in place of ESLint and Prettier. Run from

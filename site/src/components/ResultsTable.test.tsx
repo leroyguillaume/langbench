@@ -31,7 +31,7 @@ function row(
   const interpreter = triple.interpreter ?? null;
   const slug = [triple.language, compiler, interpreter].filter(Boolean).join("-");
   return {
-    algo: "mandelbrot",
+    workload: "mandelbrot",
     backend: slug,
     backend_id: `mandelbrot-${slug}`,
     language: triple.language,

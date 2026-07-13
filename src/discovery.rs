@@ -5,7 +5,7 @@
 //! name, and nothing is read back out of a built image. Move a directory, rename
 //! it, nest it three levels deeper — the campaign is unchanged.
 //!
-//! An implementation is identified by *what it is* — the algorithm it computes,
+//! An implementation is identified by *what it is* — the workload it computes,
 //! and the (language, compiler, interpreter) triple that turns it into
 //! instructions. Two directories declaring the same triple are the same
 //! implementation declared twice, and that is an error.
@@ -18,11 +18,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
-use crate::cli::Arch;
+use crate::cli::Architecture;
 use crate::mode::FpMode;
 use crate::sample::backend_slug;
+use crate::workload::{self, Workload};
 
 /// The file that declares an implementation. Its presence is the discovery
 /// criterion: no manifest, no benchmark.
@@ -38,12 +39,9 @@ const ALL_MODES: &str = "all";
 /// because the numbers still come out — they are just wrong about what produced
 /// them.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "langbench benchmark manifest")]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[schemars(title = "langbench benchmark manifest", rename_all = "kebab-case")]
 struct Manifest {
-    /// The algorithm this implementation computes. Implementations of the same
-    /// algorithm are comparable; implementations of different ones are not.
-    algo: String,
     /// The language the kernel is written in.
     language: String,
     /// The compiler, when something is compiled ahead of the run.
@@ -73,7 +71,7 @@ struct Manifest {
     /// other architecture skips the row loudly instead of failing at `docker
     /// build`.
     #[serde(default)]
-    arch: Arches,
+    architectures: Architectures,
     /// What this backend is, in one paragraph. It is printed beside its rows.
     description: String,
     /// Free-form caveats: what a reader needs to know before quoting this row.
@@ -110,22 +108,22 @@ enum Modes {
     List(#[schemars(with = "Vec<FpMode>")] Vec<String>),
 }
 
-/// `arch: all`, or `arch: [x86_64]`.
+/// `architectures: all`, or `architectures: [x86_64]`.
 ///
 /// The same shape as `Modes`, and for the same reason: the list holds *strings*
 /// so that a typo can be reported as the typo it is, while the schema is told the
-/// list really holds `Arch`es, so an editor completes them.
+/// list really holds `Architecture`s, so an editor completes them.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
-enum Arches {
+enum Architectures {
     /// Every architecture the harness knows. The default, and the ordinary case.
     #[schemars(extend("enum" = [ALL_MODES]))]
     Keyword(String),
     /// The architectures this backend can actually be built on, e.g. `[x86_64]`.
-    List(#[schemars(with = "Vec<Arch>")] Vec<String>),
+    List(#[schemars(with = "Vec<Architecture>")] Vec<String>),
 }
 
-impl Default for Arches {
+impl Default for Architectures {
     /// A manifest that says nothing about architecture is claiming to build
     /// anywhere — which is true of every toolchain here but one.
     fn default() -> Self {
@@ -136,7 +134,7 @@ impl Default for Arches {
 /// One benchmark implementation, as its manifest declares it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Implementation {
-    pub algo: String,
+    pub workload: String,
     pub language: String,
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
@@ -156,8 +154,8 @@ pub struct Implementation {
     /// semantics, so the other two would be the same run under another name.
     pub fp_modes: Vec<FpMode>,
     /// The architectures this implementation can be built on. Almost always both;
-    /// a backend whose toolchain does not exist for an ISA says so here.
-    pub arches: Vec<Arch>,
+    /// a backend whose toolchain does not exist for an architecture says so here.
+    pub architectures: Vec<Architecture>,
 }
 
 impl Implementation {
@@ -173,7 +171,7 @@ impl Implementation {
     /// One image per (implementation, FP mode). The mode is a build arg, so the
     /// Dockerfile is shared — only the tag differs.
     pub fn image(&self, mode: FpMode) -> String {
-        format!("langbench/{}-{}:{mode}", self.algo, self.slug())
+        format!("langbench/{}-{}:{mode}", self.workload, self.slug())
     }
 
     /// Can this implementation be built on this machine at all?
@@ -181,8 +179,8 @@ impl Implementation {
     /// A `None` host is an architecture the harness does not know, and nothing can
     /// be claimed about it — not even by a manifest that says `all`, because `all`
     /// means "both of the two", not "whatever you happen to be running".
-    pub fn supports(&self, host: Option<Arch>) -> bool {
-        host.is_some_and(|host| self.arches.contains(&host))
+    pub fn supports(&self, host: Option<Architecture>) -> bool {
+        host.is_some_and(|host| self.architectures.contains(&host))
     }
 
     /// The requested modes this implementation actually distinguishes, in the
@@ -201,7 +199,7 @@ impl Implementation {
     /// manifest is a deliberate statement: if it does not parse, the honest
     /// outcome is a failed campaign — never an implementation quietly dropped
     /// from the schedule, or measured under a description that is not its own.
-    fn load(path: &Path) -> Result<Self> {
+    fn load(path: &Path, workload: &str) -> Result<Self> {
         let dir = path
             .parent()
             .with_context(|| format!("{} has no directory", path.display()))?;
@@ -225,8 +223,8 @@ impl Implementation {
         let fp_modes = fp_modes(&manifest.modes)
             .with_context(|| format!("reading `modes` from {}", path.display()))?;
 
-        let arches = arches(&manifest.arch)
-            .with_context(|| format!("reading `arch` from {}", path.display()))?;
+        let architectures = architectures(&manifest.architectures)
+            .with_context(|| format!("reading `architectures` from {}", path.display()))?;
 
         if !dir.join("Dockerfile").is_file() {
             bail!(
@@ -259,7 +257,7 @@ impl Implementation {
             })?;
 
         Ok(Self {
-            algo: manifest.algo,
+            workload: workload.to_owned(),
             language: manifest.language,
             compiler: manifest.compiler,
             interpreter: manifest.interpreter,
@@ -269,7 +267,7 @@ impl Implementation {
             source,
             source_bytes,
             fp_modes,
-            arches,
+            architectures,
         })
     }
 }
@@ -310,25 +308,25 @@ fn fp_modes(modes: &Modes) -> Result<Vec<FpMode>> {
 /// misspelled mode is: a typo here silently drops a backend out of every campaign
 /// on one architecture, and a missing row is exactly the kind of absence nobody
 /// notices in a table.
-fn arches(arches: &Arches) -> Result<Vec<Arch>> {
-    let declared = match arches {
-        Arches::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
-            return Ok(Arch::ALL.to_vec());
+fn architectures(architectures: &Architectures) -> Result<Vec<Architecture>> {
+    let declared = match architectures {
+        Architectures::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
+            return Ok(Architecture::ALL.to_vec());
         }
-        Arches::Keyword(keyword) => bail!(
+        Architectures::Keyword(keyword) => bail!(
             "`{keyword}` is not an architecture list; write `{ALL_MODES}` or a list such as \
              [x86_64]",
         ),
-        Arches::List(declared) => declared,
+        Architectures::List(declared) => declared,
     };
 
-    let mut parsed: Vec<Arch> = Vec::new();
+    let mut parsed: Vec<Architecture> = Vec::new();
     for token in declared {
-        let arch = Arch::parse(token.trim()).with_context(|| {
+        let architecture = Architecture::parse(token.trim()).with_context(|| {
             format!("`{token}` is not a known architecture; expected one of x86_64, aarch64")
         })?;
-        if !parsed.contains(&arch) {
-            parsed.push(arch);
+        if !parsed.contains(&architecture) {
+            parsed.push(architecture);
         }
     }
     ensure!(
@@ -338,23 +336,106 @@ fn arches(arches: &Arches) -> Result<Vec<Arch>> {
     Ok(parsed)
 }
 
-/// Every implementation declared under `root`, whatever the shape of the tree.
+/// A workload, and the directory whose subtree its implementations live in.
+#[derive(Clone, Debug)]
+pub struct Root {
+    pub workload: Workload,
+    /// The directory the `workload.yaml` sits in. It owns every `bench.yaml`
+    /// beneath it — and, like an implementation's directory, it *identifies*
+    /// nothing: the id comes out of the file.
+    pub dir: PathBuf,
+}
+
+/// Every workload declared under `root`.
 ///
-/// `algos` filters on the algorithm the *manifest* names; empty means "every
-/// algorithm found".
-pub fn discover(root: &Path, algos: &[String]) -> Result<Vec<Implementation>> {
+/// The walk finds the files; the files say what they are. Two workloads with the
+/// same `id` are one workload declared twice — the campaigns would overwrite each
+/// other's samples — so that is an error.
+pub fn workloads(root: &Path) -> Result<Vec<Root>> {
     let mut manifests = Vec::new();
-    collect_manifests(root, &mut manifests)?;
+    collect(root, workload::MANIFEST, &mut manifests)?;
+
+    let mut found: Vec<Root> = Vec::new();
+    for path in manifests {
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let workload =
+            Workload::parse(&text).with_context(|| format!("parsing {}", path.display()))?;
+
+        if let Some(first) = found.iter().find(|root| root.workload.id == workload.id) {
+            bail!(
+                "{} and {} both declare the workload `{}`: a workload is declared once, and \
+                 its id is what names the campaign that measures it",
+                first.dir.display(),
+                path.display(),
+                workload.id,
+            );
+        }
+
+        debug!(workload = %workload.id, path = %path.display(), "discovered a workload");
+        found.push(Root {
+            workload,
+            dir: path
+                .parent()
+                .with_context(|| format!("{} has no directory", path.display()))?
+                .to_path_buf(),
+        });
+    }
+
+    found.sort_by(|left, right| left.workload.id.cmp(&right.workload.id));
+    Ok(found)
+}
+
+impl Root {
+    /// The `bench.yaml` paths this workload declares, in declaration order.
+    ///
+    /// Each is a directory the manifest names, resolved against the manifest's own
+    /// directory. Nothing is walked for, and nothing is inferred from where a
+    /// directory sits: a workload measures what it says it measures.
+    ///
+    /// A declared directory with no `bench.yaml` in it — moved, renamed, not
+    /// written yet — is **warned about and skipped**. It is an absence somebody
+    /// created on purpose or by accident, and either way a campaign should say so
+    /// loudly and go on measuring the rest, not refuse to start.
+    fn manifests(&self) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        for declared in &self.workload.implementations {
+            let dir = self.dir.join(declared.trim());
+            let manifest = dir.join(MANIFEST);
+            if manifest.is_file() {
+                found.push(manifest);
+            } else {
+                warn!(
+                    workload = %self.workload.id,
+                    path = %dir.display(),
+                    "declared as an implementation of this workload, but holds no {MANIFEST}: \
+                     skipping it. Nothing here will be built or measured.",
+                );
+            }
+        }
+        found
+    }
+}
+
+/// Every implementation of one workload, as the workload declares them.
+pub fn discover(root: &Path, workload: &str) -> Result<Vec<Implementation>> {
+    let roots = workloads(root)?;
+    let chosen = roots
+        .iter()
+        .find(|candidate| candidate.workload.id == workload)
+        .with_context(|| {
+            format!(
+                "no workload `{workload}` under {}; there is {}",
+                root.display(),
+                declared(&roots),
+            )
+        })?;
 
     let mut found = Vec::new();
-    for path in manifests {
-        let implementation = Implementation::load(&path)?;
-        if !algos.is_empty() && !algos.contains(&implementation.algo) {
-            debug!(algo = %implementation.algo, "skipping: not selected by --algo");
-            continue;
-        }
+    for path in chosen.manifests() {
+        let implementation = Implementation::load(&path, &chosen.workload.id)?;
         debug!(
-            algo = %implementation.algo,
+            workload = %implementation.workload,
             language = %implementation.language,
             compiler = implementation.compiler.as_deref().unwrap_or("none"),
             interpreter = implementation.interpreter.as_deref().unwrap_or("none"),
@@ -366,20 +447,33 @@ pub fn discover(root: &Path, algos: &[String]) -> Result<Vec<Implementation>> {
 
     reject_duplicates(&found)?;
 
-    // A stable schedule, ordered by identity rather than by where the files
-    // happen to sit: moving a directory must not reorder a campaign.
-    found.sort_by_key(|implementation| (implementation.algo.clone(), implementation.slug()));
+    // A stable schedule, ordered by identity rather than by the order the manifest
+    // happens to list them in: reordering the list must not reorder a campaign.
+    found.sort_by_key(Implementation::slug);
     Ok(found)
 }
 
-/// The same (algo, language, compiler, interpreter) declared twice is not two
+/// The workloads on disk, for an error message that tells the reader what they
+/// *could* have asked for.
+fn declared(roots: &[Root]) -> String {
+    if roots.is_empty() {
+        return "none".to_owned();
+    }
+    roots
+        .iter()
+        .map(|root| root.workload.id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The same (workload, language, compiler, interpreter) declared twice is not two
 /// implementations — it is one, described in two places, and the two would share
 /// an image tag and collapse into a single row. Which of them the table would be
 /// describing is a coin toss, so refuse instead.
 fn reject_duplicates(found: &[Implementation]) -> Result<()> {
     let mut seen: HashMap<(String, String), &Path> = HashMap::new();
     for implementation in found {
-        let identity = (implementation.algo.clone(), implementation.slug());
+        let identity = (implementation.workload.clone(), implementation.slug());
         if let Some(first) = seen.insert(identity, &implementation.context) {
             bail!(
                 "{} and {} declare the same implementation ({} / {}): \
@@ -387,7 +481,7 @@ fn reject_duplicates(found: &[Implementation]) -> Result<()> {
                  exactly one of it",
                 first.display(),
                 implementation.context.display(),
-                implementation.algo,
+                implementation.workload,
                 implementation.slug(),
             );
         }
@@ -406,26 +500,55 @@ fn reject_duplicates(found: &[Implementation]) -> Result<()> {
 /// needs the whole tree at once (a backend can only collide with another one),
 /// which is why the pre-commit hook re-checks everything whenever *any* manifest
 /// moves, rather than only the files that changed.
-pub fn validate(roots: &[PathBuf]) -> Result<usize> {
-    let mut manifests = Vec::new();
-    for root in roots {
-        if root.is_file() {
-            manifests.push(root.clone());
+pub fn validate(paths: &[PathBuf]) -> Result<usize> {
+    // Not counted among the rejected manifests: being handed the wrong *kind* of
+    // argument is not a finding about the tree, and reporting it as one would tell
+    // the reader a manifest is broken when none of them is.
+    let roots = workloads_of(paths)?;
+    let mut failed = 0usize;
+
+    // Every `bench.yaml` on disk, and every `bench.yaml` some workload claims. The
+    // two sets have to be the same one.
+    //
+    // A campaign never walks the tree — it reads the list a workload declares — so
+    // a manifest that no workload lists would never be built, never measured, and
+    // never missed. That absence is invisible from the results, which is precisely
+    // the failure this project refuses: a row that is not in the table reads exactly
+    // like a backend nobody wrote. Discovery cannot catch it; the check can, and
+    // this is why it exists.
+    let mut on_disk = Vec::new();
+    for path in paths {
+        if path.is_file() {
+            on_disk.push(path.clone());
         } else {
-            collect_manifests(root, &mut manifests)?;
+            collect(path, MANIFEST, &mut on_disk)?;
         }
     }
 
+    let mut claimed = Vec::new();
     let mut implementations = Vec::new();
-    let mut failed = 0usize;
-    for path in &manifests {
-        match Implementation::load(path) {
-            Ok(implementation) => implementations.push(implementation),
-            Err(error) => {
-                failed += 1;
-                error!("{error:#}");
+    for root in &roots {
+        for manifest in root.manifests() {
+            claimed.push(manifest.clone());
+            match Implementation::load(&manifest, &root.workload.id) {
+                Ok(implementation) => implementations.push(implementation),
+                Err(error) => {
+                    failed += 1;
+                    error!("{error:#}");
+                }
             }
         }
+    }
+
+    for orphan in on_disk.iter().filter(|path| !claimed.contains(path)) {
+        failed += 1;
+        error!(
+            "{} declares an implementation that no workload lists. It will never be built and \
+             never measured, and nothing in a report would say so — a row that is missing from a \
+             table reads exactly like a backend nobody wrote. Add its directory to a workload's \
+             `implementations`, or delete it.",
+            orphan.display(),
+        );
     }
 
     // Only worth checking once every manifest parses: a collision between two
@@ -438,15 +561,46 @@ pub fn validate(roots: &[PathBuf]) -> Result<usize> {
     }
 
     ensure!(failed == 0, "{failed} manifest(s) rejected");
-    info!(manifests = manifests.len(), "every manifest is valid");
-    Ok(manifests.len())
+    info!(
+        workloads = roots.len(),
+        implementations = implementations.len(),
+        "every manifest is valid",
+    );
+    Ok(implementations.len())
 }
 
-/// Depth-first walk for manifests. Sorted at every level so that a failing
-/// manifest fails the same campaign twice in a row; the resulting order is
-/// discarded anyway, since `discover` sorts on identity.
-fn collect_manifests(dir: &Path, found: &mut Vec<PathBuf>) -> Result<()> {
-    let manifest = dir.join(MANIFEST);
+/// The workloads declared under a set of directories.
+///
+/// Directories, and not a hand-picked list of changed files, for two reasons that
+/// both come down to *a check only sees what it is shown*: two backends collide
+/// with each other, so a duplicate identity is invisible unless both halves are in
+/// view; and a `bench.yaml` that no workload lists can only be spotted by someone
+/// holding the whole tree and the whole list of declarations at once. This is why
+/// the pre-commit hook re-checks everything whenever any manifest moves.
+fn workloads_of(paths: &[PathBuf]) -> Result<Vec<Root>> {
+    let mut roots = Vec::new();
+    for path in paths {
+        ensure!(
+            !path.is_file(),
+            "{} is a file; `validate` takes the directories to walk. A single manifest cannot be \
+             checked on its own: a duplicate identity is a collision between *two* backends, and a \
+             manifest that no workload declares can only be seen by looking at both the tree and \
+             the declarations.",
+            path.display(),
+        );
+        roots.extend(workloads(path)?);
+    }
+    Ok(roots)
+}
+
+/// Depth-first walk for a manifest of the given name. Sorted at every level so
+/// that a failing manifest fails the same check twice in a row.
+///
+/// The one place the harness still *searches* rather than reads a declaration:
+/// finding the `workload.yaml` files, which are the roots everything else hangs
+/// off, and finding stray `bench.yaml` files that no workload claims.
+fn collect(dir: &Path, name: &str, found: &mut Vec<PathBuf>) -> Result<()> {
+    let manifest = dir.join(name);
     if manifest.is_file() {
         found.push(manifest);
     }
@@ -460,7 +614,7 @@ fn collect_manifests(dir: &Path, found: &mut Vec<PathBuf>) -> Result<()> {
     children.sort();
 
     for child in children {
-        collect_manifests(&child, found)?;
+        collect(&child, name, found)?;
     }
     Ok(())
 }
@@ -473,46 +627,87 @@ mod tests {
 
     use super::*;
 
-    const C_GCC: &str = "algo: mandelbrot\n\
-                         language: c\n\
+    const C_GCC: &str = "language: c\n\
                          compiler: gcc\n\
                          source: kernel.txt\n\
                          modes: all\n\
                          description: The reference C kernel.\n";
+
+    const RUST: &str = "language: rust\n\
+                        compiler: rustc\n\
+                        source: kernel.txt\n\
+                        modes: all\n\
+                        description: The same kernel, in Rust.\n";
 
     /// The kernel every fixture ships, and its size on disk.
     const SOURCE: &str = "kernel.txt";
     const SOURCE_TEXT: &str = "// the fixture's kernel\n";
     const SOURCE_BYTES: u64 = 24;
 
-    /// A manifest at an arbitrary depth, with the Dockerfile and the kernel beside
-    /// it.
-    ///
-    /// A fixture that does not spell `source:` gets one, pointing at the kernel
-    /// written here. The tests below are about discovery's *other* rules — modes,
-    /// architectures, colliding identities — and repeating the same line in every
-    /// one of them would bury what each is actually asserting. A test that means to
-    /// say something about the source declares its own.
-    fn tree(spec: &[(&str, &str)]) -> TempDir {
-        let root = TempDir::new().unwrap();
-        for (path, manifest) in spec {
-            let dir = root.path().join(path);
-            create_dir_all(&dir).unwrap();
-            File::create(dir.join("Dockerfile")).unwrap();
-            write(dir.join(SOURCE), SOURCE_TEXT).unwrap();
+    /// A workload declaring the directories it is implemented in — the list, not a
+    /// walk. `WORKLOAD` is the id every fixture below runs under.
+    const WORKLOAD: &str = "mandelbrot";
 
-            let manifest = if manifest.contains("source:") {
-                (*manifest).to_owned()
-            } else {
-                format!("{manifest}source: {SOURCE}\n")
-            };
-            write(dir.join(MANIFEST), manifest).unwrap();
+    fn workload_manifest(id: &str, implementations: &[&str]) -> String {
+        let mut yaml = format!(
+            "id: {id}\n\
+             description: Escape-time Mandelbrot over a fixed grid.\n\
+             params:\n\
+             \x20 - name: grid_size\n\
+             \x20   value: 2048\n\
+             implementations:\n",
+        );
+        for path in implementations {
+            yaml.push_str(&format!("  - {path}\n"));
+        }
+        yaml
+    }
+
+    /// One workload at the root, and its implementations at arbitrary depths beneath
+    /// it — each with its Dockerfile and its kernel beside the manifest.
+    ///
+    /// The workload declares every directory in `spec`, because that is how a
+    /// campaign finds them: it reads the list, it does not go looking. A fixture that
+    /// does not spell `source:` gets one, pointing at the kernel written here — the
+    /// tests below are about discovery's *other* rules, and repeating the same line
+    /// in every one of them would bury what each is actually asserting.
+    fn tree(spec: &[(&str, &str)]) -> TempDir {
+        workload_tree(&[(WORKLOAD, spec)])
+    }
+
+    /// The same, for more than one workload: each declares only its own directories.
+    fn workload_tree(spec: &[(&str, &[(&str, &str)])]) -> TempDir {
+        let root = TempDir::new().unwrap();
+        for (id, implementations) in spec {
+            let workload_dir = root.path().join(id);
+            create_dir_all(&workload_dir).unwrap();
+
+            for (path, manifest) in *implementations {
+                let dir = workload_dir.join(path);
+                create_dir_all(&dir).unwrap();
+                File::create(dir.join("Dockerfile")).unwrap();
+                write(dir.join(SOURCE), SOURCE_TEXT).unwrap();
+
+                let manifest = if manifest.contains("source:") {
+                    (*manifest).to_owned()
+                } else {
+                    format!("{manifest}source: {SOURCE}\n")
+                };
+                write(dir.join(MANIFEST), manifest).unwrap();
+            }
+
+            let declared: Vec<&str> = implementations.iter().map(|(path, _)| *path).collect();
+            write(
+                workload_dir.join(workload::MANIFEST),
+                workload_manifest(id, &declared),
+            )
+            .unwrap();
         }
         root
     }
 
     fn one(manifest: &str) -> Result<Vec<Implementation>> {
-        discover(tree(&[("anywhere", manifest)]).path(), &[])
+        discover(tree(&[("anywhere", manifest)]).path(), WORKLOAD)
     }
 
     #[test]
@@ -527,8 +722,7 @@ mod tests {
     /// must never invent. Loud, at discovery, and not an hour into the campaign.
     #[test]
     fn a_source_that_is_not_there_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-             language: c\n\
+        let error = one("language: c\n\
              compiler: gcc\n\
              source: typo.c\n\
              modes: all\n\
@@ -543,8 +737,7 @@ mod tests {
     /// another name, and the path is not metadata.
     #[test]
     fn a_manifest_that_declares_no_source_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-             language: c\n\
+        let error = one("language: c\n\
              compiler: gcc\n\
              source:\n\
              modes: all\n\
@@ -554,24 +747,23 @@ mod tests {
     }
 
     /// The path locates the manifest and says nothing else. Every fact about the
-    /// implementation — including which algorithm it computes — comes out of the
+    /// implementation — including which workload it computes — comes out of the
     /// file, at whatever depth the file happens to sit.
     #[test]
     fn the_manifest_and_not_the_path_describes_the_implementation() {
         let root = tree(&[(
             "some/deeply/nested/folder",
-            "algo: mandelbrot\n\
-             language: python\n\
+            "language: python\n\
              compiler: cython\n\
              interpreter: cpython\n\
              modes: [strict]\n\
              description: Cython compiles the kernel; CPython runs the result.\n\
              comments: Slower than the interpreter it compiles.\n",
         )]);
-        let found = discover(root.path(), &[]).unwrap();
+        let found = discover(root.path(), WORKLOAD).unwrap();
 
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].algo, "mandelbrot");
+        assert_eq!(found[0].workload, "mandelbrot");
         assert_eq!(found[0].language, "python");
         assert_eq!(found[0].compiler.as_deref(), Some("cython"));
         assert_eq!(found[0].interpreter.as_deref(), Some("cpython"));
@@ -591,16 +783,14 @@ mod tests {
             "langbench/mandelbrot-c-gcc:strict"
         );
 
-        let interpreted = one("algo: mandelbrot\n\
-                               language: python\n\
+        let interpreted = one("language: python\n\
                                interpreter: cpython\n\
                                modes: [strict]\n\
                                description: CPython, no compiler.\n")
         .unwrap();
         assert_eq!(interpreted[0].slug(), "python-cpython");
 
-        let both = one("algo: mandelbrot\n\
-                        language: python\n\
+        let both = one("language: python\n\
                         compiler: cython\n\
                         interpreter: cpython\n\
                         modes: [strict]\n\
@@ -614,9 +804,9 @@ mod tests {
     #[test]
     fn a_manifest_that_says_nothing_about_arch_builds_on_both() {
         let found = one(C_GCC).unwrap();
-        assert_eq!(found[0].arches, Arch::ALL);
-        assert!(found[0].supports(Some(Arch::X86_64)));
-        assert!(found[0].supports(Some(Arch::Aarch64)));
+        assert_eq!(found[0].architectures, Architecture::ALL);
+        assert!(found[0].supports(Some(Architecture::X86_64)));
+        assert!(found[0].supports(Some(Architecture::Aarch64)));
     }
 
     /// Kotlin/Native publishes no `linux-aarch64` host compiler. That is not a
@@ -624,21 +814,20 @@ mod tests {
     /// backend declares where it can be built, and an AArch64 campaign skips it.
     #[test]
     fn a_backend_may_declare_it_only_builds_on_one_architecture() {
-        let found = one("algo: mandelbrot\n\
-                         language: kotlin\n\
+        let found = one("language: kotlin\n\
                          compiler: kotlin-native\n\
                          modes: [strict]\n\
-                         arch: [x86_64]\n\
+                         architectures: [x86_64]\n\
                          description: No linux-aarch64 host compiler exists.\n")
         .unwrap();
 
-        assert_eq!(found[0].arches, [Arch::X86_64]);
-        assert!(found[0].supports(Some(Arch::X86_64)));
-        assert!(!found[0].supports(Some(Arch::Aarch64)));
+        assert_eq!(found[0].architectures, [Architecture::X86_64]);
+        assert!(found[0].supports(Some(Architecture::X86_64)));
+        assert!(!found[0].supports(Some(Architecture::Aarch64)));
     }
 
     /// `all` means "both of the two the harness knows", never "whatever this host
-    /// happens to be": a third architecture has no ISA baseline to pin, so nothing
+    /// happens to be": a third architecture has no architecture baseline to pin, so nothing
     /// can be claimed about it.
     #[test]
     fn an_unknown_host_architecture_supports_nothing() {
@@ -647,12 +836,11 @@ mod tests {
 
     #[test]
     fn a_misspelled_architecture_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-                         language: c\n\
+        let error = one("language: c\n\
                          compiler: gcc\n\
                          modes: all\n\
-                         arch: [x86-64]\n\
-                         description: An ISA spelled the -march way, not the uname way.\n")
+                         architectures: [x86-64]\n\
+                         description: An architecture spelled the -march way, not the uname way.\n")
         .unwrap_err();
         assert!(format!("{error:#}").contains("x86-64"), "{error:#}");
     }
@@ -663,7 +851,7 @@ mod tests {
         create_dir_all(root.path().join("benchmarks/notes")).unwrap();
         write(root.path().join("benchmarks/notes/README.md"), "hi").unwrap();
 
-        let found = discover(root.path(), &[]).unwrap();
+        let found = discover(root.path(), WORKLOAD).unwrap();
         assert_eq!(found.len(), 1);
     }
 
@@ -673,14 +861,13 @@ mod tests {
             ("zzz", C_GCC),
             (
                 "aaa",
-                "algo: mandelbrot\n\
-                 language: python\n\
+                "language: python\n\
                  interpreter: cpython\n\
                  modes: [strict]\n\
                  description: CPython.\n",
             ),
         ]);
-        let slugs: Vec<String> = discover(root.path(), &[])
+        let slugs: Vec<String> = discover(root.path(), WORKLOAD)
             .unwrap()
             .iter()
             .map(Implementation::slug)
@@ -688,18 +875,65 @@ mod tests {
         assert_eq!(slugs, ["c-gcc", "python-cpython"]);
     }
 
+    /// A campaign measures **one** workload, and sees only the implementations that
+    /// workload declares. The other workload's are not filtered out afterwards —
+    /// they are never read: a campaign asks a workload what it is implemented by.
     #[test]
-    fn filters_on_the_algorithm_the_manifest_names() {
-        let root = tree(&[
-            ("one", C_GCC),
-            ("two", &C_GCC.replace("algo: mandelbrot", "algo: nbody")),
+    fn a_campaign_sees_only_the_implementations_its_workload_declares() {
+        let root = workload_tree(&[
+            ("mandelbrot", &[("c", C_GCC)]),
+            ("nbody", &[("c", C_GCC), ("rust", RUST)]),
         ]);
 
-        let found = discover(root.path(), &["nbody".to_owned()]).unwrap();
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].algo, "nbody");
+        let mandelbrot = discover(root.path(), "mandelbrot").unwrap();
+        assert_eq!(mandelbrot.len(), 1);
+        assert_eq!(mandelbrot[0].workload, "mandelbrot");
 
-        assert_eq!(discover(root.path(), &[]).unwrap().len(), 2);
+        let nbody = discover(root.path(), "nbody").unwrap();
+        assert_eq!(nbody.len(), 2);
+        assert!(nbody.iter().all(|found| found.workload == "nbody"));
+    }
+
+    /// The same triple under a different workload is a different implementation:
+    /// `c-gcc` computing Mandelbrot and `c-gcc` computing n-body are two rows, in two
+    /// campaigns, and neither collides with the other.
+    #[test]
+    fn the_same_backend_may_implement_two_workloads() {
+        let root = workload_tree(&[("mandelbrot", &[("c", C_GCC)]), ("nbody", &[("c", C_GCC)])]);
+
+        assert_eq!(
+            discover(root.path(), "mandelbrot").unwrap()[0].slug(),
+            "c-gcc"
+        );
+        assert_eq!(discover(root.path(), "nbody").unwrap()[0].slug(), "c-gcc");
+    }
+
+    /// A workload asked for by a name nobody declares is a typo, and the error says
+    /// what *was* declared — the reader is one letter away from the answer.
+    #[test]
+    fn an_unknown_workload_fails_the_campaign() {
+        let root = tree(&[("anywhere", C_GCC)]);
+        let error = discover(root.path(), "mandlebrot").unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("mandlebrot"), "{error}");
+        assert!(error.contains("mandelbrot"), "{error}");
+    }
+
+    /// A directory a workload declares, with no `bench.yaml` in it — moved, renamed,
+    /// not written yet. It is warned about and skipped: a campaign is not held
+    /// hostage by an empty folder, and the rest of the row still gets measured.
+    #[test]
+    fn a_declared_directory_with_no_manifest_is_skipped() {
+        let root = tree(&[("here", C_GCC)]);
+        write(
+            root.path().join(WORKLOAD).join(workload::MANIFEST),
+            workload_manifest(WORKLOAD, &["here", "gone"]),
+        )
+        .unwrap();
+
+        let found = discover(root.path(), WORKLOAD).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].slug(), "c-gcc");
     }
 
     #[test]
@@ -709,8 +943,7 @@ mod tests {
 
     #[test]
     fn modes_may_be_an_explicit_list() {
-        let found = one("algo: mandelbrot\n\
-                         language: go\n\
+        let found = one("language: go\n\
                          compiler: gc\n\
                          modes:\n\
                            - strict\n\
@@ -727,8 +960,7 @@ mod tests {
     /// nobody meant to publish.
     #[test]
     fn an_unknown_mode_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-                         language: c\n\
+        let error = one("language: c\n\
                          compiler: gcc\n\
                          modes: [stcirt]\n\
                          description: Typo.\n")
@@ -738,8 +970,7 @@ mod tests {
 
     #[test]
     fn a_backend_that_neither_compiles_nor_interprets_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-                         language: c\n\
+        let error = one("language: c\n\
                          modes: all\n\
                          description: Nothing turns this into instructions.\n")
         .unwrap_err();
@@ -748,8 +979,7 @@ mod tests {
 
     #[test]
     fn an_unknown_key_fails_the_campaign() {
-        let error = one("algo: mandelbrot\n\
-                         language: c\n\
+        let error = one("language: c\n\
                          compiler: gcc\n\
                          modes: all\n\
                          description: Fine.\n\
@@ -760,7 +990,7 @@ mod tests {
 
     #[test]
     fn a_missing_description_fails_the_campaign() {
-        let error = one("algo: mandelbrot\nlanguage: c\ncompiler: gcc\nmodes: all\n").unwrap_err();
+        let error = one("language: c\ncompiler: gcc\nmodes: all\n").unwrap_err();
         assert!(format!("{error:#}").contains("description"), "{error:#}");
     }
 
@@ -769,11 +999,17 @@ mod tests {
     #[test]
     fn a_manifest_without_a_dockerfile_fails_the_campaign() {
         let root = TempDir::new().unwrap();
-        let dir = root.path().join("c-gcc");
+        let workload_dir = root.path().join(WORKLOAD);
+        let dir = workload_dir.join("c-gcc");
         create_dir_all(&dir).unwrap();
         write(dir.join(MANIFEST), C_GCC).unwrap();
+        write(
+            workload_dir.join(workload::MANIFEST),
+            workload_manifest(WORKLOAD, &["c-gcc"]),
+        )
+        .unwrap();
 
-        let error = discover(root.path(), &[]).unwrap_err();
+        let error = discover(root.path(), WORKLOAD).unwrap_err();
         assert!(format!("{error:#}").contains("Dockerfile"), "{error:#}");
     }
 
@@ -783,24 +1019,13 @@ mod tests {
     #[test]
     fn the_same_identity_declared_twice_fails_the_campaign() {
         let root = tree(&[("here", C_GCC), ("there", C_GCC)]);
-        let error = discover(root.path(), &[]).unwrap_err();
+        let error = discover(root.path(), WORKLOAD).unwrap_err();
         assert!(format!("{error:#}").contains("c-gcc"), "{error:#}");
-    }
-
-    /// The same triple under a different algorithm is a different implementation.
-    #[test]
-    fn the_same_backend_may_compute_two_algorithms() {
-        let root = tree(&[
-            ("mandelbrot/c", C_GCC),
-            ("nbody/c", &C_GCC.replace("algo: mandelbrot", "algo: nbody")),
-        ]);
-        assert_eq!(discover(root.path(), &[]).unwrap().len(), 2);
     }
 
     #[test]
     fn selected_modes_intersect_the_request_with_the_declaration() {
-        let found = one("algo: mandelbrot\n\
-                         language: python\n\
+        let found = one("language: python\n\
                          interpreter: cpython\n\
                          modes: [strict]\n\
                          description: CPython, no compiler.\n")
@@ -820,16 +1045,14 @@ mod tests {
             ("good", C_GCC),
             (
                 "typo",
-                "algo: mandelbrot\n\
-                 language: rust\n\
+                "language: rust\n\
                  compiler: llvm\n\
                  modes: [stcirt]\n\
                  description: A misspelled mode.\n",
             ),
             (
                 "nameless",
-                "algo: mandelbrot\n\
-                 language: go\n\
+                "language: go\n\
                  modes: all\n\
                  description: Neither compiled nor interpreted.\n",
             ),
@@ -840,11 +1063,38 @@ mod tests {
     }
 
     #[test]
-    fn validate_accepts_a_manifest_path_as_well_as_a_directory() {
+    fn validate_walks_the_directories_it_is_given() {
         let root = tree(&[("c-gcc", C_GCC)]);
-        let manifest = root.path().join("c-gcc").join(MANIFEST);
-        assert_eq!(validate(&[manifest]).unwrap(), 1);
         assert_eq!(validate(&[root.path().to_path_buf()]).unwrap(), 1);
+    }
+
+    /// A single manifest cannot be checked on its own, and the error says why rather
+    /// than quietly checking half of what was asked.
+    #[test]
+    fn validate_refuses_a_single_manifest() {
+        let root = tree(&[("c-gcc", C_GCC)]);
+        let manifest = root.path().join(WORKLOAD).join("c-gcc").join(MANIFEST);
+        let error = validate(&[manifest]).unwrap_err();
+        assert!(format!("{error:#}").contains("directories"), "{error:#}");
+    }
+
+    /// The one absence a walk can see and a declaration cannot: a `bench.yaml` on
+    /// disk that no workload lists. A campaign reads the list, so it would never
+    /// build this backend, never measure it, and never miss it — and a row that is
+    /// not in the table reads exactly like a backend nobody wrote.
+    #[test]
+    fn validate_catches_a_manifest_no_workload_declares() {
+        let root = tree(&[("c-gcc", C_GCC)]);
+
+        // A second implementation on disk, absent from the workload's list.
+        let stray = root.path().join(WORKLOAD).join("rust-rustc");
+        create_dir_all(&stray).unwrap();
+        File::create(stray.join("Dockerfile")).unwrap();
+        write(stray.join(SOURCE), SOURCE_TEXT).unwrap();
+        write(stray.join(MANIFEST), RUST).unwrap();
+
+        let error = validate(&[root.path().to_path_buf()]).unwrap_err();
+        assert!(format!("{error:#}").contains("rejected"), "{error:#}");
     }
 
     /// Two backends can only collide with *each other*, so the check needs both
@@ -861,9 +1111,12 @@ mod tests {
     #[test]
     fn the_schema_describes_the_manifest_the_harness_parses() {
         let schema = schema().unwrap();
-        for key in ["algo", "language", "compiler", "interpreter", "description"] {
+        for key in ["language", "compiler", "interpreter", "description"] {
             assert!(schema.contains(&format!("\"{key}\"")), "{key} is missing");
         }
+        // The workload is *not* here: an implementation no longer names the workload
+        // it implements — the workload names its implementations.
+        assert!(!schema.contains("\"workload\""), "{schema}");
         // The three modes are offered to an editor as constants, not as "a
         // string": completing `strict` is the point of shipping a schema.
         for mode in FpMode::ALL {
@@ -872,8 +1125,11 @@ mod tests {
         // A misspelled key must fail the campaign, and the schema must say so.
         assert!(schema.contains("\"additionalProperties\": false"));
         // The two architectures are offered as constants too, for the same reason.
-        for arch in Arch::ALL {
-            assert!(schema.contains(&format!("\"const\": \"{arch}\"")), "{arch}");
+        for architecture in Architecture::ALL {
+            assert!(
+                schema.contains(&format!("\"const\": \"{architecture}\"")),
+                "{architecture}"
+            );
         }
     }
 }

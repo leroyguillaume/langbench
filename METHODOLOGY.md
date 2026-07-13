@@ -19,7 +19,7 @@ identical Rust. CPython versus PyPy. OpenJDK versus GraalVM `native-image`.
 
 The unit of comparison is therefore not a language but a tuple:
 
-> (compiler, version, flags, target ISA)
+> (compiler, version, flags, target architecture)
 
 Cross-language comparison is a secondary, much weaker result. See
 [Two axes](#two-axes-two-tables-never-merged).
@@ -105,7 +105,7 @@ Mandelbrot uses only multiply, add, subtract and compare. All four are correctly
 rounded under IEEE 754 — the result is specified to the bit, and both x86-64 (on
 SSE2, not the old 80-bit x87) and AArch64 conform. With no FMA contraction, no
 reassociation and no denormal flushing, the checksum **must be bit-identical
-across every compiler, every language and both ISAs.**
+across every compiler, every language and both architectures.**
 
 One reference value. Seventeen implementations across ten languages — C, C++,
 Rust, Zig, Go, Julia, Python, JavaScript, TypeScript — and **every one of them
@@ -162,12 +162,12 @@ speed gained and the precision sold in one glance.
 
 ## Compiler flags
 
-- **Never `-march=native`.** The CPU model varies between runs; the ISA baseline
-  would vary with it. Pin an explicit baseline per ISA (e.g. `x86-64-v3`) as a
+- **Never `-march=native`.** The CPU model varies between runs; the architecture baseline
+  would vary with it. Pin an explicit baseline per architecture (e.g. `x86-64-v3`) as a
   build arg and record it in the results.
 - `x86-64-v3` and any AArch64 baseline are **not equivalent** and we never claim
   they are. NEON is 128-bit wide — two `f64` lanes. AVX2 is 256-bit — four. A
-  factor of two on vectorized Mandelbrot comes straight out of the ISA and has
+  factor of two on vectorized Mandelbrot comes straight out of the architecture and has
   nothing to do with the compiler.
 - Pin and document everything that trades compile time against runtime speed:
   Rust's `codegen-units`, `strip`, the linker (`ld` / `lld` / `mold`). Otherwise
@@ -186,7 +186,7 @@ That rule is not defensive pedantry. Measured:
 - **rustc only warns.** `-C target-cpu=armv8.2-a` prints *"not a recognized
   processor (ignoring processor)"* and hands back a generic binary — and it says
   exactly the same thing about `-C target-cpu=nonsense-v9`. A campaign would run
-  to completion and publish a row claiming an ISA baseline it was never compiled
+  to completion and publish a row claiming an architecture baseline it was never compiled
   for. The Rust entrypoint therefore both translates the name *and* greps rustc's
   stderr for that warning, failing if it appears.
 - **Go silently no-ops.** `GOAMD64=v3` on an arm64 build is not an error; it is
@@ -198,7 +198,7 @@ That rule is not defensive pedantry. Measured:
   `java -XX:CompleteNonsenseFlag=42 -version` starts happily, where HotSpot refuses
   to boot on the same flag. So the vector caps the HotSpot rows use would have
   pinned *nothing* there while the manifest claimed otherwise. That backend
-  therefore passes no ISA flag at all and publishes the gap — an honest hole beats
+  therefore passes no architecture flag at all and publishes the gap — an honest hole beats
   a false guarantee.
 
 A build that quietly falls back to generic does not break the campaign. It
@@ -209,20 +209,20 @@ publishes a wrong number with a straight face, which is worse.
 HotSpot has no `-march`. C2 compiles for **whatever CPU it finds at run time** —
 which is exactly the `native` targeting forbidden everywhere else in this
 document, and the JVM rows get it whether we like it or not. There is no flag that
-pins an ISA baseline the way `-march=x86-64-v3` does for gcc.
+pins an architecture baseline the way `-march=x86-64-v3` does for gcc.
 
 What the JVM does offer is a *cap on vector width*: `-XX:UseAVX=2` on x86-64,
 `-XX:UseSVE=0` on AArch64. The Java, Kotlin and Scala entrypoints pin those, which
 stops the JIT from reaching for wider vectors than the compiled rows were allowed.
 It is an approximation and it is published as one, in each manifest's `comments`.
-Read a JVM row against the C rows with that caveat in hand: the ISA floor is
+Read a JVM row against the C rows with that caveat in hand: the architecture floor is
 pinned, the ceiling is not.
 
 The alternative — dropping the JVM from the table — would be a worse answer to an
 honest limitation.
 
 **Except for one row.** GraalVM `native-image` compiles *ahead* of the run, so it
-takes a real `-march` and is the only JVM backend with a genuine ISA baseline. It
+takes a real `-march` and is the only JVM backend with a genuine architecture baseline. It
 comes with its own wrinkle: on AArch64 native-image offers `armv8-a` and
 `armv8.1-a` and stops, with no `armv8.2-a` to match the campaign's. The rule there
 is **never above the campaign's baseline** — it takes the highest level it can
@@ -237,31 +237,31 @@ to be wrong in.
 1. **Same source, different backend.** The real experiment. gcc versus clang on
    identical C; rustc-LLVM versus rustc-cranelift on identical Rust. Clean, and
    the reason this project exists.
-2. **Same algorithm, different language.** Confounded by construction: different
+2. **Same workload, different language.** Confounded by construction: different
    source, different runtime, different standard library. Valid for orders of
    magnitude ("Python is roughly 80× slower than Rust"), never for percentages.
 
 ---
 
-## The ISA rule
+## The architecture rule
 
-**Absolute cross-ISA timings are never published.**
+**Absolute cross-architecture timings are never published.**
 
-Changing ISA means changing silicon. Frequency, microarchitecture, cache
+Changing architecture means changing silicon. Frequency, microarchitecture, cache
 hierarchy and memory bandwidth all move together with the treatment. The
 confounding variable is perfectly collinear with the one under study; no amount
 of statistics recovers the effect. If a Graviton beats a Xeon here, we cannot
 tell whether clang's AArch64 backend is better or whether it is simply a better
 chip.
 
-What survives is the **within-ISA ratio**:
+What survives is the **within-architecture ratio**:
 
 > clang beats gcc by 12% on x86-64, but by only 3% on aarch64.
 
 That is a statement about backend maturity per target, and it is the interesting
 one.
 
-A pleasant consequence: the "same machine" requirement applies *per ISA*. One CI
+A pleasant consequence: the "same machine" requirement applies *per architecture*. One CI
 job on x86-64 and one on aarch64, on different physical machines, is fine —
 because only intra-job ratios are ever used.
 
@@ -292,13 +292,36 @@ missing row without one is a bug.
 
 ## Repository layout
 
-Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
+Two manifests, because there are two things to declare, and they are not the same
+thing. A **workload** is the work. An **implementation** is a backend that does it.
+
+A workload declares what the work is, how it is sized, what the right answer is, and
+which directories implement it:
 
 ```yaml
-algo: mandelbrot
+# benchmarks/mandelbrot/workload.yaml
+id: mandelbrot
+description: >-
+  Escape-time Mandelbrot over a square grid, summing the iteration counts.
+params:
+  - name: grid_size
+    value: 2048
+  - name: max_iter
+    value: 1000
+checksum: 1038538536
+implementations:
+  - python-cython
+  - c-gcc
+```
+
+An implementation declares a backend, in a `bench.yaml` beside its Dockerfile:
+
+```yaml
+# benchmarks/mandelbrot/python-cython/bench.yaml
 language: python
 compiler: cython
 interpreter: cpython
+source: mandelbrot.py
 modes:
   - strict
 description: >-
@@ -308,14 +331,16 @@ comments: >-
   It is slower than the interpreter it compiles, and that is a result, not a bug.
 ```
 
-**The manifest is the only thing the harness reads.** Discovery is a walk for
-`bench.yaml` files: no manifest, no benchmark. Everything else about a directory
-is inert.
+**The manifests are the only thing the harness reads.** It walks the tree for
+`workload.yaml` files — that is the one search left — and after that it reads
+declarations, never the tree: the workload lists the directories it is implemented
+in, and each implementation names its own source file. Everything else about a
+directory is inert.
 
 ### The path is not metadata
 
 An earlier design inferred the language and the compiler from the directory name
-(`benchmarks/<algo>/<language>-<compiler>/`) and read the rest back out of Docker
+(`benchmarks/<workload>/<language>-<compiler>/`) and read the rest back out of Docker
 labels. Both are gone, for the same reason: they encode facts in places that
 cannot hold them.
 
@@ -326,12 +351,41 @@ language **and an interpreter** with `python-cpython` and differs only in the
 compiler. A naming convention had no slot for the fact that makes the experiment
 clean.
 
-So the tree is now free-form. Move a directory, nest it, rename it: the campaign
-is unchanged, because nothing reads it.
+So the tree is free-form. Move a directory, nest it, rename it: the campaign is
+unchanged, because nothing reads it. What decides that a directory is measured is
+that a workload **lists** it — not that it happens to sit somewhere. Recursing from
+the workload and taking every `bench.yaml` underneath would have made the *position*
+of a directory load-bearing again, which is the path being metadata under another
+name.
+
+The cost of declaring is that a manifest can be forgotten: a `bench.yaml` on disk
+that no workload lists would never be built, never measured, and never missed. So
+`langbench validate` walks the tree, compares it against every workload's list, and
+fails on anything unclaimed. A row that is absent from a table reads exactly like a
+backend nobody wrote, and that is the one thing a benchmark must never let a reader
+believe.
+
+### The answer belongs to the work
+
+`checksum` is a property of `(workload, params)` — of the work and how it is
+sized — so it lives with the workload, and not in the harness, and not in a
+backend.
+
+Without it, a campaign can only check that its backends agree *with each other*. That
+is weaker than it sounds: it passes a campaign where every backend is wrong the same
+way, and it makes no claim at all across two campaigns, because each one's reference
+is simply whichever backend happened to run first. Declared, the answer outlives any
+run, and a backend that disagrees with it is quarantined on the spot — not slow,
+wrong.
+
+Override a param and the declared reference stops applying, because it is the answer
+to different work. The campaign says so, records no reference in its header, and falls
+back to the weaker check. That is why the numbers this repository publishes come from
+the declared params, and only from those.
 
 ### Identity is what a backend *is*
 
-An implementation is `(algo, language, compiler, interpreter)`. There is no name,
+An implementation is `(workload, language, compiler, interpreter)`. There is no name,
 because a name is a second thing to keep in sync with the first. Two manifests
 declaring the same tuple are one implementation declared twice, and the campaign
 refuses to run — they would build the same image tag and collapse into a single
@@ -675,7 +729,7 @@ says so.
 **It is not a measure of quality, and it is not a measure of effort.** It is one
 author's kernel, in one style, under this repository's rules: zero dependencies, one
 file, threads handed in from `argv`, a checksum printed. It says how much text a
-language needed to express *this* algorithm under *those* constraints. It does not say
+language needed to express *this* workload under *those* constraints. It does not say
 a language is verbose, and it emphatically does not say how much work it was to write.
 
 That last distinction is why the column is **bytes and not tokens**. Counting tokens
@@ -822,7 +876,7 @@ path, with the machine as the subject.
 
 ### CI (GitHub Actions)
 
-- **All implementations of an ISA run in the same job, sequentially.** A matrix
+- **All implementations of an architecture run in the same job, sequentially.** A matrix
   with one job per implementation would compare Rust on one physical machine to
   Go on another, and the result would be meaningless.
 - One job on `ubuntu-latest`, one on `ubuntu-24.04-arm`.
@@ -901,8 +955,8 @@ For the avoidance of doubt, `langbench` does not, and will not, tell you:
 
 - **Which language is fastest.** It compares backends. Cross-language numbers are
   confounded by construction and are valid only for orders of magnitude.
-- **Whether ARM is faster than x86.** Absolute cross-ISA timings are meaningless
-  here; only within-ISA ratios are compared across ISAs.
+- **Whether ARM is faster than x86.** Absolute cross-architecture timings are meaningless
+  here; only within-architecture ratios are compared across architectures.
 - **Which compiler is better.** On Mandelbrot it tells you which one vectorizes a
   divergent-exit loop. That is one optimizer pass, not a compiler.
 - **That a 3% difference is real**, unless the campaign's dispersion says it can

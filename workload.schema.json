@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "langbench workload manifest",
+  "description": "What `workload.yaml` declares — and, verbatim, what a campaign snapshots into\nits header.\n\n`deny_unknown_fields`, like the implementation manifest: a misspelled key must\nfail the campaign rather than be quietly ignored. The numbers would still come\nout; they would just be wrong about what produced them.\n\n**`kebab-case` coming in, `snake_case` going out**, and the two directions are\nnot the same audience. A manifest is typed by a person, and YAML is written in\nkebab wherever people write it. Everything downstream is read by a machine —\n`samples.ndjson`, the CSV, the browser — and that wire speaks `snake_case` end to\nend, so that `jq '.elapsed_ns'` works and no consumer needs a translation table.\nThis struct sits on the boundary because it is *both*: the file you write and the\nsnapshot the campaign records.\n\nAs it happens, **no key here is currently affected**: every one of them is a single\nword, which kebab and snake spell identically. The declaration stands anyway, so\nthat the first two-word key does not have to rediscover which side it belongs to.",
+  "type": "object",
+  "properties": {
+    "checksum": {
+      "description": "**The answer.** The one 64-bit integer every honest implementation of this\nworkload produces, for *these* params.\n\nNot `strict_checksum`: `strict` is a floating-point mode, and a workload that\nparses JSON or serves HTTP has no floating-point semantics to be strict about.\nWhat this is, is the value that says a backend computed the right thing —\nwhatever \"the thing\" is. Where the work *is* floating-point, `strict` is the\nmode in which every backend must agree on it bit for bit; where it is not, the\nmode is beside the point and the answer still is not.\n\nOptional, and only because some work has no answer: a throughput, a cold start,\nanything whose output depends on the scheduler. **Every deterministic workload\nmust declare it**, and a campaign on a workload that does not says so loudly —\nwithout it there is no correctness gate at all, and a backend that computes\nnothing and returns instantly wins the table.\n\nIt is a property of `(workload, params)`, never of the workload alone:\noverride a param and this no longer applies to what ran. The campaign says so\nrather than checking against a number that describes different work.\n\n**A string on the wire, an integer in the manifest.** It is 64 bits wide and a\nJavaScript number is a double, so a checksum that crossed into a browser as a\nnumber would silently lose its low bits past 2^53 — and this one is the\ncorrectness gate of the whole project. `workload.yaml` is written by a human,\nso it takes a plain integer; everything downstream is read by a machine with a\n53-bit mantissa, so it gets a string. The harness never does arithmetic on it:\nit compares it, and it prints it.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "default": null,
+      "minimum": 0
+    },
+    "description": {
+      "description": "What the work *is*, in one paragraph. It is published beside the results,\nbecause a timing without the work it timed is a number about nothing.",
+      "type": "string"
+    },
+    "id": {
+      "description": "What this workload is called. Declared, never parsed out of the directory\nname — the path locates the file, the file says what it is.",
+      "type": "string"
+    },
+    "implementations": {
+      "description": "The directories holding this workload's implementations, each relative to\nthis manifest.\n\nDeclared, not walked for. The harness could perfectly well recurse from here\nand take every `bench.yaml` it found, and that would mean the *position* of a\ndirectory decides whether it is measured — which is the path being metadata\nagain, the thing this project refuses everywhere else. `source:` is declared\nfor the same reason: the manifest says what is in, and nothing is in by\naccident.\n\nA directory that holds no `bench.yaml` is warned about and skipped: it is an\nimplementation somebody started, or moved, and a campaign that failed on it\nwould be a campaign held hostage by an empty folder.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "params": {
+      "description": "How the work is sized, and what the kernels are handed on the command line.\n\nA list and not a mapping, because **the order is the `argv` order** and a\nlist is the only YAML shape that is ordered by construction. A mapping would\nleave the kernels' arguments at the mercy of whatever sorted its keys.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Param"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "description",
+    "implementations",
+    "params"
+  ],
+  "$defs": {
+    "Param": {
+      "description": "One knob of a workload, and the value this campaign ran it at.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ParamValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "ParamValue": {
+      "description": "A param's value: whatever scalar the manifest wrote.\n\nThe harness does no arithmetic on it. It reaches a kernel as one `argv` token\nand reaches a report as one cell, so what it must do is survive the trip and\nprint as it was written — never `2048.0` for a grid of `2048`.",
+      "anyOf": [
+        {
+          "description": "Tried first: `2048` is an integer, and a grid is not `2048.0` pixels wide.",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

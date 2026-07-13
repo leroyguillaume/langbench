@@ -1,4 +1,3 @@
-algo: mandelbrot
 language: scala
 # Both, as for every JVM row: scalac compiles the source to bytecode ahead of the
 # run, and HotSpot executes it -- interpreting first, then JIT-compiling the hot

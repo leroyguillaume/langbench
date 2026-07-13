@@ -1,4 +1,3 @@
-algo: mandelbrot
 language: ts
 # Nothing is compiled ahead of the run: `deno run` strips the types and executes.
 # Deno *can* type-check -- and the build phase makes it, with `deno check` -- but

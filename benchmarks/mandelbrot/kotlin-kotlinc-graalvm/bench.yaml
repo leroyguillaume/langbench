@@ -1,4 +1,3 @@
-algo: mandelbrot
 language: kotlin
 compiler: kotlinc
 interpreter: graalvm

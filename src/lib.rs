@@ -14,9 +14,9 @@
 //! - `wasm`: the `wasm-bindgen` boundary the website calls.
 //!
 //! Between them sits the part that is nothing but data and arithmetic —
-//! [`mode`], [`sample`], [`stats`], [`analysis`], the [`machine`] types — which
-//! compiles to `wasm32-unknown-unknown` with no `std::process` and no Docker
-//! anywhere in sight.
+//! [`mode`], [`sample`], [`stats`], [`analysis`], [`workload`], the [`machine`]
+//! types — which compiles to `wasm32-unknown-unknown` with no `std::process` and
+//! no Docker anywhere in sight.
 
 pub mod analysis;
 pub mod compare;
@@ -24,6 +24,7 @@ pub mod machine;
 pub mod mode;
 pub mod sample;
 pub mod stats;
+pub mod workload;
 
 #[cfg(feature = "cli")]
 pub mod cli;

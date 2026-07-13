@@ -1,8 +1,8 @@
 //! The numbers, before anybody formats them.
 //!
-//! Bucketing samples into `(algo, backend, mode)` and summarizing each bucket is
+//! Bucketing samples into `(workload, backend, mode)` and summarizing each bucket is
 //! the one piece of arithmetic in this repository that has more than one
-//! consumer: `langbench md` formats it into a table, and the WebAssembly build
+//! consumer: `langbench report md` formats it into a table, and the WebAssembly build
 //! hands it to a browser that re-sorts and re-plots it. Both call [`analyze`].
 //!
 //! That is deliberate, and it is the same rule as `bench.schema.json`: a second
@@ -22,6 +22,7 @@ use crate::machine::Field;
 use crate::mode::FpMode;
 use crate::sample::{Campaign, Phase, Recording, Sample, Stage};
 use crate::stats::{Summary, summarize};
+use crate::workload::Workload;
 
 /// What the caller is allowed to vary about an analysis.
 ///
@@ -47,22 +48,22 @@ pub struct Options {
 pub struct Analysis {
     pub campaign: Campaign,
     pub options: Options,
-    /// The ISA the campaign ran on, lifted out of the machine so a consumer can
+    /// The architecture the campaign ran on, lifted out of the machine so a consumer can
     /// key on it without scraping a label out of [`Self::machine_fields`].
     ///
     /// The website needs it for one reason: **an absolute timing never crosses an
-    /// ISA**. Two campaigns from two architectures are two experiments, and the
+    /// architecture**. Two campaigns from two architectures are two experiments, and the
     /// site has to be able to tell them apart structurally — from the header the
     /// campaign recorded, never from the name of the file it was served under. A
     /// filename is a label somebody types; this is what the machine said about
-    /// itself. See `METHODOLOGY.md#the-isa-rule`.
-    pub arch: String,
+    /// itself. See `METHODOLOGY.md#the-architecture-rule`.
+    pub architecture: String,
     pub hostname: Option<String>,
     pub machine_fields: Vec<Field>,
     /// Every reason this host was a poor benchmark target. It travels with the
     /// numbers, so a chart cannot be read without the caveat that qualifies it.
     pub warnings: Vec<String>,
-    pub algos: Vec<AlgoAnalysis>,
+    pub workloads: Vec<WorkloadAnalysis>,
     /// Every backend the campaign measured, described once. The aggregates
     /// repeat a backend per FP mode; its identity card does not.
     pub backends: Vec<Backend>,
@@ -83,7 +84,7 @@ pub struct Analysis {
 /// cannot call `backend_slug`.
 #[derive(Clone, Debug, Serialize)]
 pub struct Failure {
-    pub algo: String,
+    pub workload: String,
     pub backend: String,
     pub backend_id: String,
     pub language: String,
@@ -101,10 +102,10 @@ pub struct Failure {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AlgoAnalysis {
-    pub algo: String,
-    /// The value every strict-mode run of *this* algorithm agreed on. A property
-    /// of `(algo, grid size, max_iter)`, never of the campaign.
+pub struct WorkloadAnalysis {
+    pub workload: String,
+    /// The value every strict-mode run of *this* workload agreed on. A property
+    /// of `(workload, grid size, max_iter)`, never of the campaign.
     ///
     /// A string on the wire: it is a 64-bit integer, and a JSON number wider than
     /// 2^53 is rounded by every JavaScript parser that reads it. The correctness
@@ -125,7 +126,7 @@ pub struct Backend {
     /// `mandelbrot-python-cython-cpython`. The anchor of this backend's section
     /// in the Markdown report, and the row key on the website.
     pub id: String,
-    pub algo: String,
+    pub workload: String,
     pub backend: String,
     pub language: String,
     pub compiler: Option<String>,
@@ -138,7 +139,7 @@ pub struct Backend {
     pub source_bytes: Option<u64>,
 }
 
-/// Everything the campaign learned about one `(algo, backend, mode)`.
+/// Everything the campaign learned about one `(workload, backend, mode)`.
 ///
 /// Numbers, in their native units — nanoseconds, microseconds, bytes. Not one
 /// formatted string: `"2000.0 ms"` cannot be sorted, plotted, or divided by
@@ -146,7 +147,7 @@ pub struct Backend {
 /// only thing it needed.
 #[derive(Debug, Serialize)]
 pub struct Aggregate {
-    pub algo: String,
+    pub workload: String,
     pub backend: String,
     /// This backend's entry in [`Analysis::backends`].
     pub backend_id: String,
@@ -207,7 +208,7 @@ pub struct Aggregate {
     pub binary_stripped_bytes: Option<u64>,
     pub text_bytes: Option<u64>,
     /// A 64-bit integer, on the wire as a string. See
-    /// [`AlgoAnalysis::strict_checksum`].
+    /// [`WorkloadAnalysis::strict_checksum`].
     #[serde(serialize_with = "as_string")]
     pub checksum: Option<u64>,
     /// This mode's distance from the strict reference: the precision sold for the
@@ -218,7 +219,7 @@ pub struct Aggregate {
     pub checksum_delta: Option<i128>,
 }
 
-/// Samples accumulated for one `(algo, backend, mode)`, before summarizing.
+/// Samples accumulated for one `(workload, backend, mode)`, before summarizing.
 #[derive(Default)]
 struct Bucket {
     language: String,
@@ -245,14 +246,14 @@ struct Bucket {
 
 pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     let samples = &recording.samples;
-    let references = strict_references(samples);
+    let references = strict_references(&recording.campaign.workload, samples);
 
     // Insertion order comes from the first round, which is the schedule order.
     let mut order: Vec<(String, String, FpMode)> = Vec::new();
     let mut buckets: HashMap<(String, String, FpMode), Bucket> = HashMap::new();
 
     for sample in samples {
-        let key = (sample.algo.clone(), sample.backend(), sample.mode);
+        let key = (sample.workload.clone(), sample.backend(), sample.mode);
         let bucket = buckets.entry(key.clone()).or_insert_with(|| {
             order.push(key);
             Bucket {
@@ -302,16 +303,16 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
         }
     }
 
-    let mut algos: Vec<AlgoAnalysis> = Vec::new();
+    let mut workloads: Vec<WorkloadAnalysis> = Vec::new();
     let mut backends: Vec<Backend> = Vec::new();
     for key in &order {
-        let (algo, backend, mode) = key;
+        let (workload, backend, mode) = key;
         let bucket = &buckets[key];
-        let reference = references.get(algo).copied();
+        let reference = references.get(workload).copied();
         let aggregate = Aggregate {
-            algo: algo.clone(),
+            workload: workload.clone(),
             backend: backend.clone(),
-            backend_id: backend_id(algo, backend),
+            backend_id: backend_id(workload, backend),
             language: bucket.language.clone(),
             compiler: bucket.compiler.clone(),
             interpreter: bucket.interpreter.clone(),
@@ -342,11 +343,11 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
         // One card per backend, not one per (backend, mode): the three modes are
         // three experiments on the same thing, and the thing is what a card
         // describes.
-        let id = backend_id(algo, backend);
+        let id = backend_id(workload, backend);
         if !backends.iter().any(|known| known.id == id) {
             backends.push(Backend {
                 id,
-                algo: algo.clone(),
+                workload: workload.clone(),
                 backend: backend.clone(),
                 language: bucket.language.clone(),
                 compiler: bucket.compiler.clone(),
@@ -357,10 +358,13 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             });
         }
 
-        match algos.iter_mut().find(|analysis| &analysis.algo == algo) {
+        match workloads
+            .iter_mut()
+            .find(|analysis| &analysis.workload == workload)
+        {
             Some(analysis) => analysis.aggregates.push(aggregate),
-            None => algos.push(AlgoAnalysis {
-                algo: algo.clone(),
+            None => workloads.push(WorkloadAnalysis {
+                workload: workload.clone(),
                 strict_checksum: reference,
                 aggregates: vec![aggregate],
             }),
@@ -371,7 +375,7 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     // wall-clock. `sort_by_key` is stable, so rows the campaign could not measure
     // keep their schedule order at the bottom instead of being shuffled among
     // themselves.
-    for analysis in &mut algos {
+    for analysis in &mut workloads {
         analysis.aggregates.sort_by_key(|aggregate| {
             let min = aggregate.run_wall.map(|summary| summary.min);
             (min.is_none(), min)
@@ -381,11 +385,11 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     Analysis {
         campaign: recording.campaign.clone(),
         options,
-        arch: recording.machine.arch.clone(),
+        architecture: recording.machine.architecture.clone(),
         hostname: recording.machine.hostname.clone(),
         machine_fields: recording.machine.fields(),
         warnings: recording.machine.warnings(),
-        algos,
+        workloads,
         backends,
         failures: recording.failures.iter().map(failure).collect(),
     }
@@ -395,8 +399,8 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
 fn failure(failure: &crate::sample::Failure) -> Failure {
     let backend = failure.backend();
     Failure {
-        backend_id: backend_id(&failure.algo, &backend),
-        algo: failure.algo.clone(),
+        backend_id: backend_id(&failure.workload, &backend),
+        workload: failure.workload.clone(),
         backend,
         language: failure.language.clone(),
         compiler: failure.compiler.clone(),
@@ -416,27 +420,38 @@ fn failure(failure: &crate::sample::Failure) -> Failure {
 /// Markdown renderers derive an anchor from the heading text, and they do not all
 /// derive it the same way. So the heading *is* the anchor: lowercase, no spaces,
 /// no punctuation — nothing for a renderer to reinterpret.
-pub fn backend_id(algo: &str, backend: &str) -> String {
-    format!("{algo}-{backend}")
+pub fn backend_id(workload: &str, backend: &str) -> String {
+    format!("{workload}-{backend}")
 }
 
-/// The value every strict-mode run of a given algorithm agreed on, keyed by
-/// algorithm.
+/// The value every strict-mode run of this campaign's workload agreed on.
 ///
-/// The campaign already refused to record a divergent one — `Runner::verify`
-/// aborts on the spot — so any strict sample of an algorithm carries its
-/// reference and the first one is as good as the last. The reference is per
-/// algorithm because the checksum is a property of `(algo, grid size,
-/// max_iter)`: measuring one algorithm's delta against another's would be
-/// meaningless. See `METHODOLOGY.md#the-strict-mode-invariant`.
-fn strict_references(samples: &[Sample]) -> HashMap<String, u64> {
+/// **The workload's own `strict_checksum` wins**, when it declares one: it is the
+/// answer to the work, established once and outliving any run, and the campaign
+/// already refused to record a sample that diverged from it.
+///
+/// Without one, the reference is whatever the first strict sample produced — which
+/// is all a campaign can establish on its own, and it is weaker than it looks: it
+/// says the backends agreed with each other, not that any of them was right. It is
+/// read out of the samples rather than recomputed, because `Runner::verify` aborted
+/// on the spot for any divergence, so the first is as good as the last.
+///
+/// Keyed by workload id all the same, because that is the key the samples carry and
+/// the renderers look up. A campaign has exactly one.
+/// See `METHODOLOGY.md#the-strict-mode-invariant`.
+fn strict_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
     let mut references = HashMap::new();
+    if let Some(declared) = workload.checksum {
+        references.insert(workload.id.clone(), declared);
+    }
     for sample in samples {
         if sample.mode != FpMode::Strict {
             continue;
         }
         if let Some(checksum) = sample.checksum {
-            references.entry(sample.algo.clone()).or_insert(checksum);
+            references
+                .entry(sample.workload.clone())
+                .or_insert(checksum);
         }
     }
     references
@@ -480,8 +495,7 @@ mod tests {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-09T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 4096,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 30,
             build_rounds: 5,
             warmup_rounds: 2,
@@ -493,7 +507,7 @@ mod tests {
     fn sample(backend: &str, mode: FpMode, warmup: bool, wall: u64, checksum: u64) -> Sample {
         let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             language: language.to_owned(),
             compiler: Some(compiler.to_owned()),
             interpreter: None,
@@ -524,7 +538,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42),
         ];
         let analysis = analyze(&recording(samples), Options::default());
-        let backends: Vec<&str> = analysis.algos[0]
+        let backends: Vec<&str> = analysis.workloads[0]
             .aggregates
             .iter()
             .map(|aggregate| aggregate.backend.as_str())
@@ -540,7 +554,7 @@ mod tests {
         ];
 
         let cold = analyze(&recording(samples.clone()), Options::default());
-        let run = cold.algos[0].aggregates[0].run_wall.unwrap();
+        let run = cold.workloads[0].aggregates[0].run_wall.unwrap();
         assert_eq!(run.n, 1);
         assert_eq!(run.min, 2_000_000_000);
 
@@ -550,7 +564,7 @@ mod tests {
                 include_warmup: true,
             },
         );
-        let run = warm.algos[0].aggregates[0].run_wall.unwrap();
+        let run = warm.workloads[0].aggregates[0].run_wall.unwrap();
         assert_eq!(run.n, 2);
         assert_eq!(run.min, 2_000_000_000);
     }
@@ -562,7 +576,7 @@ mod tests {
     fn the_checksum_is_read_from_a_warmup_sample_too() {
         let samples = vec![sample("c-gcc", FpMode::Strict, true, 9_000_000_000, 7)];
         let analysis = analyze(&recording(samples), Options::default());
-        let aggregate = &analysis.algos[0].aggregates[0];
+        let aggregate = &analysis.workloads[0].aggregates[0];
         assert_eq!(aggregate.checksum, Some(7));
         assert!(aggregate.run_wall.is_none());
     }
@@ -574,9 +588,9 @@ mod tests {
             sample("c-gcc", FpMode::Fast, false, 1_000_000_000, 994),
         ];
         let analysis = analyze(&recording(samples), Options::default());
-        assert_eq!(analysis.algos[0].strict_checksum, Some(1_000));
+        assert_eq!(analysis.workloads[0].strict_checksum, Some(1_000));
 
-        let fast = analysis.algos[0]
+        let fast = analysis.workloads[0]
             .aggregates
             .iter()
             .find(|aggregate| aggregate.mode == FpMode::Fast)
@@ -584,7 +598,7 @@ mod tests {
         assert_eq!(fast.checksum_delta, Some(-6));
     }
 
-    /// The ISA is read off the machine the campaign recorded, never off a
+    /// The architecture is read off the machine the campaign recorded, never off a
     /// filename. Two campaigns from two architectures are two experiments, and
     /// the consumer that has to keep their absolute timings apart cannot be asked
     /// to trust what somebody called the file.
@@ -597,11 +611,11 @@ mod tests {
             2_000_000_000,
             42,
         )]);
-        recording.machine.arch = "x86_64".to_owned();
+        recording.machine.architecture = "x86_64".to_owned();
         recording.machine.hostname = Some("bench-01".to_owned());
 
         let analysis = analyze(&recording, Options::default());
-        assert_eq!(analysis.arch, "x86_64");
+        assert_eq!(analysis.architecture, "x86_64");
         assert_eq!(analysis.hostname.as_deref(), Some("bench-01"));
     }
 
@@ -614,7 +628,7 @@ mod tests {
         slow_start.elapsed_ns = 1_800_000_000; // 700 ms of startup
 
         let analysis = analyze(&recording(vec![fast_start, slow_start]), Options::default());
-        let aggregate = &analysis.algos[0].aggregates[0];
+        let aggregate = &analysis.workloads[0].aggregates[0];
 
         // The naive `min(wall) - min(elapsed)` would be 2000 - 1800 = 200 ms: a
         // run that never happened. The smallest gap *within a sample* is 100 ms.
@@ -664,15 +678,15 @@ mod tests {
         contended.user_usec = 3_100_000; // 3.1 cores
 
         let analysis = analyze(&recording(vec![clean, contended]), Options::default());
-        let cores = analysis.algos[0].aggregates[0].run_cores.unwrap();
+        let cores = analysis.workloads[0].aggregates[0].run_cores.unwrap();
         assert_eq!(cores.n, 2);
         // The lower median of the two, and *not* silently the smaller one as some
         // statistic in its own right: the minimum is what a timing reports.
         assert_eq!(cores.median, 3_100);
-        assert_eq!(analysis.algos[0].aggregates[0].cpu, 8);
+        assert_eq!(analysis.workloads[0].aggregates[0].cpu, 8);
     }
 
-    /// The GIL, as the table shows it: same algorithm, same eight threads, one
+    /// The GIL, as the table shows it: same workload, same eight threads, one
     /// core. Without this column a reader sees only "slow" and cannot tell a bad
     /// code generator from a runtime that will not parallelise at all.
     #[test]
@@ -689,7 +703,7 @@ mod tests {
 
         let analysis = analyze(&recording(vec![parallel, serial]), Options::default());
         let cores = |backend: &str| {
-            analysis.algos[0]
+            analysis.workloads[0]
                 .aggregates
                 .iter()
                 .find(|aggregate| aggregate.backend == backend)
@@ -713,7 +727,10 @@ mod tests {
 
         let analysis = analyze(&recording(vec![lean, fat]), Options::default());
         assert_eq!(
-            analysis.algos[0].aggregates[0].run_peak_bytes.unwrap().min,
+            analysis.workloads[0].aggregates[0]
+                .run_peak_bytes
+                .unwrap()
+                .min,
             10_000_000,
         );
     }
@@ -726,7 +743,7 @@ mod tests {
         blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![blind]), Options::default());
-        let aggregate = &analysis.algos[0].aggregates[0];
+        let aggregate = &analysis.workloads[0].aggregates[0];
         assert_eq!(aggregate.run_peak_bytes, None);
         // ... and the rest of the row is unharmed.
         assert_eq!(aggregate.run_wall.unwrap().min, 2_000_000_000);
@@ -741,7 +758,7 @@ mod tests {
         blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![measured, blind]), Options::default());
-        let peak = analysis.algos[0].aggregates[0].run_peak_bytes.unwrap();
+        let peak = analysis.workloads[0].aggregates[0].run_peak_bytes.unwrap();
         assert_eq!(peak.n, 1);
         assert_eq!(peak.min, 12_582_912);
     }
@@ -760,7 +777,10 @@ mod tests {
             )]),
             Options::default(),
         );
-        assert_eq!(analysis.algos[0].aggregates[0].source_bytes, Some(2_048));
+        assert_eq!(
+            analysis.workloads[0].aggregates[0].source_bytes,
+            Some(2_048)
+        );
         assert_eq!(analysis.backends[0].source_bytes, Some(2_048));
     }
 
@@ -771,7 +791,7 @@ mod tests {
         let samples = vec![sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42)];
         let analysis = analyze(&recording(samples), Options::default());
         let json = serde_json::to_value(&analysis).unwrap();
-        let run_wall = &json["algos"][0]["aggregates"][0]["run_wall"];
+        let run_wall = &json["workloads"][0]["aggregates"][0]["run_wall"];
         assert_eq!(run_wall["min"], 2_000_000_000_u64);
         assert!(run_wall["min"].is_number());
     }

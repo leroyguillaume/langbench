@@ -11,7 +11,7 @@ const aggregate = (
   compiler: string | null,
   interpreter: string | null,
 ): Aggregate => ({
-  algo: "mandelbrot",
+  workload: "mandelbrot",
   backend: "irrelevant",
   backend_id: "irrelevant",
   language,

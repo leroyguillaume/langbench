@@ -43,7 +43,7 @@ export interface CampaignsState {
 }
 
 /**
- * Every campaign this build publishes, one per ISA — analyzed once, shared by every
+ * Every campaign this build publishes, one per architecture — analyzed once, shared by every
  * page.
  *
  * It takes the flag, not an `Options` object: an object literal is a new object on

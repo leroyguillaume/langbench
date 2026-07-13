@@ -68,7 +68,7 @@ pub fn analyze(
 /// Two rows of one campaign, head to head — and whether the gap between them is
 /// larger than the noise the campaign carries.
 ///
-/// `selection` is a [`Selection`]: the algorithm, and a `{backend, mode}` on each
+/// `selection` is a [`Selection`]: the workload, and a `{backend, mode}` on each
 /// side. The pair is named, never indexed — a row number is a property of the
 /// sort somebody clicked, and it does not survive a reload.
 ///
@@ -104,9 +104,9 @@ pub fn compare(
 /// hand, with nothing on screen to tell them not to.
 ///
 /// The checksums are the exception, and the reason this is worth having at all: in
-/// `strict` mode they are obliged to be bit-identical across every ISA, and a
+/// `strict` mode they are obliged to be bit-identical across every architecture, and a
 /// divergence here is a genuine bug rather than a curiosity.
-/// See `METHODOLOGY.md#the-isa-rule`.
+/// See `METHODOLOGY.md#the-architecture-rule`.
 #[wasm_bindgen]
 pub fn compare_across(
     left_ndjson: &str,

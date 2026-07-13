@@ -1,4 +1,3 @@
-algo: mandelbrot
 language: java
 # The same javac as java-javac-openjdk -- identical bytecode, from an identical
 # source.

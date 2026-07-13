@@ -49,7 +49,18 @@ export function ComparePage() {
     return <p className="status">Reading the campaigns…</p>;
   }
 
-  const loaded = campaigns.find((entry) => entry.analysis.arch === state.arch) ?? campaigns[0];
+  // A campaign is one machine measuring one workload: it takes both to name one.
+  // See the same selection in `Results.tsx` — keying on the architecture alone would
+  // pick whichever workload's campaign happened to be published first.
+  const loaded =
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === state.architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    ) ??
+    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
+    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
+    campaigns[0];
   if (loaded === undefined) {
     return (
       <main className="page">
@@ -84,23 +95,35 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const { analysis } = loaded;
 
   // Each side names its own campaign. A side that names none belongs to the one in
-  // scope — which is what every link written before this page could cross an ISA says.
+  // scope — which is what every link written before this page could cross an architecture says.
+  //
+  // A side names an *architecture*, never a workload: the two sides of a head-to-head
+  // are two backends doing the same work, and comparing a Mandelbrot to a JSON parse
+  // would not be a slow backend, it would be a category error. So the workload comes
+  // from the scope, and both sides are read out of a campaign that measured it.
   const sideOf = (raw: string | null): LoadedCampaign => {
-    const { arch } = readSide(raw);
-    return campaigns.find((entry) => entry.analysis.arch === arch) ?? loaded;
+    const { architecture } = readSide(raw);
+    return (
+      campaigns.find(
+        (entry) =>
+          entry.analysis.architecture === architecture &&
+          entry.analysis.campaign.workload.id === state.workload,
+      ) ?? loaded
+    );
   };
   const leftCampaign = sideOf(state.left);
   const rightCampaign = sideOf(state.right);
 
   const rowsOf = (campaign: LoadedCampaign): Aggregate[] => {
-    const found = campaign.analysis.algos.find((entry) => entry.algo === state.algo);
-    const chosen = found ?? campaign.analysis.algos[0];
+    const found = campaign.analysis.workloads.find((entry) => entry.workload === state.workload);
+    const chosen = found ?? campaign.analysis.workloads[0];
     return (chosen?.aggregates ?? []).filter((row) => row.run_wall !== null);
   };
   const leftRows = rowsOf(leftCampaign);
   const rightRows = rowsOf(rightCampaign);
 
-  const algo = analysis.algos.find((entry) => entry.algo === state.algo) ?? analysis.algos[0];
+  const workload =
+    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
 
   // The default pair is the fastest row and the fastest row of *another language*.
   // Two rows of the same language, one compiled by gcc and one by clang, is a fine
@@ -119,11 +142,11 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   // that reads both files, and the harness that flags the crossing: the site does not
   // divide a millisecond by another, here or anywhere.
   const comparison: { value: Comparison | null; error: string | null } = useMemo(() => {
-    if (left === null || right === null || algo === undefined) {
+    if (left === null || right === null || workload === undefined) {
       return { value: null, error: null };
     }
     const options = { include_warmup: state.includeWarmup };
-    const selection = { algo: algo.algo, left: wasmRow(left), right: wasmRow(right) };
+    const selection = { workload: workload.workload, left: wasmRow(left), right: wasmRow(right) };
     try {
       const value =
         leftCampaign === rightCampaign
@@ -136,7 +159,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
       logger.error("compare.failed", { message });
       return { value: null, error: message };
     }
-  }, [leftCampaign, rightCampaign, algo, left, right, state.includeWarmup]);
+  }, [leftCampaign, rightCampaign, workload, left, right, state.includeWarmup]);
 
   if (left === null || right === null) {
     return (
@@ -147,21 +170,27 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
         <section className="card">
           <p>
             This campaign measured fewer than two rows on{" "}
-            <code>{algo?.algo ?? "this algorithm"}</code>: there is no pair to compare.
+            <code>{workload?.workload ?? "this workload"}</code>: there is no pair to compare.
           </p>
         </section>
       </main>
     );
   }
 
-  const pick = (side: "left" | "right", arch: string, row: Aggregate) =>
-    setState({ ...state, [side]: writeSide(arch, identityKey(row)) });
+  const pick = (side: "left" | "right", architecture: string, row: Aggregate) =>
+    setState({ ...state, [side]: writeSide(architecture, identityKey(row)) });
 
-  // Moving a side to another ISA keeps the row it was on, if that campaign measured
+  // Moving a side to another architecture keeps the row it was on, if that campaign measured
   // it: "the same backend, on the other machine" is the question somebody switching
-  // ISA is asking. Otherwise it lands on that campaign's fastest row.
-  const moveTo = (side: "left" | "right", arch: string) => {
-    const campaign = campaigns.find((entry) => entry.analysis.arch === arch);
+  // architecture is asking. Otherwise it lands on that campaign's fastest row.
+  const moveTo = (side: "left" | "right", architecture: string) => {
+    // The other machine, the *same* work: switching architecture asks "and how does
+    // this backend do over there", which is only a question about one workload.
+    const campaign = campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === architecture &&
+        entry.analysis.campaign.workload.id === state.workload,
+    );
     if (campaign === undefined) {
       return;
     }
@@ -169,7 +198,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
     const rows = rowsOf(campaign);
     const row = findByKey(rows, identityKey(current)) ?? rows[0];
     if (row !== undefined) {
-      pick(side, arch, row);
+      pick(side, architecture, row);
     }
   };
 
@@ -191,16 +220,20 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
 
       <div className="filters">
         <label className="filter">
-          <span>Algorithm</span>
+          <span>Workload</span>
           <select
-            value={algo?.algo ?? ""}
-            onChange={(event) => setState({ ...state, algo: event.target.value })}
+            value={workload?.workload ?? ""}
+            onChange={(event) => setState({ ...state, workload: event.target.value })}
           >
-            {analysis.algos.map((entry) => (
-              <option key={entry.algo} value={entry.algo}>
-                {entry.algo}
-              </option>
-            ))}
+            {/* Every workload this build published, not the one on screen: a selector
+                that only offers what is already selected is not a selector. */}
+            {[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))].map(
+              (id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ),
+            )}
           </select>
         </label>
       </div>
@@ -222,8 +255,8 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           title="A"
           aggregates={leftRows}
           selected={left}
-          arch={leftCampaign.analysis.arch}
-          arches={campaigns.map((entry) => entry.analysis.arch)}
+          architecture={leftCampaign.analysis.architecture}
+          architectures={campaigns.map((entry) => entry.analysis.architecture)}
           onPick={pick}
           onArch={moveTo}
         />
@@ -235,8 +268,8 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           title="B"
           aggregates={rightRows}
           selected={right}
-          arch={rightCampaign.analysis.arch}
-          arches={campaigns.map((entry) => entry.analysis.arch)}
+          architecture={rightCampaign.analysis.architecture}
+          architectures={campaigns.map((entry) => entry.analysis.architecture)}
           onPick={pick}
           onArch={moveTo}
         />
@@ -247,7 +280,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           for the reader to work out from a row of numbers that looks exactly like a
           valid one. */}
       {view?.cross_isa === true && (
-        <CrossIsaWarning left={view.left.arch} right={view.right.arch} />
+        <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
       )}
 
       {comparison.error !== null && <p className="compare-error">{comparison.error}</p>}
@@ -265,12 +298,15 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
                   <tr>
                     <th className="text">Metric</th>
                     <th className="numeric">
-                      <Name identity={left} {...(view.cross_isa ? { arch: view.left.arch } : {})} />
+                      <Name
+                        identity={left}
+                        {...(view.cross_isa ? { architecture: view.left.architecture } : {})}
+                      />
                     </th>
                     <th className="numeric">
                       <Name
                         identity={right}
-                        {...(view.cross_isa ? { arch: view.right.arch } : {})}
+                        {...(view.cross_isa ? { architecture: view.right.architecture } : {})}
                       />
                     </th>
                     <th className="numeric">B ÷ A</th>
@@ -292,8 +328,8 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
                           crossIsa={
                             view.cross_isa
                               ? {
-                                  left: view.left.arch,
-                                  right: view.right.arch,
+                                  left: view.left.architecture,
+                                  right: view.right.architecture,
                                 }
                               : null
                           }
@@ -333,16 +369,16 @@ function cell(metric: Metric, side: "left" | "right"): string {
 }
 
 /**
- * A column header of the metrics table. The ISA is named whenever the two sides
+ * A column header of the metrics table. The architecture is named whenever the two sides
  * disagree about it: a column of milliseconds whose machine is not stated is the
- * thing that makes a cross-ISA table dangerous rather than merely useless.
+ * thing that makes a cross-architecture table dangerous rather than merely useless.
  */
-function Name({ identity, arch }: { identity: Identity; arch?: string }) {
+function Name({ identity, architecture }: { identity: Identity; architecture?: string }) {
   return (
     <span className="mode-tag">
       <span className="mode-dot" style={{ background: `var(${MODE_COLOR[identity.mode]})` }} />
       {label(identity)} · {identity.mode}
-      {arch !== undefined && <span className="side-arch">{arch}</span>}
+      {architecture !== undefined && <span className="side-architecture">{architecture}</span>}
     </span>
   );
 }
@@ -374,9 +410,9 @@ function Headline({ comparison, run }: { comparison: Comparison; run: Metric | n
   if (comparison.cross_isa) {
     return (
       <p className="compare-headline tie">
-        On the run, the <strong>{winner.arch}</strong> row came out {percent(run.gap_pct)} lower —
-        and that is a fact about two machines, not about two backends. It is not a result, and this
-        project does not publish it. See the warning above.
+        On the run, the <strong>{winner.architecture}</strong> row came out {percent(run.gap_pct)}{" "}
+        lower — and that is a fact about two machines, not about two backends. It is not a result,
+        and this project does not publish it. See the warning above.
       </p>
     );
   }
@@ -385,7 +421,8 @@ function Headline({ comparison, run }: { comparison: Comparison; run: Metric | n
       On the run, <strong>{label(winner)}</strong> in <strong>{winner.mode}</strong> is faster by{" "}
       <strong>{percent(run.gap_pct)}</strong>
       {run.noise_pct !== null && <>, against a dispersion of {percent(run.noise_pct)}</>}. A ratio
-      within one campaign, on one ISA — the only cross-implementation claim this project publishes.
+      within one campaign, on one architecture — the only cross-implementation claim this project
+      publishes.
     </p>
   );
 }
@@ -442,7 +479,7 @@ function Verdict({
   metric: Metric;
   left: Identity;
   right: Identity;
-  /** Across an ISA the two sides can be the same triple, and only the machine tells them apart. */
+  /** Across an architecture the two sides can be the same triple, and only the machine tells them apart. */
   crossIsa: { left: string; right: string } | null;
 }) {
   switch (metric.verdict) {
@@ -459,10 +496,10 @@ function Verdict({
     default: {
       const winner = metric.verdict === "left" ? left : right;
       if (crossIsa !== null) {
-        const arch = metric.verdict === "left" ? crossIsa.left : crossIsa.right;
+        const architecture = metric.verdict === "left" ? crossIsa.left : crossIsa.right;
         return (
           <span className="tie" title="two machines, not two backends">
-            lower on <strong>{arch}</strong>, by {percent(metric.gap_pct)} — not a result
+            lower on <strong>{architecture}</strong>, by {percent(metric.gap_pct)} — not a result
           </span>
         );
       }
@@ -484,7 +521,7 @@ function Verdict({
  * the numbers are there, and so is this.
  */
 function CrossIsaWarning({ left, right }: { left: string; right: string }) {
-  const methodology = `${import.meta.env.BASE_URL}methodology/#the-isa-rule`;
+  const methodology = `${import.meta.env.BASE_URL}methodology/#the-architecture-rule`;
   return (
     <section className="warnings">
       <h2>
@@ -500,8 +537,8 @@ function CrossIsaWarning({ left, right }: { left: string; right: string }) {
       <p>
         The ratio is the thing that travels. If you want to know whether Rust beats C <em>more</em>{" "}
         on {right} than on {left}, compare each of them against the same baseline <em>within</em>{" "}
-        its own campaign, and compare the two ratios — <a href={methodology}>the ISA rule</a> is
-        why, and it is short.
+        its own campaign, and compare the two ratios —{" "}
+        <a href={methodology}>the architecture rule</a> is why, and it is short.
       </p>
       <p>
         One column does survive the crossing, and it is the reason this pairing is worth having:{" "}
@@ -518,11 +555,11 @@ interface PickerProps {
   title: string;
   aggregates: Aggregate[];
   selected: Aggregate;
-  /** The ISA of the campaign this side is reading. */
-  arch: string;
-  arches: string[];
-  onPick: (side: "left" | "right", arch: string, row: Aggregate) => void;
-  onArch: (side: "left" | "right", arch: string) => void;
+  /** The architecture of the campaign this side is reading. */
+  architecture: string;
+  architectures: string[];
+  onPick: (side: "left" | "right", architecture: string, row: Aggregate) => void;
+  onArch: (side: "left" | "right", architecture: string) => void;
 }
 
 /**
@@ -536,7 +573,16 @@ interface PickerProps {
  * if it does not — a selector that can land on a row the campaign never measured is
  * a selector that can produce a blank page.
  */
-function Picker({ side, title, aggregates, selected, arch, arches, onPick, onArch }: PickerProps) {
+function Picker({
+  side,
+  title,
+  aggregates,
+  selected,
+  architecture,
+  architectures,
+  onPick,
+  onArch,
+}: PickerProps) {
   const languages = [...new Set(aggregates.map((row) => row.language))].sort();
   const sameLanguage = aggregates.filter((row) => row.language === selected.language);
 
@@ -558,14 +604,14 @@ function Picker({ side, title, aggregates, selected, arch, arches, onPick, onArc
   const setLanguage = (language: string) => {
     const row = nearest(aggregates.filter((candidate) => candidate.language === language));
     if (row !== undefined) {
-      onPick(side, arch, row);
+      onPick(side, architecture, row);
     }
   };
 
   const setToolchain = (chain: string) => {
     const row = nearest(sameLanguage.filter((candidate) => toolchain(candidate) === chain));
     if (row !== undefined) {
-      onPick(side, arch, row);
+      onPick(side, architecture, row);
     }
   };
 
@@ -574,7 +620,7 @@ function Picker({ side, title, aggregates, selected, arch, arches, onPick, onArc
       (candidate) => toolchain(candidate) === toolchain(selected) && candidate.mode === mode,
     );
     if (row !== undefined) {
-      onPick(side, arch, row);
+      onPick(side, architecture, row);
     }
   };
 
@@ -582,11 +628,11 @@ function Picker({ side, title, aggregates, selected, arch, arches, onPick, onArc
     <div className="compare-side">
       <div className="compare-side-title">{title}</div>
 
-      {arches.length > 1 && (
+      {architectures.length > 1 && (
         <label className="filter">
-          <span>ISA — the machine it ran on</span>
-          <select value={arch} onChange={(event) => onArch(side, event.target.value)}>
-            {arches.map((candidate) => (
+          <span>architecture — the machine it ran on</span>
+          <select value={architecture} onChange={(event) => onArch(side, event.target.value)}>
+            {architectures.map((candidate) => (
               <option key={candidate} value={candidate}>
                 {candidate}
               </option>

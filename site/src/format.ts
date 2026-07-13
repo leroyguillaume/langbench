@@ -108,8 +108,8 @@ export function optional(value: string | null): string {
  * A ratio against the fastest backend of the same table: `1.00×`, `13.4×`.
  *
  * The only cross-backend number the site publishes. Absolute timings are a
- * property of the machine; a ratio within one campaign, on one ISA, is a
- * property of the backends. See `METHODOLOGY.md#the-isa-rule`.
+ * property of the machine; a ratio within one campaign, on one architecture, is a
+ * property of the backends. See `METHODOLOGY.md#the-architecture-rule`.
  */
 export function ratio(value: number, reference: number): string {
   if (reference === 0) {

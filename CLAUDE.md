@@ -15,6 +15,47 @@ per implementation, runs them under a controlled protocol, and emits raw samples
 rendered afterwards as a CSV or a Markdown report by separate commands. The
 subject is **compiler and runtime backends**, not languages.
 
+## Terminology
+
+These eight words mean exactly this, everywhere: in the code, in the manifests, on
+the wire, in the report, on the site, in a commit message. Every rule below is
+written in them.
+
+- **workload** — the work itself, declared in a `workload.yaml`: what it is, how it
+  is sized (`params`), what the right answer is (`checksum`), and which
+  directories implement it. **A workload is not an algorithm.** Mandelbrot is one;
+  a JSON parser, an HTTP server, a cold start are others. Nothing in the harness may
+  assume the work is a computation over a grid.
+- **backend** — `(language, compiler, interpreter)`: what executes. Either of the
+  last two may be absent, and an absence is a published fact. This is the subject.
+- **implementation** — a backend doing a given workload: one `bench.yaml`, one
+  Dockerfile, one source file.
+- **mode** — `strict` / `fma` / `fast`. The FP semantics, a build arg on one source.
+- **unit** — `(implementation, mode)`. The atom of the schedule, and the grain of
+  quarantine: a failure takes out a unit, never the campaign.
+- **sample** — one measured invocation. One NDJSON line.
+- **campaign** — every sample from one pass over the matrix, on **one machine, one
+  workload**. It is what gets published, and it is what does not compare to another
+  machine's.
+- **matrix** — the definition of what a campaign will measure: the implementations a
+  workload declares, crossed with the modes requested.
+
+Two rules follow from the vocabulary rather than from the methodology, and they are
+the ones a reader is most likely to think were violated:
+
+- **A campaign is `(machine, workload)`, and its header carries the whole workload
+  manifest**, snapshotted. Not the id: the manifest. `workload.yaml` will be edited —
+  params retuned, a description rewritten, a reference added — and none of that is
+  retroactive. A campaign says what it *ran*. The site only ever fetches samples, so
+  the snapshot is also the only way it can know what the work was.
+- **The path is still not metadata, and the declaration is why.** A workload lists
+  the directories it is implemented in; discovery reads that list. It does *not*
+  recurse and take whatever `bench.yaml` it finds — that would make the position of a
+  directory decide whether it is measured, which is the path being metadata under
+  another name. The one search left in the harness is the walk for `workload.yaml`
+  files themselves. The cost is that a manifest can be forgotten, so `validate` walks
+  the tree and fails on any `bench.yaml` no workload claims.
+
 ## Rules
 
 **Benchmark kernels** ([why](METHODOLOGY.md#the-benchmark-mandelbrot))
@@ -32,17 +73,25 @@ subject is **compiler and runtime backends**, not languages.
 
 **Flags** ([why](METHODOLOGY.md#compiler-flags))
 
-- Never `-march=native`. Pin a baseline per ISA as a build arg.
+- Never `-march=native`. Pin a baseline per architecture as a build arg.
 - Three FP modes — `strict`, `fma`, `fast` — as build args on the same source.
 - Pin `codegen-units`, `strip` and the linker explicitly.
 
 **Correctness** ([why](METHODOLOGY.md#the-strict-mode-invariant))
 
 - The checksum is a **64-bit integer**, everywhere, always. Never a float, never
-  through a system that stores floats.
+  through a system that stores floats. A workload whose answer *is* a float bit-casts
+  it; it does not print it.
 - In `strict` mode the checksum is bit-identical across every compiler, language
-  and ISA. One reference value. A divergence is a bug, never a rounding excuse.
+  and architecture. One reference value. A divergence is a bug, never a rounding excuse.
 - Verify the checksum on **every** run. A wrong run never enters the statistics.
+- **A deterministic workload declares its `checksum`.** It is `Option` only because
+  some work has no answer — a throughput, a cold start, anything the scheduler
+  decides — and a campaign on a workload that declares none **warns**, loudly: without
+  it there is no correctness gate at all, and a backend that computes nothing and
+  returns instantly tops the table. It is not called `strict_checksum`, because
+  `strict` is a floating-point mode and a JSON parser has no floating-point semantics
+  to be strict about; the answer is the answer whatever the mode.
 - **A backend that fails is quarantined, not propagated.**
   ([why](METHODOLOGY.md#a-backend-that-fails-is-not-a-campaign-that-fails)) A build
   that fails, a container that crashes or hangs past the timeout, unreadable
@@ -56,16 +105,30 @@ subject is **compiler and runtime backends**, not languages.
 
 **Layout** ([why](METHODOLOGY.md#repository-layout))
 
+- Every workload declares itself in a `workload.yaml`: `id`, `description`, `params`,
+  `implementations`, and an optional `checksum`. **The walk for
+  `workload.yaml` is the only search the harness does.**
 - Every implementation declares itself in a `bench.yaml` beside its Dockerfile:
-  `algo`, `language`, `compiler`, `interpreter`, `source`, `modes`, `description`,
-  `comments`. **Discovery is a walk for `bench.yaml`; nothing else is read.**
+  `language`, `compiler`, `interpreter`, `source`, `modes`, `architectures`,
+  `description`, `comments`. It does **not** name its workload — the workload names
+  it, and a manifest nobody names is caught by `validate`.
+- `params` is an ordered **list**, never a mapping: the order is the `argv` order the
+  kernels receive (`run <params…> <threads>`), and a list is the only YAML shape that
+  is ordered by construction. The thread count is not a param — it is a property of
+  the machine, resolved by the harness.
+- **How the work is sized is a property of the work.** Never a flag of the harness:
+  `--grid-size` was Mandelbrot leaking into the CLI. `--param name=value` overrides a
+  declared param, and doing so drops the declared `checksum` — it is the answer
+  to the declared work, not to this one.
 - `source` names the one kernel file, and the manifest **declares** it — the harness
   never guesses which file beside the Dockerfile is the source. Guessing means
   pattern-matching a filename, which is parsing the path under another name. A
   `source` that is not a file on disk fails the campaign at discovery.
-- **The path is not metadata.** Never parse a directory name. The tree is
-  free-form: move a benchmark, nest it, rename it — the campaign is unchanged.
-- **An implementation is `(algo, language, compiler, interpreter)`.** No name, no
+- **The path is not metadata.** Never parse a directory name, and never recurse from
+  a workload to collect whatever `bench.yaml` sits beneath it. The tree is free-form:
+  move a benchmark, nest it, rename it, and the campaign is unchanged as long as the
+  workload still lists it.
+- **An implementation is `(workload, language, compiler, interpreter)`.** No name, no
   slug in the data. `compiler` and `interpreter` are each optional — but not both,
   and an absence is a published fact, not a hole. The same tuple declared twice is
   an error.
@@ -79,8 +142,9 @@ subject is **compiler and runtime backends**, not languages.
   describe itself without joining against a file that will change.
 - In telemetry, emit `language`, `compiler`, `interpreter` as separate fields —
   never a slug. A log line is filtered by field.
-- `bench.schema.json` (repo root) is **generated** by `langbench jsonschema` from
-  the struct the harness deserializes. Never edit it by hand; a pre-commit hook
+- `bench.schema.json` and `workload.schema.json` (repo root) are **generated** by
+  `langbench implementation jsonschema` and `langbench workload jsonschema`, from
+  the structs the harness deserializes. Never edit them by hand; a pre-commit hook
   fails on drift. `langbench validate` reports every invalid manifest at once,
   and a hook runs it whenever a `bench.yaml` moves.
 - One Dockerfile per implementation. No templating. Base images pinned by digest,
@@ -123,8 +187,8 @@ subject is **compiler and runtime backends**, not languages.
   implementations. Never block by implementation.
 - **Write raw samples, never aggregates.** One NDJSON line per run, flushed as it
   is produced. Aggregates are recomputed at report time.
-- **`run` writes `samples.ndjson` and nothing else.** Rendering is not part of
-  measuring: `langbench csv` and `langbench md` are separate commands, pure
+- **`workload run` writes `samples.ndjson` and nothing else.** Rendering is not part of
+  measuring: `langbench report csv` and `langbench report md` are separate commands, pure
   functions of the file. A report that a run could emit directly is a report that
   can outlive the samples it came from.
 - Report min-of-N, not the median: contention noise is one-sided. Publish the
@@ -135,8 +199,8 @@ subject is **compiler and runtime backends**, not languages.
 - Never push benchmark metrics to Prometheus, or any TSDB. Prometheus is for the
   bench machine's health (frequency, temperature, throttling), never for the
   measurement.
-- Never publish an absolute cross-ISA timing. Within-ISA ratios only.
-  ([why](METHODOLOGY.md#the-isa-rule))
+- Never publish an absolute cross-architecture timing. Within-architecture ratios only.
+  ([why](METHODOLOGY.md#the-architecture-rule))
 - Never run a benchmark under QEMU / `binfmt` emulation.
 - **Never measure energy.** ([why](METHODOLOGY.md#why-there-is-no-energy-column)) The
   campaigns run on GitHub Actions runners, and RAPL is unreadable there: x86-only, and
@@ -154,7 +218,7 @@ subject is **compiler and runtime backends**, not languages.
 - **The site computes no statistic.** Min-of-N, the buckets, the definition of
   startup all live in `src/analysis.rs`, and what counts as a *difference* between
   two backends in `src/compare.rs` — both compiled to WebAssembly (`src/wasm.rs`)
-  and called from the browser. `langbench md` calls the same function. A
+  and called from the browser. `langbench report md` calls the same function. A
   re-implementation in TypeScript would be a second definition of what this
   project measures — the same drift `bench.schema.json` is generated to prevent.
   TypeScript sorts, formats and draws; it never does arithmetic on a sample.
@@ -192,9 +256,9 @@ subject is **compiler and runtime backends**, not languages.
   byte, and each `reports/<arch>.md` is rendered from the campaign of the same
   name. No export format, no intermediate file: the raw samples are the only thing
   that cannot be recomputed, so they are what gets published.
-- **One campaign per ISA, and the site shows one at a time.** An absolute timing
-  never crosses an ISA, so two architectures are never in one chart, one bar group
-  or one table. The site reads the ISA out of the machine record *inside* each
+- **One campaign per architecture, and the site shows one at a time.** An absolute timing
+  never crosses an architecture, so two architectures are never in one chart, one bar group
+  or one table. The site reads the architecture out of the machine record *inside* each
   campaign — never out of the filename, which is a label somebody typed. `bench`
   runs the matrix on native runners; never QEMU.
 - `src/lib.rs` carves the crate in two: the `cli` feature owns everything that
@@ -202,7 +266,16 @@ subject is **compiler and runtime backends**, not languages.
   data and arithmetic, and it compiles to `wasm32-unknown-unknown`. Nothing that
   spawns a process belongs in `analysis`, `sample`, `stats` or `mode`.
 - The wire is `snake_case` throughout — the sample's own vocabulary, from the
-  NDJSON to the CSV to the browser. One vocabulary, no translation table.
+  NDJSON to the CSV to the browser. One vocabulary, no translation table. A kebab
+  key on the wire is not even reachable: `jq '.elapsed-ns'` reads it as a
+  subtraction.
+- **A manifest is `kebab-case`.** `workload.yaml` and `bench.yaml` are the only two
+  files in this project a *person* types, and that is how YAML is written wherever
+  people write it. The two conventions meet in exactly one struct — `Workload`, which
+  is both the file you write and the snapshot the campaign records — so it reads kebab
+  and writes snake, and carries a serde `alias` so it can read back the header it
+  wrote itself. `tests/key_conventions.rs` guards both sides; without it, the only
+  symptom of a slip would be a campaign the harness can no longer read.
 
 ## Rust specifics
 
@@ -225,7 +298,7 @@ subject is **compiler and runtime backends**, not languages.
   were a moment before, and the file still renders; a non-zero exit would claim
   the harness broke, and it did not.
 - The default report template is `templates/report.md.liquid`, embedded with
-  `include_str!` so the binary stays self-contained. `langbench md --template`
+  `include_str!` so the binary stays self-contained. `langbench report md --template`
   overrides it; the built-in one is always the fallback, never a required file.
 
 ## Testing

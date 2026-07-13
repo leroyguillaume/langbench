@@ -4,13 +4,9 @@
   "description": "What `bench.yaml` declares, as written on disk.\n\n`deny_unknown_fields` on purpose: a misspelled key must fail the campaign, not\nbe quietly ignored. A manifest that is half-read is worse than no manifest,\nbecause the numbers still come out — they are just wrong about what produced\nthem.",
   "type": "object",
   "properties": {
-    "algo": {
-      "description": "The algorithm this implementation computes. Implementations of the same\nalgorithm are comparable; implementations of different ones are not.",
-      "type": "string"
-    },
-    "arch": {
+    "architectures": {
       "description": "The architectures this backend can be built on: `all`, or an explicit\nlist. Defaults to `all`, which is the ordinary case — a toolchain that\nexists everywhere needs to say nothing.\n\nIt is not a preference, it is a fact: Kotlin/Native ships no\n`linux-aarch64` host compiler, so that backend cannot be built on an\nAArch64 machine at all, and emulating one is forbidden. A campaign on the\nother architecture skips the row loudly instead of failing at `docker\nbuild`.",
-      "$ref": "#/$defs/Arches"
+      "$ref": "#/$defs/Architectures"
     },
     "comments": {
       "description": "Free-form caveats: what a reader needs to know before quoting this row.",
@@ -55,15 +51,14 @@
   },
   "additionalProperties": false,
   "required": [
-    "algo",
     "language",
     "source",
     "modes",
     "description"
   ],
   "$defs": {
-    "Arch": {
-      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the ISA rule is\nwritten for. See `METHODOLOGY.md#the-isa-rule`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
+    "Architecture": {
+      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the architecture rule is\nwritten for. See `METHODOLOGY.md#the-architecture-rule`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
       "oneOf": [
         {
           "description": "64-bit x86. `-march=x86-64-v3` and friends.",
@@ -77,8 +72,8 @@
         }
       ]
     },
-    "Arches": {
-      "description": "`arch: all`, or `arch: [x86_64]`.\n\nThe same shape as `Modes`, and for the same reason: the list holds *strings*\nso that a typo can be reported as the typo it is, while the schema is told the\nlist really holds `Arch`es, so an editor completes them.",
+    "Architectures": {
+      "description": "`architectures: all`, or `architectures: [x86_64]`.\n\nThe same shape as `Modes`, and for the same reason: the list holds *strings*\nso that a typo can be reported as the typo it is, while the schema is told the\nlist really holds `Architecture`s, so an editor completes them.",
       "anyOf": [
         {
           "description": "Every architecture the harness knows. The default, and the ordinary case.",
@@ -91,7 +86,7 @@
           "description": "The architectures this backend can actually be built on, e.g. `[x86_64]`.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Arch"
+            "$ref": "#/$defs/Architecture"
           }
         }
       ]

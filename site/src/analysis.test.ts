@@ -49,16 +49,16 @@ describe("the WebAssembly boundary", () => {
   it("summarizes the published campaign into the shape the site expects", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
 
-    expect(analysis.algos.length).toBeGreaterThan(0);
+    expect(analysis.workloads.length).toBeGreaterThan(0);
     expect(analysis.backends.length).toBeGreaterThan(0);
 
-    const [algo] = analysis.algos;
-    expect(algo?.aggregates.length).toBeGreaterThan(0);
+    const [workload] = analysis.workloads;
+    expect(workload?.aggregates.length).toBeGreaterThan(0);
   });
 
   it("ranks the aggregates fastest first, on the minimum wall-clock", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const measured = (analysis.algos[0]?.aggregates ?? [])
+    const measured = (analysis.workloads[0]?.aggregates ?? [])
       .map((row) => row.run_wall?.min)
       .filter((min): min is number => min !== undefined && min !== null);
 
@@ -70,14 +70,14 @@ describe("the WebAssembly boundary", () => {
   /// `JSON.parse` would have rounded it to the nearest double on the way in.
   it("hands the checksum over as a string, with every bit intact", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const checksum = analysis.algos[0]?.strict_checksum;
+    const checksum = analysis.workloads[0]?.strict_checksum;
 
     expect(typeof checksum).toBe("string");
     expect(checksum).toMatch(/^\d+$/);
 
     // Whatever the campaign computed, every strict-mode row agreed on it: that is
     // the invariant the harness aborts a run over.
-    for (const row of analysis.algos[0]?.aggregates ?? []) {
+    for (const row of analysis.workloads[0]?.aggregates ?? []) {
       if (row.mode === "strict") {
         expect(row.checksum).toBe(checksum);
         expect(row.checksum_delta).toBe("0");
@@ -89,15 +89,16 @@ describe("the WebAssembly boundary", () => {
     const cold = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
     const warm = analysisSchema.parse(analyze(ndjson, { include_warmup: true }));
 
-    const samples = (analysis: typeof cold) => analysis.algos[0]?.aggregates[0]?.run_wall?.n ?? 0;
+    const samples = (analysis: typeof cold) =>
+      analysis.workloads[0]?.aggregates[0]?.run_wall?.n ?? 0;
 
     expect(cold.options.include_warmup).toBe(false);
     expect(warm.options.include_warmup).toBe(true);
     expect(samples(warm)).toBeGreaterThan(samples(cold));
     // A warmup round can only ever be slower, so folding it in cannot lower the
     // minimum — it can only fail to raise it.
-    const coldMin = cold.algos[0]?.aggregates[0]?.run_wall?.min ?? 0;
-    const warmMin = warm.algos[0]?.aggregates[0]?.run_wall?.min ?? 0;
+    const coldMin = cold.workloads[0]?.aggregates[0]?.run_wall?.min ?? 0;
+    const warmMin = warm.workloads[0]?.aggregates[0]?.run_wall?.min ?? 0;
     expect(warmMin).toBeLessThanOrEqual(coldMin);
   });
 
@@ -109,14 +110,14 @@ describe("the WebAssembly boundary", () => {
   /// spells the answer; it does not decide whether a gap is a difference.
   it("compares two rows of the published campaign, and hands back the harness's verdict", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const algo = analysis.algos[0];
-    const [first, second] = algo?.aggregates ?? [];
-    if (algo === undefined || first === undefined || second === undefined) {
+    const workload = analysis.workloads[0];
+    const [first, second] = workload?.aggregates ?? [];
+    if (workload === undefined || first === undefined || second === undefined) {
       throw new Error("the fixture campaign measured fewer than two rows");
     }
 
     const selection = {
-      algo: algo.algo,
+      workload: workload.workload,
       left: { backend: first.backend, mode: first.mode },
       right: { backend: second.backend, mode: second.mode },
     };
@@ -140,19 +141,23 @@ describe("the WebAssembly boundary", () => {
   /// them in.
   it("inverts the ratio when the two rows are swapped, and nothing else", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const algo = analysis.algos[0];
-    const [first, second] = algo?.aggregates ?? [];
-    if (algo === undefined || first === undefined || second === undefined) {
+    const workload = analysis.workloads[0];
+    const [first, second] = workload?.aggregates ?? [];
+    if (workload === undefined || first === undefined || second === undefined) {
       throw new Error("the fixture campaign measured fewer than two rows");
     }
 
     const left = { backend: first.backend, mode: first.mode };
     const right = { backend: second.backend, mode: second.mode };
     const forward = comparisonSchema.parse(
-      compare(ndjson, { include_warmup: false }, { algo: algo.algo, left, right }),
+      compare(ndjson, { include_warmup: false }, { workload: workload.workload, left, right }),
     );
     const backward = comparisonSchema.parse(
-      compare(ndjson, { include_warmup: false }, { algo: algo.algo, left: right, right: left }),
+      compare(
+        ndjson,
+        { include_warmup: false },
+        { workload: workload.workload, left: right, right: left },
+      ),
     );
 
     const run = (comparison: typeof forward) =>
@@ -163,15 +168,15 @@ describe("the WebAssembly boundary", () => {
 
   it("refuses a row the campaign never measured, rather than comparing against a zero", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const algo = analysis.algos[0]?.algo ?? "mandelbrot";
-    const first = analysis.algos[0]?.aggregates[0];
+    const workload = analysis.workloads[0]?.workload ?? "mandelbrot";
+    const first = analysis.workloads[0]?.aggregates[0];
 
     expect(() =>
       compare(
         ndjson,
         { include_warmup: false },
         {
-          algo,
+          workload,
           left: {
             backend: first?.backend ?? "c-gcc",
             mode: first?.mode ?? "strict",
@@ -182,19 +187,19 @@ describe("the WebAssembly boundary", () => {
     ).toThrow(/cobol-gnucobol/);
   });
 
-  /// The ISA comes out of the machine record the campaign wrote, never out of the
-  /// filename. An absolute timing never crosses an ISA, and the site keeps two
+  /// The architecture comes out of the machine record the campaign wrote, never out of the
+  /// filename. An absolute timing never crosses an architecture, and the site keeps two
   /// campaigns apart on this field — so it had better be the machine's own word.
-  it("reports the ISA of every campaign, from inside the file", () => {
+  it("reports the architecture of every campaign, from inside the file", () => {
     for (const file of campaigns()) {
       const raw = readFileSync(resolve(FIXTURES, file), "utf8");
       const analysis = analysisSchema.parse(analyze(raw, { include_warmup: false }));
 
-      expect(analysis.arch).not.toBe("");
+      expect(analysis.architecture).not.toBe("");
       // The name is a convenience for a human reading `ls`. If it and the header
       // ever disagree, the header is right -- but they should not disagree, and a
-      // campaign filed under the wrong ISA is worth catching here.
-      expect(file).toBe(`${analysis.arch}.ndjson`);
+      // campaign filed under the wrong architecture is worth catching here.
+      expect(file).toBe(`${analysis.architecture}.ndjson`);
     }
   });
 
@@ -205,7 +210,7 @@ describe("the WebAssembly boundary", () => {
   /// the case that has to render rather than throw. An absence is not a zero.
   it("carries the new metrics, and an old campaign reports them as absent rather than as zero", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const row = analysis.algos[0]?.aggregates[0];
+    const row = analysis.workloads[0]?.aggregates[0];
     if (row === undefined) {
       throw new Error("the fixture campaign measured nothing");
     }

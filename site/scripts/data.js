@@ -7,10 +7,11 @@
 // derives — with the harness's own code, compiled to WebAssembly.
 // See `METHODOLOGY.md#sampling`.
 //
-// One campaign per ISA, because **an absolute timing never crosses an ISA**
-// (`METHODOLOGY.md#the-isa-rule`). The architecture in the filename is a
+// One campaign per (workload, architecture), because **an absolute timing never crosses an
+// architecture**
+// (`METHODOLOGY.md#the-architecture-rule`). The architecture in the filename is a
 // convenience for a human reading `ls`; it is *not* what the site keys on. The
-// ISA is read out of the machine record inside each file, by the WASM — a
+// architecture is read out of the machine record inside each file, by the WASM — a
 // filename is a label somebody typed, and the header is what the machine said
 // about itself.
 //
@@ -38,40 +39,60 @@ const chosen =
 
 const CAMPAIGN = /\.ndjson$/;
 
-let entries;
-try {
-  entries = readdirSync(source);
-} catch (error) {
-  // A pointed-at directory that does not exist is a typo, not an empty campaign
-  // set. Say which path, and say who chose it.
-  console.error(
-    `cannot read the campaign directory ${source}: ${error.message}\n` + `It came from ${chosen}.`,
-  );
-  process.exit(1);
+// `samples/<workload>/<architecture>.ndjson`, and also a plain `*.ndjson` at the top
+// level — `samples.local/` holds one file, written by hand with `--output`.
+//
+// The directory name is a convenience for a human reading `ls`, exactly like the
+// architecture in the filename: **neither is what the site keys on**. Both the
+// workload and the architecture are read out of the campaign's own header, by the
+// WASM. A path is a label somebody typed; the header is what the run recorded.
+function campaignsIn(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    // A pointed-at directory that does not exist is a typo, not an empty campaign
+    // set. Say which path, and say who chose it.
+    console.error(
+      `cannot read the campaign directory ${dir}: ${error.message}\n` + `It came from ${chosen}.`,
+    );
+    process.exit(1);
+  }
+
+  const found = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isDirectory()) {
+      found.push(...campaignsIn(join(dir, entry.name)).map((name) => join(entry.name, name)));
+    } else if (CAMPAIGN.test(entry.name)) {
+      found.push(entry.name);
+    }
+  }
+  return found;
 }
 
-const campaigns = entries.filter((name) => CAMPAIGN.test(name)).sort();
+const campaigns = campaignsIn(source);
 
 if (campaigns.length === 0) {
   // Not a warning to be scrolled past: a site built without a campaign is a site
   // that renders an error page. Fail here, where the message is legible.
   console.error(
     `no campaign to publish: no .ndjson in ${source} (${chosen}).\n` +
-      "Run one, and name it after the ISA it ran on:\n" +
-      "  langbench run --output samples/x86_64.ndjson\n" +
+      "Run one:\n" +
+      "  langbench workload run mandelbrot --output samples/mandelbrot/x86_64.ndjson\n" +
       "Or point the site at a campaign you already have:\n" +
       "  SAMPLES_DIR=samples.local npm run dev",
   );
   process.exit(1);
 }
 
-mkdirSync(target, { recursive: true });
 for (const campaign of campaigns) {
-  copyFileSync(join(source, campaign), join(target, campaign));
+  const destination = join(target, campaign);
+  mkdirSync(dirname(destination), { recursive: true });
+  copyFileSync(join(source, campaign), destination);
 }
 
 // The index the site fetches first. Filenames only — every fact about a campaign
-// (its ISA, its host, its date) lives in the campaign itself.
+// (its workload, its architecture, its host, its date) lives in the campaign itself.
 writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(campaigns, null, 2)}\n`);
 console.log(`published ${campaigns.length} campaign(s) from ${chosen}: ${campaigns.join(", ")}`);
 

@@ -25,7 +25,7 @@ pub struct ReportData {
     pub campaign: Campaign,
     pub machine_fields: Vec<Field>,
     pub warnings: Vec<String>,
-    pub algos: Vec<AlgoReport>,
+    pub workloads: Vec<WorkloadReport>,
     /// Every backend the campaign measured, described once, at the end of the
     /// report. The tables repeat a backend per FP mode; a description repeated
     /// three times is a description nobody reads, and one sitting between the
@@ -46,7 +46,7 @@ pub struct ReportData {
 /// benchmark that flatters itself.
 #[derive(Debug, Serialize)]
 pub struct FailureRow {
-    pub algo: String,
+    pub workload: String,
     pub backend: String,
     pub language: String,
     pub compiler: String,
@@ -61,10 +61,10 @@ pub struct FailureRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AlgoReport {
-    pub algo: String,
-    /// The reference every strict-mode row of *this* algorithm agreed on. It is
-    /// a property of `(algo, grid size, max_iter)`, never of the campaign.
+pub struct WorkloadReport {
+    pub workload: String,
+    /// The reference every strict-mode row of *this* workload agreed on. It is
+    /// a property of `(workload, grid size, max_iter)`, never of the campaign.
     pub strict_checksum: String,
     pub rows: Vec<Row>,
 }
@@ -76,7 +76,7 @@ pub struct Backend {
     /// and therefore the anchor every row of the tables links to. Computed in
     /// `analysis`, so the link and its target cannot disagree.
     pub id: String,
-    pub algo: String,
+    pub workload: String,
     pub backend: String,
     pub language: String,
     pub compiler: String,
@@ -133,15 +133,15 @@ fn format(analysis: Analysis) -> ReportData {
         campaign: analysis.campaign,
         machine_fields: analysis.machine_fields,
         warnings: analysis.warnings,
-        algos: analysis
-            .algos
+        workloads: analysis
+            .workloads
             .into_iter()
-            .map(|algo| AlgoReport {
-                algo: algo.algo,
-                strict_checksum: algo
+            .map(|workload| WorkloadReport {
+                workload: workload.workload,
+                strict_checksum: workload
                     .strict_checksum
                     .map_or_else(|| "n/a".to_owned(), |checksum| checksum.to_string()),
-                rows: algo.aggregates.iter().map(row).collect(),
+                rows: workload.aggregates.iter().map(row).collect(),
             })
             .collect(),
         backends: analysis
@@ -149,7 +149,7 @@ fn format(analysis: Analysis) -> ReportData {
             .into_iter()
             .map(|backend| Backend {
                 id: backend.id,
-                algo: backend.algo,
+                workload: backend.workload,
                 backend: backend.backend,
                 language: backend.language,
                 compiler: opt(backend.compiler.as_deref()),
@@ -164,7 +164,7 @@ fn format(analysis: Analysis) -> ReportData {
 
 fn failure_row(failure: &analysis::Failure) -> FailureRow {
     FailureRow {
-        algo: failure.algo.clone(),
+        workload: failure.workload.clone(),
         backend: failure.backend.clone(),
         language: failure.language.clone(),
         compiler: opt(failure.compiler.as_deref()),
@@ -319,9 +319,10 @@ mod tests {
     use crate::machine::Machine;
     use crate::mode::FpMode;
     use crate::sample::{Phase, Sample};
+    use crate::workload::Workload;
 
     fn implementations(data: &ReportData) -> Vec<&str> {
-        data.algos[0]
+        data.workloads[0]
             .rows
             .iter()
             .map(|row| row.backend.as_str())
@@ -342,7 +343,7 @@ mod tests {
     fn sample(backend: &str, mode: FpMode, phase: Phase, warmup: bool, wall: u64) -> Sample {
         let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             language: language.to_owned(),
             compiler: Some(compiler.to_owned()),
             interpreter: None,
@@ -371,8 +372,7 @@ mod tests {
             langbench_version: "0.1.0".to_owned(),
             timestamp: "2026-07-09T12:00:00Z".to_owned(),
             cpu: 8,
-            grid_size: 4096,
-            max_iter: 1000,
+            workload: Workload::fixture(),
             rounds: 30,
             build_rounds: 5,
             warmup_rounds: 2,
@@ -388,7 +388,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 2_000_000_000),
         ];
         let data = build(&recording(samples));
-        let row = &data.algos[0].rows[0];
+        let row = &data.workloads[0].rows[0];
         assert_eq!(row.run_samples, 1);
         assert_eq!(row.run_min, "2000.0 ms");
     }
@@ -400,7 +400,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 2_000_000_000),
         ];
         let data = build(&recording(samples));
-        let row = &data.algos[0].rows[0];
+        let row = &data.workloads[0].rows[0];
         // `sample()` halves the wall to get the elapsed, and the build column
         // reports the elapsed. See the next test.
         assert_eq!(row.build_min, "400.0 ms");
@@ -420,7 +420,7 @@ mod tests {
         build_sample.elapsed_ns = 30_000_000; // what gcc took
 
         let data = build(&recording(vec![build_sample]));
-        assert_eq!(data.algos[0].rows[0].build_min, "30.0 ms");
+        assert_eq!(data.workloads[0].rows[0].build_min, "30.0 ms");
     }
 
     #[test]
@@ -433,7 +433,7 @@ mod tests {
             1_000_000,
         )];
         let data = build(&recording(samples));
-        assert_eq!(data.algos[0].rows[0].build_min, "n/a");
+        assert_eq!(data.workloads[0].rows[0].build_min, "n/a");
     }
 
     #[test]
@@ -444,7 +444,7 @@ mod tests {
         let mut divergent = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
         divergent.checksum = Some(40);
         let data = build(&recording(vec![reference, divergent]));
-        assert_eq!(data.algos[0].rows[1].checksum_delta, "-2");
+        assert_eq!(data.workloads[0].rows[1].checksum_delta, "-2");
     }
 
     #[test]
@@ -452,30 +452,30 @@ mod tests {
         let mut relaxed = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
         relaxed.checksum = Some(40);
         let data = build(&recording(vec![relaxed]));
-        assert_eq!(data.algos[0].strict_checksum, "n/a");
-        assert_eq!(data.algos[0].rows[0].checksum_delta, "n/a");
+        assert_eq!(data.workloads[0].strict_checksum, "n/a");
+        assert_eq!(data.workloads[0].rows[0].checksum_delta, "n/a");
     }
 
     #[test]
     fn each_algorithm_measures_its_delta_against_its_own_reference() {
-        // The checksum is a property of (algo, grid size, max_iter). Measuring
-        // the second algorithm against the first one's reference would report a
+        // The checksum is a property of (workload, grid size, max_iter). Measuring
+        // the second workload against the first one's reference would report a
         // huge bogus delta on the column that gates correctness.
         let first = sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000);
 
         let mut second = sample("c-gcc", FpMode::Strict, Phase::Run, false, 1_000_000);
-        second.algo = "nbody".to_owned();
+        second.workload = "nbody".to_owned();
         second.checksum = Some(1_000);
 
         let mut relaxed = sample("c-gcc", FpMode::Fast, Phase::Run, false, 1_000_000);
-        relaxed.algo = "nbody".to_owned();
+        relaxed.workload = "nbody".to_owned();
         relaxed.checksum = Some(997);
 
         let data = build(&recording(vec![first, second, relaxed]));
-        assert_eq!(data.algos[0].strict_checksum, "42");
-        assert_eq!(data.algos[1].strict_checksum, "1000");
-        assert_eq!(data.algos[1].rows[0].checksum_delta, "0");
-        assert_eq!(data.algos[1].rows[1].checksum_delta, "-3");
+        assert_eq!(data.workloads[0].strict_checksum, "42");
+        assert_eq!(data.workloads[1].strict_checksum, "1000");
+        assert_eq!(data.workloads[1].rows[0].checksum_delta, "0");
+        assert_eq!(data.workloads[1].rows[1].checksum_delta, "-3");
     }
 
     /// A backend that broke has no row in the tables, and a row that is absent
@@ -491,7 +491,7 @@ mod tests {
             2_000_000_000,
         )]);
         recording.failures = vec![crate::sample::Failure {
-            algo: "mandelbrot".to_owned(),
+            workload: "mandelbrot".to_owned(),
             language: "rust".to_owned(),
             compiler: Some("llvm".to_owned()),
             interpreter: None,
@@ -547,7 +547,7 @@ mod tests {
         )]));
         let markdown = render(
             &data,
-            "{% for algo in algos %}{{ algo.algo }}:{% for row in algo.rows %}{{ row.run_min }}{% endfor %}{% endfor %}",
+            "{% for workload in workloads %}{{ workload.workload }}:{% for row in workload.rows %}{{ row.run_min }}{% endfor %}{% endfor %}",
         )
         .unwrap();
         // The trailing newline is the renderer's, not the template's: a report is a
@@ -576,7 +576,7 @@ mod tests {
         fast_compute.elapsed_ns = 230_000_000; // gap: 170 ms
 
         let data = build(&recording(vec![fast_wall, fast_compute]));
-        let row = &data.algos[0].rows[0];
+        let row = &data.workloads[0].rows[0];
         assert_eq!(row.run_min, "350.0 ms");
         assert_eq!(row.compute_min, "230.0 ms");
         // The difference of the two minima would be 120 ms, a run nobody observed.
@@ -592,7 +592,7 @@ mod tests {
             sample("c-gcc", FpMode::Strict, Phase::Run, false, 5_000_000),
         ];
         let data = build(&recording(samples));
-        assert_eq!(data.algos[0].rows[0].run_dispersion, "n/a (n=2)");
+        assert_eq!(data.workloads[0].rows[0].run_dispersion, "n/a (n=2)");
     }
 
     #[test]
@@ -605,7 +605,7 @@ mod tests {
             1_000_000,
         )];
         let data = build(&recording(samples));
-        assert_eq!(data.algos[0].rows[0].checksum_delta, "0");
+        assert_eq!(data.workloads[0].rows[0].checksum_delta, "0");
     }
 
     /// The sort is stable, so the schedule order survives as the tiebreak.
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(data.backends.len(), 2);
 
         let markdown = render(&data, DEFAULT_TEMPLATE).unwrap();
-        for row in &data.algos[0].rows {
+        for row in &data.workloads[0].rows {
             assert!(
                 markdown.contains(&format!("](#{})", row.backend_id)),
                 "row `{}` has no link",

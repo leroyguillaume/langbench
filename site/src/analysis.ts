@@ -46,7 +46,7 @@ export const fpModeSchema = z.enum(["strict", "fma", "fast"]);
 const checksumSchema = z.string().nullable();
 
 export const aggregateSchema = z.object({
-  algo: z.string(),
+  workload: z.string(),
   backend: z.string(),
   backend_id: z.string(),
   language: z.string(),
@@ -88,7 +88,7 @@ export const aggregateSchema = z.object({
 
 export const backendSchema = z.object({
   id: z.string(),
-  algo: z.string(),
+  workload: z.string(),
   backend: z.string(),
   language: z.string(),
   compiler: z.string().nullable(),
@@ -106,7 +106,7 @@ export const backendSchema = z.object({
  * exactly like a backend nobody ever wrote.
  */
 export const failureSchema = z.object({
-  algo: z.string(),
+  workload: z.string(),
   backend: z.string(),
   backend_id: z.string(),
   language: z.string(),
@@ -123,12 +123,36 @@ export const failureSchema = z.object({
   error: z.string(),
 });
 
+/** One knob of a workload, and the value the campaign ran it at. */
+export const paramSchema = z.object({
+  name: z.string(),
+  value: z.union([z.number(), z.string(), z.boolean()]),
+});
+
+/**
+ * The workload a campaign measured, snapshotted into its header when it started.
+ *
+ * The site reads campaigns and nothing else — it never sees a `workload.yaml`. This
+ * is how it knows what the work was, how it was sized, and what the right answer
+ * is. And because it is a snapshot, editing the manifest afterwards cannot rewrite
+ * what a campaign from three months ago says it measured.
+ *
+ * `checksum` is a string here for the reason every checksum on this wire is:
+ * it is a 64-bit integer, and a JavaScript number is a double.
+ */
+export const workloadSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  implementations: z.array(z.string()),
+  params: z.array(paramSchema),
+  checksum: z.string().nullable(),
+});
+
 export const campaignSchema = z.object({
   langbench_version: z.string(),
   timestamp: z.string(),
+  workload: workloadSchema,
   cpu: z.number().int(),
-  grid_size: z.number().int(),
-  max_iter: z.number().int(),
   rounds: z.number().int(),
   build_rounds: z.number().int(),
   warmup_rounds: z.number().int(),
@@ -140,18 +164,18 @@ export const analysisSchema = z.object({
   campaign: campaignSchema,
   options: z.object({ include_warmup: z.boolean() }),
   /**
-   * The ISA the campaign ran on, out of the machine record inside the file — never
-   * out of the name of the file. An absolute timing never crosses an ISA, and the
+   * The architecture the campaign ran on, out of the machine record inside the file — never
+   * out of the name of the file. An absolute timing never crosses an architecture, and the
    * check that enforces it cannot rest on what somebody called a file.
    */
-  arch: z.string(),
+  architecture: z.string(),
   hostname: z.string().nullable(),
   machine_fields: z.array(z.object({ label: z.string(), value: z.string() })),
   /** Every reason the host was a poor benchmark target. It travels with the numbers. */
   warnings: z.array(z.string()),
-  algos: z.array(
+  workloads: z.array(
     z.object({
-      algo: z.string(),
+      workload: z.string(),
       strict_checksum: checksumSchema,
       aggregates: z.array(aggregateSchema),
     }),
@@ -200,12 +224,12 @@ export const sideSchema = z.object({
   compiler: z.string().nullable(),
   interpreter: z.string().nullable(),
   mode: fpModeSchema,
-  /** The ISA of the campaign this row was measured on. */
-  arch: z.string(),
+  /** The architecture of the campaign this row was measured on. */
+  architecture: z.string(),
 });
 
 export const comparisonSchema = z.object({
-  algo: z.string(),
+  workload: z.string(),
   left: sideSchema,
   right: sideSchema,
   metrics: z.array(metricSchema),
@@ -220,8 +244,8 @@ export const comparisonSchema = z.object({
   /**
    * The two rows come from two architectures, and **every timing above is therefore
    * meaningless as a comparison**. The harness decides this, and the site's only job
-   * is to say it out loud: a ratio travels between ISAs, a millisecond does not.
-   * See `METHODOLOGY.md#the-isa-rule`.
+   * is to say it out loud: a ratio travels between architectures, a millisecond does not.
+   * See `METHODOLOGY.md#the-architecture-rule`.
    *
    * The checksums are the exception, and the reason the crossing is worth offering:
    * in `strict` mode they are obliged to be bit-identical on x86-64 and on AArch64
@@ -237,7 +261,7 @@ export type Backend = z.infer<typeof backendSchema>;
 export type Failure = z.infer<typeof failureSchema>;
 export type Campaign = z.infer<typeof campaignSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
-export type AlgoAnalysis = Analysis["algos"][number];
+export type WorkloadAnalysis = Analysis["workloads"][number];
 export type Metric = z.infer<typeof metricSchema>;
 export type Side = z.infer<typeof sideSchema>;
 export type Comparison = z.infer<typeof comparisonSchema>;
@@ -250,7 +274,7 @@ export interface Row {
 
 /** The pair a reader asked for. `snake_case`: it is deserialized straight into Rust. */
 export interface Selection {
-  algo: string;
+  workload: string;
   left: Row;
   right: Row;
 }
@@ -289,7 +313,7 @@ function load(): Promise<void> {
  * this page is derived from it, in Rust, on demand.
  */
 export interface LoadedCampaign {
-  /** The campaign, byte for byte, as `samples/<arch>.ndjson` on disk. */
+  /** The campaign, byte for byte, as `samples/<architecture>.ndjson` on disk. */
   ndjson: string;
   analysis: Analysis;
 }
@@ -317,8 +341,8 @@ export async function fetchCampaign(
   const analysis = analysisSchema.parse(raw);
   logger.debug("campaign.analyzed", {
     url: campaignUrl,
-    arch: analysis.arch,
-    algos: analysis.algos.length,
+    architecture: analysis.architecture,
+    workloads: analysis.workloads.length,
     backends: analysis.backends.length,
     warnings: analysis.warnings.length,
     include_warmup: options.include_warmup,
@@ -327,10 +351,10 @@ export async function fetchCampaign(
 }
 
 /**
- * Every campaign this build publishes, summarized — one per ISA.
+ * Every campaign this build publishes, summarized — one per architecture.
  *
- * They are kept apart on purpose. **An absolute timing never crosses an ISA**
- * (`METHODOLOGY.md#the-isa-rule`): an x86-64 millisecond and an aarch64
+ * They are kept apart on purpose. **An absolute timing never crosses an architecture**
+ * (`METHODOLOGY.md#the-architecture-rule`): an x86-64 millisecond and an aarch64
  * millisecond are not the same claim, and a chart that puts them in one bar
  * group invites exactly the comparison the methodology forbids. So the site
  * loads them all and shows one at a time.
@@ -346,8 +370,10 @@ export async function fetchCampaigns(baseUrl: string, options: Options): Promise
     files.map((file) => fetchCampaign(`${baseUrl}${file}`, options)),
   );
   // Deterministic order, and it is not the order the files were listed in: the
-  // ISA is what the reader picks between, so the ISA is what sorts them.
-  return campaigns.sort((left, right) => left.analysis.arch.localeCompare(right.analysis.arch));
+  // architecture is what the reader picks between, so the architecture is what sorts them.
+  return campaigns.sort((left, right) =>
+    left.analysis.architecture.localeCompare(right.analysis.architecture),
+  );
 }
 
 /**

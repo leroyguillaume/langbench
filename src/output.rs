@@ -1,4 +1,4 @@
-//! Rendering a recorded campaign: `langbench csv` and `langbench md`.
+//! Rendering a recorded campaign: `langbench report csv` and `langbench report md`.
 //!
 //! Neither command measures anything. They read a `samples.ndjson` and are pure
 //! functions of it, which is what makes a report reproducible: the same file
@@ -14,10 +14,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::cli::{CsvArgs, JsonSchemaArgs, MarkdownArgs};
+use crate::cli::{
+    CsvArgs, DEFAULT_BENCH_SCHEMA_OUTPUT, DEFAULT_WORKLOAD_SCHEMA_OUTPUT, ImplementationListArgs,
+    JsonSchemaArgs, ListArgs, MarkdownArgs,
+};
 use crate::discovery;
 use crate::report;
 use crate::sample;
+use crate::workload::{self, Workload};
 
 pub fn csv(args: &CsvArgs) -> Result<()> {
     let recording = sample::load(&args.render.samples)?;
@@ -37,13 +41,86 @@ pub fn markdown(args: &MarkdownArgs) -> Result<()> {
     )
 }
 
-/// The manifest schema, written where an editor and the pre-commit hook expect
-/// it. Not a rendering of a campaign, but the same contract: a pure function of
-/// the code, on stdout-free output.
-pub fn jsonschema(args: &JsonSchemaArgs) -> Result<()> {
+/// A manifest schema, written where an editor and the pre-commit hook expect it.
+/// Not a rendering of a campaign, but the same contract: a pure function of the
+/// code, on stdout-free output.
+///
+/// Two manifests, two schemas, one per resource — and both generated from the very
+/// struct the harness deserializes, so neither can drift from what is actually
+/// accepted.
+pub fn bench_schema(args: &JsonSchemaArgs) -> Result<()> {
     // Trailing newline: the file is checked in, and `end-of-file-fixer` would
     // otherwise rewrite what this command just wrote, failing the hook forever.
-    write(&args.output, &format!("{}\n", discovery::schema()?))
+    write(
+        &args.output_or(DEFAULT_BENCH_SCHEMA_OUTPUT),
+        &format!("{}\n", discovery::schema()?),
+    )
+}
+
+pub fn workload_schema(args: &JsonSchemaArgs) -> Result<()> {
+    write(
+        &args.output_or(DEFAULT_WORKLOAD_SCHEMA_OUTPUT),
+        &format!("{}\n", workload::schema()?),
+    )
+}
+
+/// The workloads on disk: what could be measured, before anything is.
+///
+/// A pure function of the tree — no Docker, no samples. It is the answer to "what
+/// can I run?", and `--json` is there because the answer is read by scripts as often
+/// as by people.
+pub fn list_workloads(args: &ListArgs) -> Result<()> {
+    let roots = discovery::workloads(&args.benchmarks_dir)?;
+
+    if args.json {
+        let workloads: Vec<&Workload> = roots.iter().map(|root| &root.workload).collect();
+        println!("{}", serde_json::to_string_pretty(&workloads)?);
+        return Ok(());
+    }
+
+    for root in &roots {
+        let params: Vec<String> = root
+            .workload
+            .params
+            .iter()
+            .map(|param| format!("{}={}", param.name, param.value))
+            .collect();
+        println!(
+            "{}\n  {}\n  implementations: {}\n  params: {}\n",
+            root.workload.id,
+            root.workload.description,
+            root.workload.implementations.len(),
+            params.join(" "),
+        );
+    }
+    Ok(())
+}
+
+/// The implementations of one workload: the backends that race to do the work.
+pub fn list_implementations(args: &ImplementationListArgs) -> Result<()> {
+    let implementations = discovery::discover(&args.list.benchmarks_dir, &args.workload)?;
+
+    if args.list.json {
+        println!("{}", serde_json::to_string_pretty(&implementations)?);
+        return Ok(());
+    }
+
+    for implementation in &implementations {
+        println!(
+            "{}\n  language: {}\n  compiler: {}\n  interpreter: {}\n  modes: {}\n",
+            implementation.slug(),
+            implementation.language,
+            implementation.compiler.as_deref().unwrap_or("n/a"),
+            implementation.interpreter.as_deref().unwrap_or("n/a"),
+            implementation
+                .fp_modes
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
+    Ok(())
 }
 
 /// Write a rendering, creating the directories it is addressed into.
@@ -58,6 +135,7 @@ fn write(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::workload::Workload;
     use tempfile::TempDir;
 
     use super::*;
@@ -77,8 +155,7 @@ mod tests {
                     langbench_version: "0.1.0".to_owned(),
                     timestamp: "2026-07-11T12:00:00Z".to_owned(),
                     cpu: 8,
-                    grid_size: 2048,
-                    max_iter: 1000,
+                    workload: Workload::fixture(),
                     rounds: 10,
                     build_rounds: 3,
                     warmup_rounds: 1,
@@ -89,7 +166,7 @@ mod tests {
             .unwrap();
         writer
             .write_sample(&Sample {
-                algo: "mandelbrot".to_owned(),
+                workload: "mandelbrot".to_owned(),
                 language: "c".to_owned(),
                 compiler: Some("gcc".to_owned()),
                 interpreter: None,
@@ -126,7 +203,7 @@ mod tests {
         .unwrap();
 
         let rendered = fs::read_to_string(&output).unwrap();
-        assert!(rendered.starts_with("algo,"), "{rendered}");
+        assert!(rendered.starts_with("workload,"), "{rendered}");
         assert!(rendered.contains("mandelbrot,c,gcc,"), "{rendered}");
     }
 
