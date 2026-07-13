@@ -8,7 +8,7 @@
 # That is what makes this the most interesting row in the JVM group. It completes
 # the same triangle Python already has -- one source, an interpreter (openjdk), a
 # JIT (graalvm), and an AOT compiler (this) -- and it is the only JVM backend that
-# can honour the project's ISA rule, because it is the only one that compiles before
+# can honour the project's architecture rule, because it is the only one that compiles before
 # it meets the machine.
 #
 # Single stage: the `build` subcommand recompiles from a clean tree to be timed, so

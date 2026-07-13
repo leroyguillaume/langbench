@@ -310,12 +310,14 @@ unit tests do not catch, and it is why the gate exists.
 It is a **necessary condition, not a sufficient one.** The gate can only notice a
 perturbation big enough to push some pixel across an iteration boundary. So a
 passing checksum means "no evidence of divergence at this resolution" — never
-"provably identical". Sensitivity grows with `--grid-size` and `--max-iter`, because
-both increase the number of pixels sitting right on a boundary.
+"provably identical". For Mandelbrot, sensitivity grows with the `grid_size` and
+`max_iter` params, because both increase the number of pixels sitting right on a
+boundary.
 
-And the reference is not a universal constant. It is a property of *(workload, grid
-size, iteration ceiling, viewport)*, which is why each workload has its own, and why
-the value moves when you change the campaign's parameters. The invariant is
+And the reference is not a universal constant. It is a property of *(workload, its
+params)*, which is why each workload declares its own — in its `workload.yaml` — and
+why overriding a param with `--param` retires it: it is the answer to the declared
+work, not to the work you just asked for. The invariant is
 *agreement between implementations*, never a particular number.
 
 In `fma` and `fast` we do not gate — those modes are *allowed* to diverge, that is

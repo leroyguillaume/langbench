@@ -19,7 +19,7 @@ description: >-
   java.lang.Thread and AtomicInteger the JVM rows use.
 comments: >-
   The cleanest compiler swap in the table: one source, and the choice is a JVM or
-  LLVM. It is also the only Scala row that can honour the ISA rule exactly -- clang
+  LLVM. It is also the only Scala row that can honour the architecture rule exactly -- clang
   takes the harness's -march verbatim, where every JVM row can only approximate it.
   Do not confuse it with scala-native-image, which is GraalVM AOT-compiling JVM
   bytecode: a different compiler, a different runtime, and a confusingly similar
