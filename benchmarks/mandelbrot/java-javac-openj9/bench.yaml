@@ -8,19 +8,23 @@ compiler: javac
 interpreter: openj9
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.java
-# One floating-point semantics: the JLS binds any JVM that claims the name, so
-# Testarossa may no more contract a multiply-add than C2 may.
+# One mode, and it is not a choice this backend made. Testarossa compiles the hot
+# loop while the program runs, on the machine it is running on, and takes that
+# machine's instruction set as it finds it: there is no baseline to ask a JIT for.
+# `native` is what a JIT *is*, and this manifest declares it the way an interpreter
+# declares the thing it cannot do.
 modes:
-  - strict
+  - native
 description: >-
   The same Mandelbrot.java as java-javac-openjdk, byte for byte, compiled by the
   same javac and executed by Eclipse OpenJ9 instead of HotSpot. A different JIT and
   a different GC underneath identical bytecode: whatever separates the two rows is
   the virtual machine.
 comments: >-
-  NO ISA baseline at all. OpenJ9 silently ignores unknown -XX: options —
-  `-XX:CompleteNonsenseFlag=42` starts it happily, where HotSpot refuses to boot — so
-  passing the HotSpot vector caps would have pinned nothing while claiming to, and its
-  JIT may use wider vectors than the compiled rows were allowed. The gap is published
-  rather than papered over. Neither -Xquickstart nor -Xshareclasses is passed: this is
-  the VM as it ships.
+  Floating point is strict here too, and by the same rule: the JLS binds any JVM that
+  claims the name, so Testarossa may no more contract a multiply-add than C2 may. One
+  quirk is worth carrying, because it makes every future -XX: flag on this row suspect —
+  OpenJ9 silently ignores options it does not know: -XX:CompleteNonsenseFlag=42 starts it
+  happily, where HotSpot refuses to boot. A flag passed here can therefore pin nothing
+  while looking as though it pinned something, and this entrypoint passes none: neither
+  -Xquickstart nor -Xshareclasses, no vector cap, nothing. This is the VM as it ships.

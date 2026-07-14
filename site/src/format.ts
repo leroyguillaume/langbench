@@ -40,16 +40,6 @@ export function dispersion(summary: Summary | null): string {
   return summary.n >= 3 ? `${summary.mad_pct.toFixed(2)}%` : `${NOT_AVAILABLE} (n=${summary.n})`;
 }
 
-/** A relaxed mode's distance from the strict reference, as an opaque token. */
-export function delta(value: string | null): string {
-  if (value === null) {
-    return NOT_AVAILABLE;
-  }
-  // A string, and it stays one: the checksum is 64-bit and JavaScript's `+`
-  // would round it. `startsWith("-")` is all the arithmetic we need.
-  return value === "0" || value.startsWith("-") ? value : `+${value}`;
-}
-
 /**
  * A size, scaled to the unit a human would have chosen: `812 B`, `70.8 KiB`, `3.6 MiB`.
  *

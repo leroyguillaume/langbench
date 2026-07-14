@@ -5,8 +5,9 @@
 # grid.
 FROM ghcr.io/graalvm/jdk-community:25@sha256:a3bdba6a313cddc89f7e1b2649140e898c68ba356994a9c317b96b01bcb9f982
 
-ARG FP_MODE=strict
-ARG MARCH=x86-64-v3
+# No ISA build arg: scalac emits bytecode, which targets no CPU, and Graal emits the
+# machine code during the run for whatever CPU is under it. `native` is this backend's
+# only target, and there is nothing for a build arg to select.
 ARG JOBS
 
 # 3.3 is the LTS line. A benchmark that chases the newest minor release measures
@@ -28,11 +29,9 @@ RUN set -eu; \
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads.
 LABEL langbench.version="3.3.8" \
-      langbench.flags="march=${MARCH} fp=${FP_MODE} jit=graal"
+      langbench.flags="isa=native jit=graal"
 
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
-    SCALA_HOME=/usr/local/lib/scala3 \
+ENV SCALA_HOME=/usr/local/lib/scala3 \
     CLASSES=/usr/local/lib/mandelbrot \
     BUILD_DIR=/build
 

@@ -8,18 +8,25 @@ compiler: ~
 interpreter: julia
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.jl
-# One floating-point semantics. Julia never fuses a multiply-add unless the source
-# writes `muladd`, and never reassociates. `--math-mode=fast` was deprecated as
-# unsound and does nothing in 1.11, so `fma` and `fast` would be this same run
-# under another tag.
-modes:
-  - strict
+# Both, and this is the row that shows the `baseline` column is not "the ahead-of-time
+# compilers". Julia is a JIT -- it emits machine code during the run, on this machine,
+# like V8 and HotSpot -- and it still has a baseline, because it takes `--cpu-target`
+# and *validates the name*: an unknown one is a hard error, not a warning (rustc) and
+# not a silent no-op (Go). So a JIT is native by *default*, not by necessity, and the
+# column is really "the toolchains that let you choose the target". Julia is the proof
+# that those two sets are not the same one.
+modes: all
 description: >-
   The reference kernel in Julia, JIT-compiled through LLVM on first call, with
-  Threads.@spawn tasks pulling rows off an atomic cursor. The ISA baseline is
-  passed explicitly, because Julia's default is to compile for the host CPU -- the
-  one thing this project never allows.
+  Threads.@spawn tasks pulling rows off an atomic cursor. The ISA target is passed
+  explicitly to the JIT, in both modes -- Julia is one of the few runtimes that
+  compiles at run time and still lets you say which machine to compile for.
 comments: >-
   The JIT compiles on first call, inside the measured run: a script's native code is
   cached nowhere, so every run pays for it again. There is no warm-up phase to hide
-  that in, and hiding it would be a different benchmark.
+  that in, and hiding it would be a different benchmark. `--cpu-target` is passed on
+  every invocation, and the baseline mode is the reason it must be: Julia's own
+  default is `native`, so a forgotten flag does not fail the build -- it compiles for
+  the bench machine and files the result under `baseline`. Floating-point needs no
+  flag in either mode: Julia fuses a multiply-add only where the source writes
+  `muladd`, and never reassociates.

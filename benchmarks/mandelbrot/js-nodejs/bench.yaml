@@ -6,11 +6,12 @@ compiler: ~
 interpreter: nodejs
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.mjs
-# One floating-point semantics, and no flag to change it: ECMAScript specifies the
-# result of every arithmetic operator, so no engine may contract a multiply-add or
-# reassociate. An `fma` image would be the same run under another tag.
+# `native`, and nothing else to offer. The code that runs is machine code V8's JIT
+# generates *during* the run, on this machine, against whatever instructions this
+# CPU turned out to have -- there is no ISA to pin ahead of time, and no flag that
+# would pin one. A `baseline` image would be this same image under another tag.
 modes:
-  - strict
+  - native
 description: >-
   The kernel as written, executed by Node.js on V8. Parallelism comes from
   node:worker_threads -- one isolate per worker -- with the row queue in a

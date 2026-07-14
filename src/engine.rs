@@ -313,10 +313,10 @@ mod tests {
     #[test]
     fn build_args_carry_every_build_arg_then_the_context() {
         let args = build_args(&BuildSpec {
-            image: "langbench/mandelbrot-c-gcc:strict".to_owned(),
+            image: "langbench/mandelbrot-c-gcc:baseline".to_owned(),
             context: PathBuf::from("benchmarks/mandelbrot/c-gcc"),
             build_args: vec![
-                ("FP_MODE".to_owned(), "strict".to_owned()),
+                ("JOBS".to_owned(), "8".to_owned()),
                 ("MARCH".to_owned(), "x86-64-v3".to_owned()),
             ],
         });
@@ -325,11 +325,11 @@ mod tests {
             [
                 "build",
                 "--build-arg",
-                "FP_MODE=strict",
+                "JOBS=8",
                 "--build-arg",
                 "MARCH=x86-64-v3",
                 "--tag",
-                "langbench/mandelbrot-c-gcc:strict",
+                "langbench/mandelbrot-c-gcc:baseline",
                 "benchmarks/mandelbrot/c-gcc",
             ]
         );

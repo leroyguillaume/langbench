@@ -157,8 +157,20 @@ jobs:
       # A campaign that reproduced the committed one, byte for byte, has nothing to
       # commit and is not a failure: HEAD already holds those samples, so it is HEAD
       # the site renders.
+      # **Back to the branch it was dispatched from**, never to `main` by name. A campaign
+      # is measured by the harness *of the branch it ran on*, and the samples it produces
+      # are readable only by that harness: a branch that changes what a `mode` is, or adds
+      # a column, records a file the other branch's site refuses to parse. Pushing those
+      # onto `main` would drop one world's data into another's, and the first thing anyone
+      # would see is a published page that cannot read its own campaign.
+      #
+      # `github.ref_name` is the branch the operator picked in the dispatch UI, so a
+      # campaign lands where it was asked for and a run from `main` behaves exactly as it
+      # always did.
       - name: commit the samples
         id: commit
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -167,7 +179,7 @@ jobs:
             echo 'the campaigns reproduced the committed ones, byte for byte; nothing to commit'
           else
             git commit -m 'bench: campaigns of ${{ github.sha }}'
-            git push origin HEAD:main
+            git push origin "HEAD:${BRANCH}"
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -175,8 +187,16 @@ jobs:
   # is a pure function of the samples the job above committed. `bench` calls it
   # here so a campaign still ends with a published page -- but the page can also be
   # rebuilt on its own, without re-measuring a thing.
+  #
+  # **Only from the default branch.** GitHub Pages has one environment, so publishing a
+  # branch's render does not preview it -- it *replaces* the live site with unreleased
+  # work, and the campaign that motivated the branch is exactly what makes the two
+  # renders disagree. A campaign dispatched from a branch still runs, still commits its
+  # samples to that branch, and is still downloadable as an artefact; it simply does not
+  # take the site with it. Merge the branch and the samples publish themselves.
   pages:
     needs: commit
+    if: github.ref_name == github.event.repository.default_branch
     permissions:
       contents: read
       pages: write

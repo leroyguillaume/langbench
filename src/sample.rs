@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::machine::Machine;
-use crate::mode::FpMode;
+use crate::mode::Mode;
 use crate::workload::Workload;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -39,12 +39,16 @@ impl Phase {
 ///
 /// The checksum is an integer. It is a sum of 64-bit iteration counts and the
 /// correctness gate for the whole harness; anything that rounds it destroys the
-/// invariant. See `site/src/content/methodology.md#floating-point-modes`.
+/// invariant. See `site/src/content/methodology.md#the-strict-mode-invariant`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ContainerRecord {
     pub elapsed_ns: u64,
     pub user_usec: u64,
     pub system_usec: u64,
+    /// The ISA this row actually got, reported by the entrypoint that asked for
+    /// it. See [`Sample::isa`].
+    #[serde(default)]
+    pub isa: Option<String>,
     #[serde(default)]
     pub checksum: Option<u64>,
     /// The cgroup's memory high-water mark, read by the container from its own
@@ -82,7 +86,28 @@ pub struct Sample {
     pub interpreter: Option<String>,
     pub description: String,
     pub comments: Option<String>,
-    pub mode: FpMode,
+    /// What this row *asked* for: a pinned baseline, or the machine itself.
+    pub mode: Mode,
+    /// What this row *got*, as the entrypoint that asked for it reports it.
+    ///
+    /// The mode is an intention and the ISA is a fact, and they are two fields
+    /// because they disagree. `baseline` means "a pinned ISA" — but CPython's
+    /// machine code is an interpreter its *packager* built, with no `-march` in its
+    /// CFLAGS at all, so it runs at the toolchain's floor; and
+    /// native-image on AArch64 offers no `armv8.2-a` and takes `armv8.1-a`, one
+    /// level *below* the campaign's. `native` means "this CPU" — but Go has no
+    /// `native` at all and stops at the coarse `v4`.
+    ///
+    /// Every one of those is a real divergence, and before this field existed each
+    /// one lived in a manifest's free-text `comments`, which is to say nowhere a
+    /// reader of the table would ever find it. A column whose meaning varies by row
+    /// is not a sin; a column whose meaning varies by row *in silence* is. So the
+    /// row says what it got: `x86-64-v3`, `native`, `armv8.1-a`, `v4`, `distro`.
+    ///
+    /// `None` is a backend that did not answer — rendered as an absence, never as a
+    /// claim.
+    #[serde(default)]
+    pub isa: Option<String>,
     pub phase: Phase,
     pub round: u32,
     /// Warmup samples are recorded and flagged, never dropped.
@@ -253,7 +278,7 @@ pub struct Failure {
     pub interpreter: Option<String>,
     pub description: String,
     pub comments: Option<String>,
-    pub mode: FpMode,
+    pub mode: Mode,
     pub stage: Stage,
     pub phase: Option<Phase>,
     /// The round it died in. `None` when the image never built — there was no
@@ -404,6 +429,7 @@ const CSV_COLUMNS: &[&str] = &[
     "description",
     "comments",
     "mode",
+    "isa",
     "phase",
     "round",
     "warmup",
@@ -450,6 +476,7 @@ impl Sample {
             escape(&self.description),
             escape(self.comments.as_deref().unwrap_or_default()),
             self.mode.to_string(),
+            escape(self.isa.as_deref().unwrap_or_default()),
             self.phase.as_str().to_owned(),
             self.round.to_string(),
             self.warmup.to_string(),
@@ -598,7 +625,8 @@ mod tests {
             interpreter: None,
             description: "The reference C kernel.".to_owned(),
             comments: None,
-            mode: FpMode::Strict,
+            mode: Mode::Baseline,
+            isa: Some("x86-64-v3".to_owned()),
             phase,
             round: 3,
             warmup: false,
@@ -655,7 +683,7 @@ mod tests {
         assert_eq!(recording.campaign.workload.id, "mandelbrot");
         assert_eq!(recording.campaign.march, "x86-64-v3");
         assert_eq!(recording.samples.len(), 2);
-        assert_eq!(recording.samples[0].mode, FpMode::Strict);
+        assert_eq!(recording.samples[0].mode, Mode::Baseline);
         assert_eq!(recording.samples[0].phase, Phase::Run);
         assert_eq!(recording.samples[0].checksum, Some(448_356_792));
         assert_eq!(recording.samples[1].checksum, None);
@@ -756,8 +784,8 @@ mod tests {
         let row = sample(Phase::Run, Some(448_356_792)).csv_row();
         assert_eq!(
             row,
-            "mandelbrot,c,gcc,,The reference C kernel.,,strict,run,3,false,8,313600000,\
-             213300000,860000,4000,12582912,2048,448356792,70984,67568,1340",
+            "mandelbrot,c,gcc,,The reference C kernel.,,baseline,x86-64-v3,run,3,false,8,\
+             313600000,213300000,860000,4000,12582912,2048,448356792,70984,67568,1340",
         );
     }
 

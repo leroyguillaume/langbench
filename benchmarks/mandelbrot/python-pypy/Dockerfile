@@ -9,21 +9,22 @@
 # so the interpreter must survive into the runtime image.
 FROM pypy:3.11-slim-trixie@sha256:bacc7d9d659b8ee561b286f79e02d4682d376bec9c6b0eebbd863f6735a1d1a6
 
-# `MARCH` and `JOBS` are accepted and unused: PyPy is not compiled here, and
-# bytecode compilation of one module has nothing to parallelise. Declaring them
-# keeps this image a drop-in for the harness's build-arg contract.
-ARG FP_MODE=strict
-ARG MARCH
+# No `MARCH`: nothing here generates machine code ahead of the run to aim at an
+# ISA. The only code generator in this image is the tracing JIT, and it fires
+# inside the measured run, on the host CPU, with no flag to hold it to a baseline
+# -- a build arg nothing reads is a knob that lies about being turnable. `JOBS` is
+# accepted and unused: PyPy is not compiled here, and bytecode compilation of one
+# module has nothing to parallelise.
 ARG JOBS
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
-LABEL langbench.version="3.11" \
-      langbench.flags="fp=${FP_MODE}"
+# Nothing about the ISA is pinned here, so nothing about it is claimed here: the
+# run reports what the JIT actually got.
+LABEL langbench.version="3.11"
 
-ENV FP_MODE=${FP_MODE} \
-    BUILD_DIR=/build \
+ENV BUILD_DIR=/build \
     PYTHONDONTWRITEBYTECODE=
 
 WORKDIR /usr/local/src/mandelbrot

@@ -10,22 +10,18 @@
 # is timed is the compiler, not a build tool's bookkeeping.
 FROM eclipse-temurin:25-jdk-noble@sha256:3eb81ed94d8c1a34422f19f8188548bdf02cae69c91d0328afdbb7abed90f617
 
-# Floating-point semantics, ISA baseline and job count arrive as build args, so
-# one Dockerfile covers every mode the backend distinguishes -- which, here, is
-# `strict` alone. See `bench.yaml`.
-ARG FP_MODE=strict
-ARG MARCH=x86-64-v3
+# No ISA build arg, and there is nothing to put in one: this backend builds `native`
+# and only `native`, because C2 emits its machine code during the run and takes the
+# host CPU as it finds it. A build arg nobody can consume is a knob wired to nothing.
 ARG JOBS
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="25" \
-      langbench.flags="march=${MARCH} fp=${FP_MODE}"
+      langbench.flags="isa=native jit=c2"
 
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
-    CLASSES=/usr/local/lib/mandelbrot \
+ENV CLASSES=/usr/local/lib/mandelbrot \
     BUILD_DIR=/build
 
 WORKDIR /usr/local/src/mandelbrot

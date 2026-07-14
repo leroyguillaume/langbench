@@ -7,18 +7,18 @@ compiler: zig
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.zig
-# One mode. Zig's float semantics are `.strict` unless the *source* says
-# `@setFloatMode(.optimized)`, so relaxing them would mean editing the kernel --
-# a different program, not a different build of the same one. `fma` and `fast`
-# cannot be build args here, and saying so is the result.
-modes:
-  - strict
+# Zig compiles ahead of the run, and `-mcpu` is not optional in spirit: the
+# compiler emits code for one machine, and it emits different code for a baseline
+# every CPU of the architecture can run than for the CPU in front of it.
+modes: all
 description: >-
-  The reference kernel in Zig, compiled at -OReleaseFast against a pinned ISA
-  baseline, with std.Thread and an atomic work queue. No libc: the binary is
-  static, and its threads are raw clone syscalls rather than pthreads.
+  The reference kernel in Zig, compiled at -OReleaseFast against the ISA the mode
+  names, with std.Thread and an atomic work queue. No libc: the binary is static,
+  and its threads are raw clone syscalls rather than pthreads.
 comments: >-
   Pinned to Zig 0.15.2. The 0.16 standard library rewrote the I/O and process APIs
   this kernel calls, and a benchmark that has to be rewritten for every release is
-  measuring the release notes. The binary is static and libc-free: it carries
+  measuring the release notes. -OReleaseFast does not relax the arithmetic: Zig's
+  float mode is `.strict` unless the *source* says `@setFloatMode(.optimized)`, and
+  this kernel does not say it. The binary is static and libc-free: it carries
   everything it needs, where the C rows load libc at run time.

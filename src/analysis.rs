@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Serializer};
 
 use crate::machine::Field;
-use crate::mode::FpMode;
+use crate::mode::Mode;
 use crate::sample::{Campaign, Phase, Recording, Sample, Stage};
 use crate::stats::{Summary, summarize};
 use crate::workload::Workload;
@@ -92,7 +92,7 @@ pub struct Failure {
     pub interpreter: Option<String>,
     pub description: String,
     pub comments: Option<String>,
-    pub mode: FpMode,
+    pub mode: Mode,
     /// `prepare` — the image never built — or `measure`: it built, and then the
     /// run did not produce a valid record.
     pub stage: Stage,
@@ -104,15 +104,21 @@ pub struct Failure {
 #[derive(Debug, Serialize)]
 pub struct WorkloadAnalysis {
     pub workload: String,
-    /// The value every strict-mode run of *this* workload agreed on. A property
-    /// of `(workload, grid size, max_iter)`, never of the campaign.
+    /// The value every run of *this* workload agreed on. A property of
+    /// `(workload, params)`, never of the campaign.
+    ///
+    /// *Every* run, with no mode to qualify it: both modes are strict IEEE 754,
+    /// and widening a vector reorders nothing. When the ISA axis replaced the
+    /// floating-point one, this reference stopped being a claim about the `strict`
+    /// rows and became a claim about all of them — which is the stronger statement,
+    /// and the one the harness now enforces on every sample it records.
     ///
     /// A string on the wire: it is a 64-bit integer, and a JSON number wider than
     /// 2^53 is rounded by every JavaScript parser that reads it. The correctness
     /// gate of the whole harness does not travel as a float.
-    /// See `site/src/content/methodology.md#floating-point-modes`.
+    /// See `site/src/content/methodology.md#the-strict-mode-invariant`.
     #[serde(serialize_with = "as_string")]
-    pub strict_checksum: Option<u64>,
+    pub checksum: Option<u64>,
     /// Fastest first, on the minimum wall-clock — the statistic the report
     /// headlines. Sorted here rather than in each renderer, so two renderings of
     /// one campaign cannot disagree about which backend won.
@@ -134,8 +140,8 @@ pub struct Backend {
     pub description: String,
     pub comments: Option<String>,
     /// Bytes of the kernel this backend runs. On the card and not only on the row:
-    /// it is the same file in all three FP modes, because the mode is a compiler
-    /// flag and never an edit to the source.
+    /// it is the same file in both modes, because the mode is a compiler flag and
+    /// never an edit to the source.
     pub source_bytes: Option<u64>,
 }
 
@@ -157,7 +163,12 @@ pub struct Aggregate {
     pub compiler: Option<String>,
     /// `None` for a backend that ships machine code and no runtime.
     pub interpreter: Option<String>,
-    pub mode: FpMode,
+    pub mode: Mode,
+    /// The ISA this row actually got, straight off the samples. The mode says what
+    /// was asked for; this says what came back, and they disagree often enough that
+    /// a table printing only the first would mislead. See
+    /// [`crate::sample::Sample::isa`].
+    pub isa: Option<String>,
     /// External wall-clock of the run: container create + runtime init + compute.
     /// The headline of the run column.
     pub run_wall: Option<Summary>,
@@ -208,15 +219,17 @@ pub struct Aggregate {
     pub binary_stripped_bytes: Option<u64>,
     pub text_bytes: Option<u64>,
     /// A 64-bit integer, on the wire as a string. See
-    /// [`WorkloadAnalysis::strict_checksum`].
+    /// [`WorkloadAnalysis::checksum`].
+    ///
+    /// There is no `checksum_delta` beside it, and there is no longer anything for
+    /// one to measure. It reported a mode's distance from the strict reference —
+    /// the precision sold for the speed gained — and it existed because `fma` and
+    /// `fast` were allowed to compute a different number. Both modes are strict
+    /// now, so a row that disagrees with the reference is not a trade-off with a
+    /// magnitude worth printing: it is a wrong run, and the campaign quarantined it
+    /// before it ever reached this struct.
     #[serde(serialize_with = "as_string")]
     pub checksum: Option<u64>,
-    /// This mode's distance from the strict reference: the precision sold for the
-    /// speed gained. `i128`, because two `u64` checksums can differ by more than
-    /// an `i64` holds — and a string on the wire for the same reason as the
-    /// checksum itself.
-    #[serde(serialize_with = "as_string")]
-    pub checksum_delta: Option<i128>,
 }
 
 /// Samples accumulated for one `(workload, backend, mode)`, before summarizing.
@@ -238,6 +251,7 @@ struct Bucket {
     build_peak_bytes: Vec<u64>,
     cpu: usize,
     source_bytes: Option<u64>,
+    isa: Option<String>,
     checksum: Option<u64>,
     binary_bytes: Option<u64>,
     binary_stripped_bytes: Option<u64>,
@@ -246,11 +260,11 @@ struct Bucket {
 
 pub fn analyze(recording: &Recording, options: Options) -> Analysis {
     let samples = &recording.samples;
-    let references = strict_references(&recording.campaign.workload, samples);
+    let references = checksum_references(&recording.campaign.workload, samples);
 
     // Insertion order comes from the first round, which is the schedule order.
-    let mut order: Vec<(String, String, FpMode)> = Vec::new();
-    let mut buckets: HashMap<(String, String, FpMode), Bucket> = HashMap::new();
+    let mut order: Vec<(String, String, Mode)> = Vec::new();
+    let mut buckets: HashMap<(String, String, Mode), Bucket> = HashMap::new();
 
     for sample in samples {
         let key = (sample.workload.clone(), sample.backend(), sample.mode);
@@ -276,6 +290,7 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             .or(sample.binary_stripped_bytes);
         bucket.text_bytes = bucket.text_bytes.or(sample.text_bytes);
         bucket.source_bytes = bucket.source_bytes.or(sample.source_bytes);
+        bucket.isa = bucket.isa.clone().or_else(|| sample.isa.clone());
         bucket.cpu = sample.cpu;
 
         if sample.warmup && !options.include_warmup {
@@ -317,6 +332,7 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             compiler: bucket.compiler.clone(),
             interpreter: bucket.interpreter.clone(),
             mode: *mode,
+            isa: bucket.isa.clone(),
             run_wall: summarize(&bucket.run_wall),
             run_elapsed: summarize(&bucket.run_elapsed),
             run_startup: summarize(&bucket.run_startup),
@@ -332,17 +348,10 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             binary_stripped_bytes: bucket.binary_stripped_bytes,
             text_bytes: bucket.text_bytes,
             checksum: bucket.checksum,
-            checksum_delta: match (bucket.checksum, reference) {
-                (Some(checksum), Some(reference)) => {
-                    Some(i128::from(checksum) - i128::from(reference))
-                }
-                _ => None,
-            },
         };
 
-        // One card per backend, not one per (backend, mode): the three modes are
-        // three experiments on the same thing, and the thing is what a card
-        // describes.
+        // One card per backend, not one per (backend, mode): the modes are two
+        // experiments on the same thing, and the thing is what a card describes.
         let id = backend_id(workload, backend);
         if !backends.iter().any(|known| known.id == id) {
             backends.push(Backend {
@@ -365,7 +374,7 @@ pub fn analyze(recording: &Recording, options: Options) -> Analysis {
             Some(analysis) => analysis.aggregates.push(aggregate),
             None => workloads.push(WorkloadAnalysis {
                 workload: workload.clone(),
-                strict_checksum: reference,
+                checksum: reference,
                 aggregates: vec![aggregate],
             }),
         }
@@ -424,30 +433,34 @@ pub fn backend_id(workload: &str, backend: &str) -> String {
     format!("{workload}-{backend}")
 }
 
-/// The value every strict-mode run of this campaign's workload agreed on.
+/// The value every run of this campaign's workload agreed on.
 ///
-/// **The workload's own `strict_checksum` wins**, when it declares one: it is the
-/// answer to the work, established once and outliving any run, and the campaign
-/// already refused to record a sample that diverged from it.
+/// **The workload's own `checksum` wins**, when it declares one: it is the answer
+/// to the work, established once and outliving any run, and the campaign already
+/// refused to record a sample that diverged from it.
 ///
-/// Without one, the reference is whatever the first strict sample produced — which
-/// is all a campaign can establish on its own, and it is weaker than it looks: it
-/// says the backends agreed with each other, not that any of them was right. It is
-/// read out of the samples rather than recomputed, because `Runner::verify` aborted
-/// on the spot for any divergence, so the first is as good as the last.
+/// Without one, the reference is whatever the first sample produced — which is all
+/// a campaign can establish on its own, and it is weaker than it looks: it says the
+/// backends agreed with each other, not that any of them was right. It is read out
+/// of the samples rather than recomputed, because `Runner::verify` quarantined the
+/// backend on the spot for any divergence, so the first is as good as the last.
+///
+/// **Every sample, with no mode to filter on.** This function used to skip anything
+/// that was not `strict`, because `fma` and `fast` were licensed to compute a
+/// different number and could not be held to the reference. The ISA axis has no
+/// such licence: both modes are strict IEEE 754, and widening a vector reorders
+/// nothing. So the invariant went from covering the `strict` rows to covering *all*
+/// of them, and the loop that enforces it lost its guard.
 ///
 /// Keyed by workload id all the same, because that is the key the samples carry and
 /// the renderers look up. A campaign has exactly one.
-/// See `site/src/content/methodology.md#floating-point-modes`.
-fn strict_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
+/// See `site/src/content/methodology.md#the-strict-mode-invariant`.
+fn checksum_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
     let mut references = HashMap::new();
     if let Some(declared) = workload.checksum {
         references.insert(workload.id.clone(), declared);
     }
     for sample in samples {
-        if sample.mode != FpMode::Strict {
-            continue;
-        }
         if let Some(checksum) = sample.checksum {
             references
                 .entry(sample.workload.clone())
@@ -500,11 +513,11 @@ mod tests {
             build_rounds: 5,
             warmup_rounds: 2,
             march: "x86-64-v3".to_owned(),
-            modes: vec!["strict".to_owned()],
+            modes: vec!["baseline".to_owned()],
         }
     }
 
-    fn sample(backend: &str, mode: FpMode, warmup: bool, wall: u64, checksum: u64) -> Sample {
+    fn sample(backend: &str, mode: Mode, warmup: bool, wall: u64, checksum: u64) -> Sample {
         let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
             workload: "mandelbrot".to_owned(),
@@ -514,6 +527,7 @@ mod tests {
             description: format!("{backend}, as the fixture declares it"),
             comments: None,
             mode,
+            isa: Some("x86-64-v3".to_owned()),
             phase: Phase::Run,
             round: 0,
             warmup,
@@ -534,8 +548,8 @@ mod tests {
     #[test]
     fn aggregates_are_sorted_fastest_first() {
         let samples = vec![
-            sample("c-clang", FpMode::Strict, false, 3_000_000_000, 42),
-            sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42),
+            sample("c-clang", Mode::Baseline, false, 3_000_000_000, 42),
+            sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42),
         ];
         let analysis = analyze(&recording(samples), Options::default());
         let backends: Vec<&str> = analysis.workloads[0]
@@ -549,8 +563,8 @@ mod tests {
     #[test]
     fn warmup_samples_are_excluded_by_default_and_included_on_request() {
         let samples = vec![
-            sample("c-gcc", FpMode::Strict, true, 9_000_000_000, 42),
-            sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42),
+            sample("c-gcc", Mode::Baseline, true, 9_000_000_000, 42),
+            sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42),
         ];
 
         let cold = analyze(&recording(samples.clone()), Options::default());
@@ -574,28 +588,58 @@ mod tests {
     /// measured rounds were discarded still knows what it computed.
     #[test]
     fn the_checksum_is_read_from_a_warmup_sample_too() {
-        let samples = vec![sample("c-gcc", FpMode::Strict, true, 9_000_000_000, 7)];
+        let samples = vec![sample("c-gcc", Mode::Baseline, true, 9_000_000_000, 7)];
         let analysis = analyze(&recording(samples), Options::default());
         let aggregate = &analysis.workloads[0].aggregates[0];
         assert_eq!(aggregate.checksum, Some(7));
         assert!(aggregate.run_wall.is_none());
     }
 
+    /// The whole point of trading the floating-point axis for the ISA one.
+    ///
+    /// Under `strict`/`fma`/`fast` the reference was the *strict* rows' checksum,
+    /// and a relaxed row was allowed to differ from it — the difference was a
+    /// published column, `checksum_delta`, the precision sold for the speed gained.
+    /// Under `baseline`/`native` there is nothing to sell: both modes are strict
+    /// IEEE 754, and a wider vector reorders no arithmetic. So `native` does not get
+    /// scored against the reference, it is *held to* it, exactly like every other
+    /// row — and the harness quarantines it on the spot if it disagrees.
     #[test]
-    fn a_relaxed_mode_is_scored_against_the_strict_reference_of_its_own_algorithm() {
+    fn both_modes_answer_to_one_reference_and_native_is_not_licensed_to_differ() {
         let samples = vec![
-            sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 1_000),
-            sample("c-gcc", FpMode::Fast, false, 1_000_000_000, 994),
+            sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 1_000),
+            sample("c-gcc", Mode::Native, false, 1_000_000_000, 1_000),
         ];
         let analysis = analyze(&recording(samples), Options::default());
-        assert_eq!(analysis.workloads[0].strict_checksum, Some(1_000));
+        assert_eq!(analysis.workloads[0].checksum, Some(1_000));
 
-        let fast = analysis.workloads[0]
+        // Same answer, faster. That is what a native build is allowed to be, and
+        // the only thing it is allowed to be.
+        let native = analysis.workloads[0]
             .aggregates
             .iter()
-            .find(|aggregate| aggregate.mode == FpMode::Fast)
+            .find(|aggregate| aggregate.mode == Mode::Native)
             .unwrap();
-        assert_eq!(fast.checksum_delta, Some(-6));
+        assert_eq!(native.checksum, Some(1_000));
+        assert!(native.run_wall.unwrap().min < 2_000_000_000);
+    }
+
+    /// The mode is what was asked for; the ISA is what came back. A row carries
+    /// both, because the interesting backends are the ones where they disagree.
+    #[test]
+    fn a_row_reports_the_isa_it_actually_got_beside_the_mode_it_asked_for() {
+        let mut go = sample("go-gc", Mode::Native, false, 2_000_000_000, 42);
+        go.isa = Some("v4".to_owned());
+
+        let analysis = analyze(&recording(vec![go]), Options::default());
+        let row = &analysis.workloads[0].aggregates[0];
+
+        // Go has no `-march=native`: GOAMD64 stops at the coarse `v4`. The mode says
+        // native was requested, the ISA says what the toolchain could actually
+        // express, and a table printing only the first would be claiming a target Go
+        // cannot name.
+        assert_eq!(row.mode, Mode::Native);
+        assert_eq!(row.isa.as_deref(), Some("v4"));
     }
 
     /// The architecture is read off the machine the campaign recorded, never off a
@@ -606,7 +650,7 @@ mod tests {
     fn the_analysis_carries_the_isa_the_campaign_ran_on() {
         let mut recording = recording(vec![sample(
             "c-gcc",
-            FpMode::Strict,
+            Mode::Baseline,
             false,
             2_000_000_000,
             42,
@@ -622,9 +666,9 @@ mod tests {
     /// The two clocks, and the gap between them, all come off the *same* sample.
     #[test]
     fn startup_is_summarized_per_sample_never_as_a_difference_of_minima() {
-        let mut fast_start = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
+        let mut fast_start = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
         fast_start.elapsed_ns = 1_900_000_000; // 100 ms of startup
-        let mut slow_start = sample("c-gcc", FpMode::Strict, false, 2_500_000_000, 42);
+        let mut slow_start = sample("c-gcc", Mode::Baseline, false, 2_500_000_000, 42);
         slow_start.elapsed_ns = 1_800_000_000; // 700 ms of startup
 
         let analysis = analyze(&recording(vec![fast_start, slow_start]), Options::default());
@@ -644,7 +688,7 @@ mod tests {
     fn a_checksum_crosses_the_wire_as_a_string_never_as_a_json_number() {
         let samples = vec![sample(
             "c-gcc",
-            FpMode::Strict,
+            Mode::Baseline,
             false,
             2_000_000_000,
             9_007_199_254_740_993,
@@ -652,11 +696,11 @@ mod tests {
         let analysis = analyze(&recording(samples), Options::default());
         let json = serde_json::to_string(&analysis).unwrap();
 
+        // Both the row's own checksum and the workload's reference. There is no
+        // `checksum_delta` beside them any more — with both modes strict, a row is
+        // held to the reference rather than scored against it.
         assert!(json.contains(r#""checksum":"9007199254740993""#), "{json}");
-        assert!(
-            json.contains(r#""strict_checksum":"9007199254740993""#),
-            "{json}",
-        );
+        assert!(!json.contains("checksum_delta"), "{json}");
         assert!(
             !json.contains("9007199254740993,"),
             "the checksum leaked onto the wire as a JSON number: {json}",
@@ -670,7 +714,7 @@ mod tests {
     fn the_core_count_is_summarized_from_the_median_not_the_minimum() {
         // Two rounds of the same backend: one where it got the machine to itself,
         // one where it was fighting for it.
-        let mut clean = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
+        let mut clean = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
         clean.cpu = 8;
         clean.elapsed_ns = 1_000_000_000;
         clean.user_usec = 7_800_000; // 7.8 cores
@@ -691,12 +735,12 @@ mod tests {
     /// code generator from a runtime that will not parallelise at all.
     #[test]
     fn a_serial_backend_and_a_parallel_one_are_told_apart_by_their_cores() {
-        let mut parallel = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
+        let mut parallel = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
         parallel.cpu = 8;
         parallel.elapsed_ns = 1_000_000_000;
         parallel.user_usec = 8_000_000;
 
-        let mut serial = sample("python-cpython", FpMode::Strict, false, 9_000_000_000, 42);
+        let mut serial = sample("python-cpython", Mode::Baseline, false, 9_000_000_000, 42);
         serial.cpu = 8;
         serial.elapsed_ns = 8_000_000_000;
         serial.user_usec = 8_000_000;
@@ -720,9 +764,9 @@ mod tests {
     /// The minimum is the memory the backend genuinely had to have.
     #[test]
     fn peak_memory_is_the_smallest_high_water_mark_the_campaign_saw() {
-        let mut lean = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
+        let mut lean = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
         lean.peak_bytes = Some(10_000_000);
-        let mut fat = sample("c-gcc", FpMode::Strict, false, 2_100_000_000, 42);
+        let mut fat = sample("c-gcc", Mode::Baseline, false, 2_100_000_000, 42);
         fat.peak_bytes = Some(14_000_000);
 
         let analysis = analyze(&recording(vec![lean, fat]), Options::default());
@@ -739,7 +783,7 @@ mod tests {
     /// would read as the most frugal backend ever measured.
     #[test]
     fn a_campaign_with_no_memory_peak_reports_an_absence_never_a_zero() {
-        let mut blind = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
+        let mut blind = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
         blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![blind]), Options::default());
@@ -753,8 +797,8 @@ mod tests {
     /// carry a number are summarized on their own, and `n` says how many there were.
     #[test]
     fn a_round_that_reported_no_memory_peak_is_left_out_rather_than_counted_as_zero() {
-        let measured = sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42);
-        let mut blind = sample("c-gcc", FpMode::Strict, false, 2_100_000_000, 42);
+        let measured = sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42);
+        let mut blind = sample("c-gcc", Mode::Baseline, false, 2_100_000_000, 42);
         blind.peak_bytes = None;
 
         let analysis = analyze(&recording(vec![measured, blind]), Options::default());
@@ -770,7 +814,7 @@ mod tests {
         let analysis = analyze(
             &recording(vec![sample(
                 "c-gcc",
-                FpMode::Strict,
+                Mode::Baseline,
                 false,
                 2_000_000_000,
                 42,
@@ -788,7 +832,7 @@ mod tests {
     /// divided and compared, and none of them comes close to 2^53.
     #[test]
     fn a_timing_crosses_the_wire_as_a_number_so_the_site_can_do_arithmetic_on_it() {
-        let samples = vec![sample("c-gcc", FpMode::Strict, false, 2_000_000_000, 42)];
+        let samples = vec![sample("c-gcc", Mode::Baseline, false, 2_000_000_000, 42)];
         let analysis = analyze(&recording(samples), Options::default());
         let json = serde_json::to_value(&analysis).unwrap();
         let run_wall = &json["workloads"][0]["aggregates"][0]["run_wall"];

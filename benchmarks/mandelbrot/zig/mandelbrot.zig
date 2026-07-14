@@ -15,10 +15,10 @@
 //!
 //! Zig's float mode is `.strict` by default and this kernel leaves it there.
 //! Relaxing it is `@setFloatMode(.optimized)` -- a statement *in the source*, not
-//! a flag on the compiler -- so `fma` and `fast` cannot be build args over one
-//! kernel the way they are for C. A kernel with a different float mode is a
-//! different kernel, and this backend declares `strict` alone rather than pretend
-//! otherwise. See `bench.yaml`.
+//! a flag on the compiler -- so a relaxed build would be a *different kernel*, and
+//! never a build arg over this one. That is why it is not a mode: the modes here
+//! are ISA targets, and both of them run this same arithmetic, in this same order.
+//! See `bench.yaml`.
 
 const std = @import("std");
 

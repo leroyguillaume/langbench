@@ -10,18 +10,17 @@
 # so javac must survive into the runtime image.
 FROM ghcr.io/graalvm/jdk-community:25@sha256:a3bdba6a313cddc89f7e1b2649140e898c68ba356994a9c317b96b01bcb9f982
 
-ARG FP_MODE=strict
-ARG MARCH=x86-64-v3
+# No ISA build arg: Graal emits its machine code during the run and takes the host
+# CPU as it finds it, so `native` is this backend's only target and there is nothing
+# for a build arg to select.
 ARG JOBS
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads.
 LABEL langbench.version="25" \
-      langbench.flags="march=${MARCH} fp=${FP_MODE} jit=graal"
+      langbench.flags="isa=native jit=graal"
 
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
-    CLASSES=/usr/local/lib/mandelbrot \
+ENV CLASSES=/usr/local/lib/mandelbrot \
     BUILD_DIR=/build
 
 WORKDIR /usr/local/src/mandelbrot

@@ -317,20 +317,20 @@ function Report({ loaded, workload: id, state, setState, pending }: ReportProps)
       <section className="card">
         <h2>Every number</h2>
         <p>
-          Nineteen columns, and none of them mean what you would guess from the name alone. If this
-          is your first benchmark table, read{" "}
+          Every column the campaign recorded, and none of them mean what you would guess from the
+          name alone. If this is your first benchmark table, read{" "}
           <a href={`${import.meta.env.BASE_URL}measurements/`}>what each column means</a> — written
           for exactly that. The short version: look at <strong>Dispersion</strong> first, because
-          nothing else on a row can be more trustworthy than it.
+          nothing else on a row can be more trustworthy than it. And read <strong>ISA</strong>{" "}
+          against <strong>Mode</strong>: the mode is what the row asked for, the ISA is what the
+          toolchain gave it, and the rows where they disagree are the ones with something to say.
         </p>
         <p className="card-aside">
-          Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
-          how many times slower a row is than the fastest row <em>currently on screen</em> — filter
-          the table and the baseline moves, because a baseline you cannot see is not a baseline.{" "}
-          <strong>Δ strict</strong> is how far this row's answer landed from the <code>strict</code>{" "}
-          reference: <code>0</code> means the same answer to the bit, which every{" "}
-          <code>strict</code> row is obliged to produce. Click any header to sort; the charts above
-          keep their own order. <a href={compareHref(scope)}>Put two languages head to head →</a>
+          One column is the site's own and is not in that reference. <strong>Ratio</strong> is how
+          many times slower a row is than the fastest row <em>currently on screen</em> — filter the
+          table and the baseline moves, because a baseline you cannot see is not a baseline. Click
+          any header to sort; the charts above keep their own order.{" "}
+          <a href={compareHref(scope)}>Put two languages head to head →</a>
         </p>
         <ResultsTable
           rows={visible}
@@ -373,8 +373,10 @@ function Report({ loaded, workload: id, state, setState, pending }: ReportProps)
           <dd>
             {campaign.rounds} run / {campaign.build_rounds} build / {campaign.warmup_rounds} warmup
           </dd>
-          <dt>strict checksum</dt>
-          <dd>{workload?.strict_checksum ?? "n/a"}</dd>
+          {/* No mode qualifies it any more: both are strict IEEE 754, so the reference
+              binds every row of the campaign rather than a subset of them. */}
+          <dt>checksum</dt>
+          <dd>{workload?.checksum ?? "n/a"}</dd>
           <dt>langbench</dt>
           <dd>{campaign.langbench_version}</dd>
         </dl>
@@ -427,8 +429,9 @@ function Failures({ failures, total }: { failures: Failure[]; total: number }) {
           : `${failures.length} scheduled implementations are`}{" "}
         absent from the charts and the table above. {failures.length === 1 ? "It was" : "Each was"}{" "}
         quarantined at the point it broke — a build that failed, a run that crashed or hung, or a
-        checksum that disagreed with the <code>strict</code> reference. A wrong run never enters the
-        statistics, so{" "}
+        checksum that disagreed with the workload's reference. Every mode is strict IEEE 754, so
+        that reference binds every row: a divergence is a wrong run, never a rounding excuse. A
+        wrong run never enters the statistics, so{" "}
         {failures.length === 1 ? "it contributed no timing" : "none of them contributed a timing"}{" "}
         to anything.
       </p>

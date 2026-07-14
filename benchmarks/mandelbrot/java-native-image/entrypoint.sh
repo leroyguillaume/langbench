@@ -10,43 +10,50 @@ MAIN_CLASS=Mandelbrot
 BINARY=/usr/local/bin/mandelbrot
 BUILD_DIR=${BUILD_DIR:-/build}
 
-# The JVM has exactly one floating-point semantics, and it is the strict one. Since
-# JEP 306 (Java 17) every expression is evaluated as if `strictfp`, and the JLS
-# binds the code generator whether it runs before the program or during it: Graal
-# compiling ahead of time may no more contract `a * b + c` into an FMA than C2
-# compiling on the fly. So the checksum is HotSpot's, and it is C's.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: the JVM has one FP semantics; mode %s behaves exactly like strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-}
+# Floating point is strict here, and there is no flag that says so -- because there is
+# nothing to say. Since JEP 306 (Java 17) the JLS evaluates every expression as if
+# `strictfp`, and it binds the code generator whether that generator runs before the
+# program or during it: Graal ahead of time may no more contract `a * b + c` into an
+# FMA than C2 on the fly. So the checksum is HotSpot's, and it is C's, in every mode.
+# The ISA target below widens the instructions Graal may emit; it cannot touch what the
+# arithmetic means, and native-image has no fast-math to be asked for.
 
-# The ISA baseline -- and this backend is the only JVM row that has a real one.
+# The ISA target -- and this backend is the only JVM row that has one at all.
 #
 # native-image is an ahead-of-time compiler, so unlike HotSpot it takes an honest
-# `-march`. Its default is `native`, which this project forbids, so it is always
-# passed explicitly.
+# `-march`, `native` included -- `native` is in fact its default, and it is passed
+# explicitly all the same, because a default is not a decision.
 #
-# THE RULE IS: NEVER ABOVE THE CAMPAIGN'S BASELINE. On x86-64 the mapping is exact
-# (`x86-64-v3` is a name native-image knows). On AArch64 it is not: native-image
-# offers `armv8-a` and `armv8.1-a` and stops there, with no `armv8.2-a` to give. So
-# this row takes the highest baseline it *can* express that does not exceed the one
-# every other backend was held to -- one level below. It is handicapped rather than
-# flattered, which is the safe direction to be wrong in, and it is published in
-# `bench.yaml` rather than hidden.
-march_flag() {
+# THE RULE FOR THE BASELINE IS: NEVER ABOVE THE CAMPAIGN'S. On x86-64 the mapping is
+# exact (`x86-64-v3` is a name native-image knows). On AArch64 it is not: native-image
+# offers `armv8-a` and `armv8.1-a` and stops there, with no `armv8.2-a` to give. So the
+# baseline here is the highest one it *can* express that does not exceed the one every
+# other backend was held to -- one level below. It is handicapped rather than flattered,
+# which is the safe direction to be wrong in.
+#
+# Which is precisely why a sample carries `isa` beside its `mode`: the mode says
+# `baseline` and this row says `armv8.1-a`, and that disagreement is published rather
+# than buried in a manifest's prose. `isa` is what was passed to the compiler, never
+# what the harness asked for. It is a JSON value, not a string -- nothing pinned is
+# `null`, an absence rather than a claim.
+resolve_isa() {
     case "${MARCH:-}" in
-    '') printf -- '-march=compatibility\n' ;;
-    x86-64-v3) printf -- '-march=x86-64-v3\n' ;;
-    armv8.2-a) printf -- '-march=armv8.1-a\n' ;;
+    '')
+        march_flag=-march=compatibility
+        isa='"compatibility"'
+        ;;
+    native)
+        march_flag=-march=native
+        isa='"native"'
+        ;;
+    x86-64-v3)
+        march_flag=-march=x86-64-v3
+        isa='"x86-64-v3"'
+        ;;
+    armv8.2-a)
+        march_flag=-march=armv8.1-a
+        isa='"armv8.1-a"'
+        ;;
     *)
         printf 'unknown MARCH for native-image: %s. Run "native-image -march=list" and add the\n' "${MARCH}" >&2
         printf 'highest baseline that does not EXCEED it -- never one above.\n' >&2
@@ -102,8 +109,7 @@ compile_to() {
     classes=$2
     mkdir -p "${classes}"
     javac -d "${classes}" "${SOURCE}"
-    # shellcheck disable=SC2046
-    native-image $(march_flag) -O3 --no-fallback -H:-DeleteLocalSymbols \
+    native-image "${march_flag}" -O3 --no-fallback -H:-DeleteLocalSymbols \
         -cp "${classes}" "${MAIN_CLASS}" -o "${output}"
 }
 
@@ -120,7 +126,10 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
+# Resolved once, up front, for every phase: the compiling phases need the flag, and the
+# measured phases need `isa` to report -- the ISA the shipped binary was built for is
+# the one the image was built with, and this is where both are read.
+resolve_isa
 
 case "${phase}" in
 install)
@@ -156,8 +165,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,"isa":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "${isa}" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -175,8 +184,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,"isa":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${isa}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

@@ -6,23 +6,36 @@ compiler: gc
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.go
-# One mode, and this is the language where that costs something to say. The Go
-# spec *permits* fusing a multiply-add across statements, and on arm64 gc takes the
-# offer -- so the kernel forbids it in the source, with explicit float64() rounding
-# points, because the strict checksum is not negotiable. A fused build is therefore
-# a different program rather than a different flag, and `fma` cannot be a build arg
-# over this source the way it is for C.
-modes:
-  - strict
+# Both. gc compiles ahead of the run, so it has to choose a machine to emit code for,
+# and this is the language where that choice costs something to spell. There is no
+# `-march` in Go and no `native`: GOAMD64 and GOARM64 name microarchitecture *levels*,
+# and gc never asks the CPU which one it is on. The entrypoint asks on its behalf -- that
+# is what `-march=native` does for gcc, and translating the flag is the job -- so `native`
+# here is the highest level the CPU actually clears. The mode says what was asked for and
+# the sample's `isa` column says what gc was actually set to. See `comments`.
+modes: all
 description: >-
-  The reference kernel in Go, compiled by gc against a pinned ISA baseline, with
+  The reference kernel in Go, compiled by gc against the campaign's ISA target, with
   goroutines and an atomic row cursor. GOMAXPROCS is set from argv, never from the
   machine: Go 1.25 reads the cgroup quota by itself, and this benchmark refuses to
   ask that question.
 comments: >-
   The float64() conversions in the source are rounding points, not casts, and they are
-  load-bearing: written the natural way this kernel checksums 33209560 where every
-  other backend produces 33209574, because gc fuses the multiply-adds and the
-  arithmetic quietly stops being everyone else's. gc also links the garbage collector
-  and the scheduler into every binary — nothing is loaded from a shared runtime at
-  startup.
+  load-bearing: written the natural way this kernel checksums 33209560 where every other
+  backend produces 33209574, because gc fuses the multiply-adds and the arithmetic
+  quietly stops being everyone else's. Strict floating point is therefore a property of
+  the *source* here rather than of a flag — which is exactly why no mode of this backend
+  can take it away, and why widening the ISA target cannot either. On that axis, `native`
+  is the highest level the CPU is *known* to have, never the highest gc can name. The
+  entrypoint reads the machine's own feature flags and picks the psABI level they clear,
+  because naming the ceiling instead would be a claim: GOAMD64=v4 is AVX-512, the runtime
+  verifies it, and on the AVX2 machines this campaign runs on that binary refuses to
+  start — which would not be a row, it would be a quarantined unit and a table that never
+  says what native buys Go. Detected, such a machine answers v3 — the baseline's own
+  level, the same binary, and the two rows tie. On AArch64 the same rule gives v8.2, also
+  the baseline's: gc accepts up to v9.5, nothing checks that level against the CPU, no
+  machine that runs this is an ARMv9, and the hot loop disassembles byte for byte
+  identically at v8.2 and v9.5. Where the two modes tie here, they tie because they are
+  one program, and that is the result rather than a gap in it. gc also links the garbage
+  collector and the scheduler into every binary — nothing is loaded from a shared runtime
+  at startup.

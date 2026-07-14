@@ -39,45 +39,92 @@ the clean experiment — the one place in this table where a single column chang
 
 ## Mode
 
-Which floating-point rules the compiler was allowed to play by. **Every mode is
-compiled with `-O3`** — the axis here is FP semantics, never "optimized vs not
-optimized".
+**Which machine the code was compiled for.** Every mode is compiled with `-O3`, and
+every mode uses strict IEEE 754 arithmetic — the axis here is the instruction set,
+never "optimized vs not optimized", and never floating-point semantics.
 
-Background, if `-ffast-math` has never bitten you yet: floating-point arithmetic is
-not associative. `(a + b) + c` and `a + (b + c)` can give different results, because
-each operation rounds. So a compiler that reorders your arithmetic is *changing the
-answer*, slightly. The three modes are three answers to "may it?".
+- **`baseline`** — a pinned instruction set, the same for every backend on this
+  architecture: `x86-64-v3`, or `armv8.2-a`. The binary does not depend on the CPU
+  that compiled it. This is what you ship when the code has to run on a fleet.
+- **`native`** — whatever *this* CPU offers. The compiler inspects the machine it is
+  standing on and uses everything it finds, including instructions a CPU two years
+  older would not understand.
 
-- **`strict`** — no. No reordering, no fusing (for gcc, literally
-  `-ffp-contract=off`). Every operation rounds exactly where the source says it
-  does.
-- **`fma`** — fusing allowed. `a*b + c` becomes one *fused multiply-add*
-  instruction, which rounds **once** instead of twice. Note the direction: this is
-  usually **more** accurate than `strict`, not less. It is not a sloppy mode, it is
-  a *less reproducible* one.
-- **`fast`** — `-ffast-math`. Fusing plus reordering plus a pile of assumptions
-  (no NaNs, no infinities, …). This is the mode where precision is genuinely traded
-  for speed.
+The gap between the two is **what portability costs**.
 
-**Read `strict` first, and treat `fma` / `fast` as different experiments, not as
-faster versions of the same one.**
+### Why some backends have only one mode
 
-Here is why `strict` carries the whole report. Our kernel only ever multiplies,
-adds, subtracts and compares. The IEEE 754 standard specifies all four operations
-down to the last bit, and both x86-64 (on SSE2 — not the ancient 80-bit x87 unit)
-and AArch64 implement them faithfully. So once no compiler is allowed to fuse or
-reorder, every compiler, every language and both CPU families are *obliged* to
-produce the identical sequence of doubles, hence the identical iteration count for
-every pixel, hence the identical checksum.
+Because the two modes are the two answers to *"which machine is this code for?"*, and
+**not every toolchain can give both answers.** That is not a gap in the data. It is
+the most interesting thing on this page.
 
-That obligation is what makes the timings comparable at all. A build that
-reassociated the inner loop and a build that did not are no longer computing the
-same thing, and there is no honest way to compare their run times. Tying every
-compiler's hands the same way is the precondition for the whole table.
+An **ahead-of-time compiler** — gcc, clang, rustc, zig, Go, `native-image` — has to
+choose. It emits machine code long before it knows where that code will run, so it
+either targets a floor every CPU clears, or it targets the CPU in front of it. Both
+are real builds, so you get both rows.
 
-It is also why some backends only ever appear in `strict`: an interpreter has one
-floating-point behaviour and no flag to change it, so an `fma` row would be the
-exact same run under a different name.
+A **JIT** — HotSpot, OpenJ9, V8, JavaScriptCore, PyPy — does not choose. It compiles
+the hot loop *while the program is running*, on the silicon underneath, so it takes
+that machine's instruction set whether anyone asks it to or not. There is no flag to
+pin it, because pinning it was never the point: this is the thing a JIT sells. Those
+backends have a `native` row and no `baseline` row, and denying them the machine to
+make the table look symmetrical would mean publishing a JVM slower than the one you
+actually run.
+
+Two backends are worth knowing about because they break the neat version of that
+story:
+
+- **Julia** is a JIT that *can* be pinned — it takes `--cpu-target` and validates the
+  name. So it has both modes. The `baseline` column is not "the ahead-of-time
+  compilers"; it is "the toolchains that let you pick the target", and Julia is the
+  proof those are different sets.
+- **CPython** is neither. It compiles nothing ahead of the run and has no JIT during
+  it, so no machine code is ever generated for this CPU at all. Its hot loop is the
+  interpreter's own `eval` loop, compiled by whoever packaged it. It sits in
+  `baseline` — the column of "did not get the machine" — and its **ISA** column tells
+  you the rest.
+
+## ISA
+
+**What the row actually got**, as against what its mode asked for.
+
+The mode is a *request*. This column is the *answer*, reported by the container that
+ran the compiler. Most of the time they agree and you can ignore this column. The
+cases where they disagree are the reason it exists:
+
+| ISA | What it means |
+| --- | ------------- |
+| `x86-64-v3`, `armv8.2-a` | The pinned baseline, honoured exactly. |
+| `native` | This CPU's full instruction set. A compiled row asked for it; a JIT row could not have refused it. |
+| `v3`, `v4`, `v8.2` | **Go.** It has no `-march=native`: `GOAMD64`/`GOARM64` name psABI *levels*, and Go never asks the CPU which one it is on. So the entrypoint asks, and names the highest level the machine actually clears. On an AVX2 machine that is `v3` — the same level as the baseline, the same binary — and the two rows tie. That tie is the finding, not a hole: Go has no instruction set left to reach for. |
+| `armv8.1-a` | **`native-image` on AArch64.** GraalVM offers no `armv8.2-a`, so it takes the level below rather than one above the campaign's baseline. The row is handicapped rather than flattered. |
+| `distro` | **CPython.** Its interpreter carries no `-march` at all: whoever packaged it built it for the toolchain's floor — plain `x86-64`, one level *below* the baseline every compiled row was held to. The ISA of this row was chosen by the packager, not by this campaign. |
+| `n/a` | The backend did not report one. An absence, never a claim. |
+
+Every one of those divergences used to live in a footnote inside a manifest — which
+is to say, nowhere anybody reading a table would ever find it. A column whose meaning
+varies from row to row is not a problem. A column whose meaning varies from row to row
+*in silence* is, and this column is how it stops being silent.
+
+### What `native` is not
+
+It is **not** `-ffast-math`, and that distinction is what keeps every row of this
+table comparable.
+
+`-march=native` decides *which instructions* the compiler may emit. `-ffast-math`
+decides *what arithmetic means* — it lets the compiler reassociate your sums, and a
+compiler that reorders arithmetic is **changing the answer**, because floating-point
+addition is not associative and every operation rounds.
+
+Widening a vector reorders nothing. Four multiplications at once are still the same
+four multiplications, rounded in the same places. So a `native` build and a `baseline`
+build of the same source compute **the same bits** — and `-ffast-math` is spelled
+nowhere in this project.
+
+Which is why every row here, in both modes, computed the identical answer: `langbench`
+verifies it on every sample and quarantines any backend that disagrees, so a row that
+was wrong is not in this table — it is in the failures beneath it. See
+[the strict-mode invariant](/methodology/#the-strict-mode-invariant).
 
 ## Runs
 
@@ -282,44 +329,3 @@ three `fsub` and no call at all. More code, doing less arithmetic. `.text` is th
 `n/a` means the backend emits no artifact to measure. That is a property of the
 backend, not of the language — `native-image` produces a binary from the very same
 Java source that a JIT-only run does not.
-
-## Δ strict
-
-This run's checksum, minus the `strict` reference printed above the table.
-
-On a `strict` row it is always `0`. That looks like a tautology, and it is not.
-As the **Mode** section explains, strict semantics leave the compilers no room to
-disagree — so the checksum stops being a numerical property of the computation and
-becomes an **equality test between implementations**. It is the correctness gate for
-the entire harness. A divergence takes that backend out of the campaign on the spot
-— quarantined, no timing published, the reason recorded — and is never waved through
-as "just rounding": it means two kernels are not computing the same thing. Something
-was mistyped, a condition was flipped, a compiler flag leaked in. The other backends
-keep measuring; the broken one has nothing left to say, and a campaign that threw
-away forty good rows because one backend was wrong would be its own kind of bug.
-
-A real example from this repo: rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in the
-Python kernel — a reordering that looks like a harmless tidy-up — flips two pixels
-out of twelve million and stops the run. That is precisely the class of bug that
-unit tests do not catch, and it is why the gate exists.
-
-It is a **necessary condition, not a sufficient one.** The gate can only notice a
-perturbation big enough to push some pixel across an iteration boundary. So a
-passing checksum means "no evidence of divergence at this resolution" — never
-"provably identical". For Mandelbrot, sensitivity grows with the `grid_size` and
-`max_iter` params, because both increase the number of pixels sitting right on a
-boundary.
-
-And the reference is not a universal constant. It is a property of *(workload, its
-params)*, which is why each workload declares its own — in its `workload.yaml` — and
-why overriding a param with `--param` retires it: it is the answer to the declared
-work, not to the work you just asked for. The invariant is
-*agreement between implementations*, never a particular number.
-
-In `fma` and `fast` we do not gate — those modes are *allowed* to diverge, that is
-their whole definition — so we report the delta instead. It is the precision you sold
-for the speed you gained, sitting right next to the timing instead of buried in a
-footnote. Read the two columns together, and mind the sign of the trade: an `fma` row
-is typically *more* accurate than the strict reference it differs from. We do not
-print the raw checksum of a relaxed row, because on its own it tells you nothing —
-the distance is the whole story.

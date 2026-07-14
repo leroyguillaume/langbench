@@ -17,7 +17,8 @@ const aggregate = (
   language,
   compiler,
   interpreter,
-  mode: "strict",
+  mode: "baseline",
+  isa: "armv8.2-a",
   run_wall: null,
   run_elapsed: null,
   run_startup: null,
@@ -33,7 +34,6 @@ const aggregate = (
   binary_stripped_bytes: null,
   text_bytes: null,
   checksum: null,
-  checksum_delta: null,
 });
 
 describe("naming an implementation", () => {
@@ -91,21 +91,21 @@ describe("the key a link carries", () => {
         language: "java",
         compiler: "native-image",
         interpreter: null,
-        mode: "strict",
+        mode: "native",
       }),
-    ).toBe("java/native-image/-/strict");
+    ).toBe("java/native-image/-/native");
   });
 
   it("finds the row it points at", () => {
     const rows = [aggregate("c", "gcc", null), aggregate("java", "native-image", null)];
-    expect(findByKey(rows, "java/native-image/-/strict")?.language).toBe("java");
+    expect(findByKey(rows, "java/native-image/-/baseline")?.language).toBe("java");
   });
 
   // A key arrives from a query string somebody may have typed, or bookmarked before
   // a backend was renamed. It is resolved against the campaign, never trusted.
   it("drops a triple this campaign never measured rather than passing it to the harness", () => {
     const rows = [aggregate("c", "gcc", null)];
-    expect(findByKey(rows, "c/clang/-/strict")).toBeNull();
+    expect(findByKey(rows, "c/clang/-/baseline")).toBeNull();
     expect(findByKey(rows, "c/gcc/-/turbo")).toBeNull();
     expect(findByKey(rows, "nonsense")).toBeNull();
     expect(findByKey(rows, null)).toBeNull();

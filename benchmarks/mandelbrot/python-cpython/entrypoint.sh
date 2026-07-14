@@ -8,22 +8,39 @@ SOURCE_DIR=/usr/local/src/mandelbrot
 # it; the timed rebuild below produces a throwaway copy.
 BUILD_DIR=${BUILD_DIR:-/build}
 
-# CPython has exactly one floating-point semantics. There is no `-ffp-contract`
-# to turn off and no `-ffast-math` to turn on: the interpreter never contracts a
-# multiply-add, and it never reassociates. So the three modes produce the same
-# bytecode and, necessarily, the same checksum -- which is itself the result.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: CPython has one FP semantics; mode %s behaves exactly like strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
+# Floating-point is strict here, and there is nothing to pass to make it so: the
+# interpreter evaluates one binary operator at a time, so it has nothing to contract
+# a multiply-add out of and nothing to reassociate. There was never a knob, and
+# removing the mode axis removed no flag.
+
+# The ISA this row actually got, which is the one thing about this backend that the
+# mode alone cannot say.
+#
+# The mode is `baseline`, because CPython is neither compiled ahead of the run nor
+# JIT-compiled during it -- 3.13's JIT is experimental, off by default, and not built
+# into this image -- so no machine code is ever generated for *this* CPU. The machine
+# code that runs the hot loop is CPython's own eval loop, and it was compiled when the
+# image was packaged, by somebody who had to boot on every machine there is: no
+# `-march` appears in the interpreter's own CFLAGS or in its configure line, so the
+# eval loop was built for the toolchain's floor -- plain `x86-64` (v1), `armv8-a` --
+# which is *below* the baseline every compiled row in this campaign was held to.
+#
+# So the row cannot report the campaign's baseline: it never got it, and echoing back
+# the level it was handed is precisely the silent lie the `isa` field exists to kill.
+# It reports `distro`: the packager chose this ISA, this campaign did not, and no
+# `-march` was recorded for it to name. That is a fact about *who chose*, and it stays
+# true whatever the packager chooses next.
+#
+# It is a constant and not a `sysconfig` lookup on purpose. Asking the interpreter
+# would mean starting a second interpreter inside a measured container, and the gap
+# between the external clock and the kernel's own `elapsed_ns` is a published column:
+# a run that measured itself would be a run that changed itself. The lookup belongs in
+# the comment above, where it has already been done.
+#
+# It prints its own trailing comma: the caller splices it into a JSON object that has
+# to stay well-formed without it.
+isa_json() {
+    printf '"isa":"distro",'
 }
 
 now_ns() {
@@ -67,7 +84,6 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
 
 case "${phase}" in
 install)
@@ -95,8 +111,8 @@ build)
     read_peak_memory
     # No machine-code artifact: the sizes are null, not zero. A .pyc is bytecode,
     # and putting its size next to an ELF's would rank packaging, not codegen.
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"build","elapsed_ns":%s,%s"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "$(isa_json)" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 run)
@@ -112,8 +128,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,%s"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "$(isa_json)" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

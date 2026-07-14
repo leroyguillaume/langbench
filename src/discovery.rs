@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
 use crate::cli::Architecture;
-use crate::mode::FpMode;
+use crate::mode::Mode;
 use crate::sample::backend_slug;
 use crate::workload::{self, Workload};
 
@@ -59,7 +59,7 @@ struct Manifest {
     /// do that is to pattern-match a name — which is parsing the path, under
     /// another name. See `CLAUDE.md#declaring-the-work`.
     source: String,
-    /// The FP modes this backend distinguishes: `all`, or an explicit list.
+    /// The ISA targets this backend distinguishes: `all`, or an explicit list.
     modes: Modes,
     /// The architectures this backend can be built on: `all`, or an explicit
     /// list. Defaults to `all`, which is the ordinary case — a toolchain that
@@ -90,13 +90,13 @@ pub fn schema() -> Result<String> {
     serde_json::to_string_pretty(&schema_for!(Manifest)).context("serializing the manifest schema")
 }
 
-/// `modes: all`, or `modes: [strict, fma]`.
+/// `modes: all`, or `modes: [native]`.
 ///
 /// The list holds *strings*, and the modes are parsed out of them by hand, for
 /// one reason: serde's `untagged` reports a failure as "data did not match any
 /// variant of untagged enum Modes", which tells the author of a typo neither
 /// what they typed nor what was expected. The schema, meanwhile, is told the
-/// list really holds `FpMode`s — so an editor completes the three modes and
+/// list really holds `Mode`s — so an editor completes the two modes and
 /// flags a fourth, while the harness keeps a message a human can act on.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -104,8 +104,8 @@ enum Modes {
     /// Every mode the harness knows.
     #[schemars(extend("enum" = [ALL_MODES]))]
     Keyword(String),
-    /// The modes this backend actually distinguishes, e.g. `[strict]`.
-    List(#[schemars(with = "Vec<FpMode>")] Vec<String>),
+    /// The modes this backend actually distinguishes, e.g. `[native]`.
+    List(#[schemars(with = "Vec<Mode>")] Vec<String>),
 }
 
 /// `architectures: all`, or `architectures: [x86_64]`.
@@ -149,10 +149,14 @@ pub struct Implementation {
     /// rest of the manifest, so a sample describes itself without a second file to
     /// join against.
     pub source_bytes: u64,
-    /// The FP modes this implementation declares are meaningful for it. A
-    /// compiled backend distinguishes all three; an interpreter has one FP
-    /// semantics, so the other two would be the same run under another name.
-    pub fp_modes: Vec<FpMode>,
+    /// The ISA targets this implementation declares are meaningful for it.
+    ///
+    /// An ahead-of-time compiler has both: it must pick a machine to emit code
+    /// for, and `baseline` and `native` are the two answers. A JIT has only
+    /// `native` — it generates code on the machine it is running on and cannot do
+    /// otherwise, so a `baseline` image would be the same run under another tag.
+    /// That asymmetry is not an inconvenience to be papered over; it is the result.
+    pub modes: Vec<Mode>,
     /// The architectures this implementation can be built on. Almost always both;
     /// a backend whose toolchain does not exist for an architecture says so here.
     pub architectures: Vec<Architecture>,
@@ -168,9 +172,9 @@ impl Implementation {
         )
     }
 
-    /// One image per (implementation, FP mode). The mode is a build arg, so the
-    /// Dockerfile is shared — only the tag differs.
-    pub fn image(&self, mode: FpMode) -> String {
+    /// One image per (implementation, mode). The mode reaches the Dockerfile as the
+    /// `MARCH` build arg, so the Dockerfile is shared — only the tag differs.
+    pub fn image(&self, mode: Mode) -> String {
         format!("langbench/{}-{}:{mode}", self.workload, self.slug())
     }
 
@@ -185,11 +189,11 @@ impl Implementation {
 
     /// The requested modes this implementation actually distinguishes, in the
     /// order they were requested.
-    pub fn selected_modes(&self, requested: &[FpMode]) -> Vec<FpMode> {
+    pub fn selected_modes(&self, requested: &[Mode]) -> Vec<Mode> {
         requested
             .iter()
             .copied()
-            .filter(|mode| self.fp_modes.contains(mode))
+            .filter(|mode| self.modes.contains(mode))
             .collect()
     }
 
@@ -220,7 +224,7 @@ impl Implementation {
             );
         }
 
-        let fp_modes = fp_modes(&manifest.modes)
+        let modes = declared_modes(&manifest.modes)
             .with_context(|| format!("reading `modes` from {}", path.display()))?;
 
         let architectures = architectures(&manifest.architectures)
@@ -266,7 +270,7 @@ impl Implementation {
             context: dir.to_path_buf(),
             source,
             source_bytes,
-            fp_modes,
+            modes,
             architectures,
         })
     }
@@ -275,23 +279,23 @@ impl Implementation {
 /// `all`, or an explicit list. Anything else is an error: a typo in a mode name
 /// drops an implementation out of a mode, and a missing row is exactly the kind
 /// of absence nobody notices in a table.
-fn fp_modes(modes: &Modes) -> Result<Vec<FpMode>> {
+fn declared_modes(modes: &Modes) -> Result<Vec<Mode>> {
     let declared = match modes {
         Modes::Keyword(keyword) if keyword.eq_ignore_ascii_case(ALL_MODES) => {
-            return Ok(FpMode::ALL.to_vec());
+            return Ok(Mode::ALL.to_vec());
         }
-        Modes::Keyword(keyword) => bail!(
-            "`{keyword}` is not a mode list; write `{ALL_MODES}` or a list such as [strict, fma]",
-        ),
+        Modes::Keyword(keyword) => {
+            bail!("`{keyword}` is not a mode list; write `{ALL_MODES}` or a list such as [native]",)
+        }
         Modes::List(declared) => declared,
     };
 
-    // Deduplicated, not rejected: `[strict, strict]` is a manifest that says the
+    // Deduplicated, not rejected: `[native, native]` is a manifest that says the
     // same true thing twice, and building the image twice would be the only harm.
-    let mut parsed: Vec<FpMode> = Vec::new();
+    let mut parsed: Vec<Mode> = Vec::new();
     for token in declared {
-        let mode = FpMode::parse(token.trim()).with_context(|| {
-            format!("`{token}` is not a known mode; expected one of strict, fma, fast")
+        let mode = Mode::parse(token.trim()).with_context(|| {
+            format!("`{token}` is not a known mode; expected one of baseline, native")
         })?;
         if !parsed.contains(&mode) {
             parsed.push(mode);
@@ -299,7 +303,7 @@ fn fp_modes(modes: &Modes) -> Result<Vec<FpMode>> {
     }
     ensure!(
         !parsed.is_empty(),
-        "no mode declared; write `{ALL_MODES}` or a list such as [strict, fma]",
+        "no mode declared; write `{ALL_MODES}` or a list such as [native]",
     );
     Ok(parsed)
 }
@@ -756,7 +760,7 @@ mod tests {
             "language: python\n\
              compiler: cython\n\
              interpreter: cpython\n\
-             modes: [strict]\n\
+             modes: [baseline]\n\
              description: Cython compiles the kernel; CPython runs the result.\n\
              comments: Slower than the interpreter it compiles.\n",
         )]);
@@ -769,7 +773,7 @@ mod tests {
         assert_eq!(found[0].interpreter.as_deref(), Some("cpython"));
         assert!(found[0].description.starts_with("Cython compiles"));
         assert!(found[0].comments.is_some());
-        assert_eq!(found[0].fp_modes, [FpMode::Strict]);
+        assert_eq!(found[0].modes, [Mode::Baseline]);
     }
 
     /// The identity is the triple, so the token that carries it is derived from
@@ -779,13 +783,13 @@ mod tests {
         let compiled = one(C_GCC).unwrap();
         assert_eq!(compiled[0].slug(), "c-gcc");
         assert_eq!(
-            compiled[0].image(FpMode::Strict),
-            "langbench/mandelbrot-c-gcc:strict"
+            compiled[0].image(Mode::Baseline),
+            "langbench/mandelbrot-c-gcc:baseline"
         );
 
         let interpreted = one("language: python\n\
                                interpreter: cpython\n\
-                               modes: [strict]\n\
+                               modes: [baseline]\n\
                                description: CPython, no compiler.\n")
         .unwrap();
         assert_eq!(interpreted[0].slug(), "python-cpython");
@@ -793,7 +797,7 @@ mod tests {
         let both = one("language: python\n\
                         compiler: cython\n\
                         interpreter: cpython\n\
-                        modes: [strict]\n\
+                        modes: [baseline]\n\
                         description: Both.\n")
         .unwrap();
         assert_eq!(both[0].slug(), "python-cython-cpython");
@@ -816,7 +820,7 @@ mod tests {
     fn a_backend_may_declare_it_only_builds_on_one_architecture() {
         let found = one("language: kotlin\n\
                          compiler: kotlin-native\n\
-                         modes: [strict]\n\
+                         modes: [baseline]\n\
                          architectures: [x86_64]\n\
                          description: No linux-aarch64 host compiler exists.\n")
         .unwrap();
@@ -863,7 +867,7 @@ mod tests {
                 "aaa",
                 "language: python\n\
                  interpreter: cpython\n\
-                 modes: [strict]\n\
+                 modes: [baseline]\n\
                  description: CPython.\n",
             ),
         ]);
@@ -938,7 +942,7 @@ mod tests {
 
     #[test]
     fn the_all_keyword_declares_every_mode() {
-        assert_eq!(one(C_GCC).unwrap()[0].fp_modes, FpMode::ALL);
+        assert_eq!(one(C_GCC).unwrap()[0].modes, Mode::ALL);
     }
 
     #[test]
@@ -946,11 +950,11 @@ mod tests {
         let found = one("language: go\n\
                          compiler: gc\n\
                          modes:\n\
-                           - strict\n\
-                           - fma\n\
+                           - baseline\n\
+                           - native\n\
                          description: Go, gc backend.\n")
         .unwrap();
-        assert_eq!(found[0].fp_modes, [FpMode::Strict, FpMode::Fma]);
+        assert_eq!(found[0].modes, [Mode::Baseline, Mode::Native]);
     }
 
     /// Label-based discovery fell back to every mode on a typo, on the grounds
@@ -1027,13 +1031,13 @@ mod tests {
     fn selected_modes_intersect_the_request_with_the_declaration() {
         let found = one("language: python\n\
                          interpreter: cpython\n\
-                         modes: [strict]\n\
+                         modes: [baseline]\n\
                          description: CPython, no compiler.\n")
         .unwrap();
 
         assert!(found[0].compiler.is_none());
-        assert_eq!(found[0].selected_modes(&FpMode::ALL), [FpMode::Strict]);
-        assert!(found[0].selected_modes(&[FpMode::Fast]).is_empty());
+        assert_eq!(found[0].selected_modes(&Mode::ALL), [Mode::Baseline]);
+        assert!(found[0].selected_modes(&[Mode::Native]).is_empty());
     }
 
     /// A check exists to be run after a mistake, so it must report *every*
@@ -1117,9 +1121,9 @@ mod tests {
         // The workload is *not* here: an implementation no longer names the workload
         // it implements — the workload names its implementations.
         assert!(!schema.contains("\"workload\""), "{schema}");
-        // The three modes are offered to an editor as constants, not as "a
-        // string": completing `strict` is the point of shipping a schema.
-        for mode in FpMode::ALL {
+        // The two modes are offered to an editor as constants, not as "a string":
+        // completing `baseline` is the point of shipping a schema.
+        for mode in Mode::ALL {
             assert!(schema.contains(&format!("\"const\": \"{mode}\"")), "{mode}");
         }
         // A misspelled key must fail the campaign, and the schema must say so.

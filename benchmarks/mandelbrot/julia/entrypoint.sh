@@ -12,39 +12,44 @@ BUILD_DIR=${BUILD_DIR:-/build}
 # organised around.
 ROW_SIGNATURE='(Int, Int, Int, Float64, Float64)'
 
-# Julia has exactly one floating-point semantics here. It never contracts a
-# multiply-add into an FMA on its own -- fusing is `muladd`, which the source has
-# to ask for -- and it never reassociates. (`--math-mode=fast` existed once; it was
-# deprecated because it was unsound across function boundaries, and in 1.11 it does
-# nothing.) So the three modes produce the same native code and, necessarily, the
-# same checksum -- which is itself the result.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: Julia has one FP semantics; mode %s behaves exactly like strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
+# Floating-point is strict here, in every mode, and there is nothing to pass to make
+# it so: Julia never contracts a multiply-add into an FMA on its own -- fusing is
+# `muladd`, which the source has to ask for -- and it never reassociates.
+# (`--math-mode=fast` existed once; it was deprecated because it was unsound across
+# function boundaries, and in 1.11 it does nothing.) So the checksum is bit-identical
+# whatever the ISA target, which is exactly what makes it a gate on the ISA target.
+
+# The ISA target the JIT compiles for -- the whole of the mode, in one word.
+#
+# `MARCH` carries it: the campaign's pinned baseline (`x86-64-v3`, `armv8.2-a`), or
+# the literal `native`. Julia speaks LLVM's CPU names, and `native` is one of them,
+# so both arrive ready to use and there is nothing here to translate.
+#
+# Julia's default is `native`, which is why the target is *always* passed explicitly,
+# including -- especially -- in the baseline mode. A forgotten flag here does not
+# fail: it compiles for the bench machine and publishes the result in the baseline
+# column, where every number would be internally consistent and wrong.
+#
+# The empty `MARCH` is the machine whose baseline the harness does not know. `generic`
+# is the honest target for it -- LLVM's own floor for the architecture -- and it is
+# what the row then reports getting, because that is what it got.
+cpu_target() {
+    printf '%s\n' "${MARCH:-generic}"
 }
 
-# The ISA baseline. Julia's default is `native`, which this project forbids: the
-# JIT would compile for whatever CPU the bench machine happens to have, and the
-# baseline would silently vary with the host. So it is always passed explicitly.
-#
-# Julia speaks LLVM's CPU names and validates them -- `--cpu-target=nonsense` is a
-# hard error, not a warning -- so an unknown baseline fails the campaign here
-# rather than quietly producing a generic binary, which is more than rustc can say.
 cpu_target_flag() {
-    if [ -z "${MARCH:-}" ]; then
-        printf -- '--cpu-target=generic\n'
-    else
-        printf -- '--cpu-target=%s\n' "${MARCH}"
-    fi
+    printf -- '--cpu-target=%s\n' "$(cpu_target)"
+}
+
+# What the JIT was actually told to target, echoed back so a sample can say it. The
+# mode says what was *asked for*; this says what was got, and Julia is the backend
+# where the difference is worth watching: it is a JIT, and a JIT that is not told
+# otherwise compiles for the machine under it.
+#
+# It prints its own trailing comma: the caller splices it into a JSON object that has
+# to stay well-formed without it.
+isa_json() {
+    printf '"isa":"%s",' "$(cpu_target)"
 }
 
 now_ns() {
@@ -88,7 +93,6 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
 
 case "${phase}" in
 install)
@@ -126,8 +130,8 @@ build)
     read_peak_memory
     # No artifact on disk: the sizes are null, not zero. Julia's native code lives
     # in memory, and a zero would be a claim about a file that does not exist.
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"build","elapsed_ns":%s,%s"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "$(isa_json)" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 run)
@@ -147,8 +151,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,%s"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "$(isa_json)" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

@@ -9,11 +9,12 @@ compiler: native-image
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.java
-# One floating-point semantics. The JLS binds the code generator whether it runs
-# before the program or during it, so Graal-ahead-of-time may no more contract a
-# multiply-add than C2-on-the-fly. Its checksum is HotSpot's, and it is C's.
-modes:
-  - strict
+# Both, and it is the only Java row where the question can even be put: Graal compiles
+# before it meets the machine, so it must be told which machine to compile for. Every
+# other JVM row's code generator runs *on* the CPU it is generating for and has no
+# choice to make. `native` is native-image's own default here, passed explicitly all
+# the same, because a default is not a decision.
+modes: all
 description: >-
   The same Mandelbrot.java as java-javac-openjdk, byte for byte, compiled ahead of
   time by GraalVM native-image into a standalone ELF. No JVM at run time, no JIT, no
@@ -23,4 +24,7 @@ comments: >-
   what ships is an ELF with the garbage collector and the runtime linked into it, and
   no JVM is installed in the image. The only JVM row with a true -march — though on
   AArch64 native-image offers no armv8.2-a and takes armv8.1-a: one level BELOW the
-  campaign's baseline, never above.
+  campaign's baseline, never above, and the sample's isa column says armv8.1-a where its
+  mode says baseline. Floating point is strict in both modes and cannot be otherwise:
+  the JLS binds Graal ahead of time exactly as it binds C2 on the fly, so a wider ISA
+  changes which instructions are emitted and never what they compute.

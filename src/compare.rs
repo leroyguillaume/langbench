@@ -23,7 +23,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::analysis::{Aggregate, Analysis};
-use crate::mode::FpMode;
+use crate::mode::Mode;
 use crate::stats::Summary;
 
 /// The pair a reader asked for. Two rows of one campaign, named the way the
@@ -40,7 +40,7 @@ pub struct Selection {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Row {
     pub backend: String,
-    pub mode: FpMode,
+    pub mode: Mode,
 }
 
 /// What a number is measured in. The site spells it; it never converts it.
@@ -104,7 +104,7 @@ pub struct Metric {
 ///
 /// Strings on the wire, because the checksum is a 64-bit integer and a JavaScript
 /// `Number` is a double. Compared here, in Rust, on the full width. See
-/// `site/src/content/methodology.md#floating-point-modes`.
+/// `site/src/content/methodology.md#the-strict-mode-invariant`.
 #[derive(Clone, Debug, Serialize)]
 pub struct Checksums {
     #[serde(serialize_with = "crate::analysis::as_string")]
@@ -113,11 +113,22 @@ pub struct Checksums {
     pub right: Option<u64>,
     /// `None` when either side never reported one.
     pub same: Option<bool>,
-    /// True when the two disagree *and* both were compiled `strict` — which the
-    /// harness aborts a campaign over, so it can only be seen on a file recorded
-    /// by something else. A relaxed mode is *expected* to diverge; that is what
-    /// the mode buys, and it is not an error.
-    pub violates_strict_invariant: bool,
+    /// True whenever the two disagree. **In any mode, in either combination.**
+    ///
+    /// There is no relaxed mode left to excuse a divergence. This used to require
+    /// both sides to be `strict`, because `fma` and `fast` were *expected* to
+    /// diverge — that was what the mode bought, and holding them to the reference
+    /// would have been a category error. `baseline` and `native` buy no such thing:
+    /// they emit different instructions to compute identical bits, so two rows that
+    /// disagree are two rows where one of them is wrong, whatever they were built
+    /// for.
+    ///
+    /// The harness quarantines the backend over this, so a campaign it wrote can
+    /// never contain one. It is computed anyway, for the file recorded by something
+    /// else — and for the pair the checksum invariant is *most* interesting on: the
+    /// two sides of an architecture crossing, which are obliged to agree bit for bit
+    /// and have no shared silicon to agree by accident on.
+    pub violates_checksum_invariant: bool,
 }
 
 /// Two rows, and what may be said about the pair.
@@ -134,10 +145,11 @@ pub struct Comparison {
     /// exactly the claim `site/src/content/methodology.md#flags-and-the-architecture-baseline` exists to forbid. A ratio
     /// travels between architectures; a millisecond does not.
     ///
-    /// The checksums, on the other hand, are *more* interesting across an architecture than
-    /// within one: in `strict` mode they are obliged to be bit-identical on x86-64
-    /// and on AArch64 alike, and a divergence is a bug in one of them.
-    pub cross_isa: bool,
+    /// The checksums, on the other hand, are *more* interesting across an architecture
+    /// than within one: they are obliged to be bit-identical on x86-64 and on AArch64
+    /// alike — in both modes, since neither relaxes the arithmetic — and a divergence
+    /// is a bug in one of them.
+    pub cross_architecture: bool,
 }
 
 /// A backend's identity, on one side of the pair. The manifest's own fields — the
@@ -150,7 +162,7 @@ pub struct Side {
     pub language: String,
     pub compiler: Option<String>,
     pub interpreter: Option<String>,
-    pub mode: FpMode,
+    pub mode: Mode,
     /// The architecture of the campaign this row was measured on — out of the machine record
     /// inside the file, never out of its name.
     pub architecture: String,
@@ -173,7 +185,7 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
 /// Compare a row of one campaign with a row of another — including, deliberately,
 /// two campaigns from two architectures.
 ///
-/// The result then carries `cross_isa`, and **that flag is the point**. The timings
+/// The result then carries `cross_architecture`, and **that flag is the point**. The timings
 /// it hands back are computed exactly as they would be within one campaign, because
 /// refusing to compute them would only push somebody into doing the division by
 /// hand; what the harness will not do is let the pair pass for a comparable one. A
@@ -193,7 +205,7 @@ pub fn compare_across(
 
     Ok(Comparison {
         workload: left_algo.workload.clone(),
-        cross_isa: left_analysis.architecture != right_analysis.architecture,
+        cross_architecture: left_analysis.architecture != right_analysis.architecture,
         left: side(left, &left_analysis.architecture),
         right: side(right, &right_analysis.architecture),
         metrics: vec![
@@ -433,9 +445,7 @@ fn checksums(left: &Aggregate, right: &Aggregate) -> Checksums {
         left: left.checksum,
         right: right.checksum,
         same,
-        violates_strict_invariant: same == Some(false)
-            && left.mode == FpMode::Strict
-            && right.mode == FpMode::Strict,
+        violates_checksum_invariant: same == Some(false),
     }
 }
 
@@ -457,11 +467,11 @@ mod tests {
             build_rounds: 5,
             warmup_rounds: 2,
             march: "x86-64-v3".to_owned(),
-            modes: vec!["strict".to_owned()],
+            modes: vec!["baseline".to_owned()],
         }
     }
 
-    fn sample(backend: &str, mode: FpMode, wall: u64, checksum: u64) -> Sample {
+    fn sample(backend: &str, mode: Mode, wall: u64, checksum: u64) -> Sample {
         let (language, compiler) = backend.split_once('-').expect("<language>-<compiler>");
         Sample {
             workload: "mandelbrot".to_owned(),
@@ -471,6 +481,7 @@ mod tests {
             description: format!("{backend}, as the fixture declares it"),
             comments: None,
             mode,
+            isa: Some("x86-64-v3".to_owned()),
             phase: Phase::Run,
             round: 0,
             warmup: false,
@@ -489,7 +500,7 @@ mod tests {
     }
 
     /// One `(backend, mode)`, sampled `walls.len()` times.
-    fn rows(backend: &str, mode: FpMode, walls: &[u64], checksum: u64) -> Vec<Sample> {
+    fn rows(backend: &str, mode: Mode, walls: &[u64], checksum: u64) -> Vec<Sample> {
         walls
             .iter()
             .map(|wall| sample(backend, mode, *wall, checksum))
@@ -523,11 +534,11 @@ mod tests {
             workload: "mandelbrot".to_owned(),
             left: Row {
                 backend: left.to_owned(),
-                mode: FpMode::Strict,
+                mode: Mode::Baseline,
             },
             right: Row {
                 backend: right.to_owned(),
-                mode: FpMode::Strict,
+                mode: Mode::Baseline,
             },
         }
     }
@@ -544,13 +555,13 @@ mod tests {
     fn quiet() -> Analysis {
         let mut samples = rows(
             "c-gcc",
-            FpMode::Strict,
+            Mode::Baseline,
             &[2_000_000_000, 2_000_000_000, 2_010_000_000],
             42,
         );
         samples.extend(rows(
             "c-clang",
-            FpMode::Strict,
+            Mode::Baseline,
             &[3_000_000_000, 3_000_000_000, 3_010_000_000],
             42,
         ));
@@ -597,13 +608,13 @@ mod tests {
     fn a_gap_smaller_than_the_dispersion_is_a_tie_not_a_win() {
         let mut samples = rows(
             "c-gcc",
-            FpMode::Strict,
+            Mode::Baseline,
             &[1_000_000_000, 1_100_000_000, 1_200_000_000],
             42,
         );
         samples.extend(rows(
             "c-clang",
-            FpMode::Strict,
+            Mode::Baseline,
             &[1_030_000_000, 1_130_000_000, 1_230_000_000],
             42,
         ));
@@ -622,10 +633,10 @@ mod tests {
     /// reported for what it is, with nothing to hide behind.
     #[test]
     fn a_dispersion_below_three_samples_is_unknown_never_zero() {
-        let mut samples = rows("c-gcc", FpMode::Strict, &[1_000_000_000, 1_500_000_000], 42);
+        let mut samples = rows("c-gcc", Mode::Baseline, &[1_000_000_000, 1_500_000_000], 42);
         samples.extend(rows(
             "c-clang",
-            FpMode::Strict,
+            Mode::Baseline,
             &[1_010_000_000, 1_510_000_000],
             42,
         ));
@@ -639,8 +650,8 @@ mod tests {
     /// A backend that ships no binary is not a backend with a zero-byte one.
     #[test]
     fn an_absent_number_is_never_a_zero_and_never_a_winner() {
-        let mut samples = rows("c-gcc", FpMode::Strict, &[2_000_000_000], 42);
-        let mut interpreted = rows("python-cpython", FpMode::Strict, &[9_000_000_000], 42);
+        let mut samples = rows("c-gcc", Mode::Baseline, &[2_000_000_000], 42);
+        let mut interpreted = rows("python-cpython", Mode::Baseline, &[9_000_000_000], 42);
         for sample in &mut interpreted {
             sample.binary_bytes = None;
             sample.text_bytes = None;
@@ -653,11 +664,11 @@ mod tests {
                 workload: "mandelbrot".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
-                    mode: FpMode::Strict,
+                    mode: Mode::Baseline,
                 },
                 right: Row {
                     backend: "python-cpython".to_owned(),
-                    mode: FpMode::Strict,
+                    mode: Mode::Baseline,
                 },
             },
         )
@@ -674,9 +685,9 @@ mod tests {
     /// comparison says the two backends did not compute the same thing, and does
     /// not call it a violation.
     #[test]
-    fn a_relaxed_mode_that_diverges_is_reported_but_is_not_an_invariant_violation() {
-        let mut samples = rows("c-gcc", FpMode::Strict, &[2_000_000_000], 1_000);
-        samples.extend(rows("c-gcc", FpMode::Fast, &[1_000_000_000], 994));
+    fn a_native_row_that_diverges_from_its_baseline_violates_the_invariant() {
+        let mut samples = rows("c-gcc", Mode::Baseline, &[2_000_000_000], 1_000);
+        samples.extend(rows("c-gcc", Mode::Native, &[1_000_000_000], 994));
 
         let comparison = compare(
             &analysis(samples),
@@ -684,32 +695,39 @@ mod tests {
                 workload: "mandelbrot".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
-                    mode: FpMode::Strict,
+                    mode: Mode::Baseline,
                 },
                 right: Row {
                     backend: "c-gcc".to_owned(),
-                    mode: FpMode::Fast,
+                    mode: Mode::Native,
                 },
             },
         )
         .unwrap();
 
+        // Under the floating-point axis this pair was *fine*: a relaxed mode was
+        // licensed to compute a different number, and the difference was the column.
+        // Under the ISA axis it is a bug. `native` emits wider instructions to
+        // compute identical bits — it reorders no arithmetic and rounds nothing
+        // differently — so a native row that disagrees with its own baseline is a
+        // miscompilation, and the harness takes the backend out of the campaign
+        // rather than printing the delta and letting the reader shrug.
         assert_eq!(comparison.checksums.same, Some(false));
-        assert!(!comparison.checksums.violates_strict_invariant);
+        assert!(comparison.checksums.violates_checksum_invariant);
     }
 
-    /// Two strict rows that disagree are the one thing this project treats as a
+    /// Two rows that disagree are the one thing this project treats as a
     /// bug rather than a rounding excuse. The campaign aborts over it, so a file
     /// carrying one was not written by this harness -- and the comparison says so
     /// instead of ranking their timings.
     #[test]
     fn two_strict_rows_that_disagree_violate_the_invariant() {
-        let mut samples = rows("c-gcc", FpMode::Strict, &[2_000_000_000], 1_000);
-        samples.extend(rows("c-clang", FpMode::Strict, &[2_000_000_000], 1_001));
+        let mut samples = rows("c-gcc", Mode::Baseline, &[2_000_000_000], 1_000);
+        samples.extend(rows("c-clang", Mode::Baseline, &[2_000_000_000], 1_001));
 
         let comparison = compare(&analysis(samples), &selection("c-gcc", "c-clang")).unwrap();
         assert_eq!(comparison.checksums.same, Some(false));
-        assert!(comparison.checksums.violates_strict_invariant);
+        assert!(comparison.checksums.violates_checksum_invariant);
     }
 
     /// A 64-bit checksum leaves as a string, here as everywhere: `JSON.parse`
@@ -719,13 +737,13 @@ mod tests {
     fn a_checksum_crosses_the_wire_as_a_string() {
         let mut samples = rows(
             "c-gcc",
-            FpMode::Strict,
+            Mode::Baseline,
             &[2_000_000_000],
             9_007_199_254_740_993,
         );
         samples.extend(rows(
             "c-clang",
-            FpMode::Strict,
+            Mode::Baseline,
             &[2_000_000_000],
             9_007_199_254_740_993,
         ));
@@ -753,11 +771,11 @@ mod tests {
                 workload: "nbody".to_owned(),
                 left: Row {
                     backend: "c-gcc".to_owned(),
-                    mode: FpMode::Strict,
+                    mode: Mode::Baseline,
                 },
                 right: Row {
                     backend: "c-clang".to_owned(),
-                    mode: FpMode::Strict,
+                    mode: Mode::Baseline,
                 },
             },
         )
@@ -773,15 +791,15 @@ mod tests {
     fn a_pair_drawn_from_two_architectures_says_so() {
         let x86 = on_arch(
             "x86_64",
-            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
+            rows("c-gcc", Mode::Baseline, &[1_000_000_000; 5], 42),
         );
         let arm = on_arch(
             "aarch64",
-            rows("rust-rustc", FpMode::Strict, &[1_500_000_000; 5], 42),
+            rows("rust-rustc", Mode::Baseline, &[1_500_000_000; 5], 42),
         );
 
         let across = compare_across(&x86, &arm, &selection("c-gcc", "rust-rustc")).unwrap();
-        assert!(across.cross_isa);
+        assert!(across.cross_architecture);
         assert_eq!(across.left.architecture, "x86_64");
         assert_eq!(across.right.architecture, "aarch64");
 
@@ -797,20 +815,20 @@ mod tests {
         // And the one thing that *is* obliged to survive the crossing: in `strict`
         // the checksum is bit-identical on every architecture. That is the whole invariant.
         assert_eq!(across.checksums.same, Some(true));
-        assert!(!across.checksums.violates_strict_invariant);
+        assert!(!across.checksums.violates_checksum_invariant);
     }
 
     #[test]
-    fn two_rows_of_one_campaign_are_not_a_cross_isa_pair() {
+    fn two_rows_of_one_campaign_are_not_a_cross_architecture_pair() {
         let campaign = analysis(
             [
-                rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
-                rows("rust-rustc", FpMode::Strict, &[1_100_000_000; 5], 42),
+                rows("c-gcc", Mode::Baseline, &[1_000_000_000; 5], 42),
+                rows("rust-rustc", Mode::Baseline, &[1_100_000_000; 5], 42),
             ]
             .concat(),
         );
         let same = compare(&campaign, &selection("c-gcc", "rust-rustc")).unwrap();
-        assert!(!same.cross_isa);
+        assert!(!same.cross_architecture);
         assert_eq!(same.left.architecture, "x86_64");
     }
 
@@ -820,14 +838,14 @@ mod tests {
     fn a_strict_checksum_that_does_not_survive_the_crossing_is_a_violation() {
         let x86 = on_arch(
             "x86_64",
-            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 42),
+            rows("c-gcc", Mode::Baseline, &[1_000_000_000; 5], 42),
         );
         let arm = on_arch(
             "aarch64",
-            rows("c-gcc", FpMode::Strict, &[1_000_000_000; 5], 43),
+            rows("c-gcc", Mode::Baseline, &[1_000_000_000; 5], 43),
         );
         let across = compare_across(&x86, &arm, &selection("c-gcc", "c-gcc")).unwrap();
-        assert!(across.cross_isa);
-        assert!(across.checksums.violates_strict_invariant);
+        assert!(across.cross_architecture);
+        assert!(across.checksums.violates_checksum_invariant);
     }
 }

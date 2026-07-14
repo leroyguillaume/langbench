@@ -11,9 +11,14 @@
 # declares an interpreter and no compiler -- see `bench.yaml`.
 FROM julia:1.11-bookworm@sha256:7e1ff970295929bfc547b6b0b7dab339320cfd1b52394efdea4f928502fecd26
 
+# The ISA target arrives as a build arg, so one Dockerfile covers both modes:
+# `MARCH` is either the pinned baseline of the architecture or the literal `native`,
+# and that choice *is* the mode. Julia takes it as `--cpu-target`, which is why this
+# JIT has a baseline mode at all. Floating-point is not a build arg and never needed
+# one -- Julia is strict by construction, in every mode.
+#
 # `JOBS` is accepted and unused: there is one method to compile, and Julia's
 # codegen for it is not parallel.
-ARG FP_MODE=strict
 ARG MARCH=x86-64-v3
 ARG JOBS
 
@@ -21,14 +26,13 @@ ARG JOBS
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="1.11" \
-      langbench.flags="--cpu-target=${MARCH} fp=${FP_MODE}"
+      langbench.flags="--cpu-target=${MARCH}"
 
 # JULIA_DEPOT_PATH out of `$HOME`: the depot is where Julia writes its compilation
 # cache, and a home directory it cannot write to would fail the run rather than the
 # build. Nothing is fetched into it -- there are no packages -- so it stays empty
 # and the network stays unused, which is what `--network=none` will enforce anyway.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
     JULIA_DEPOT_PATH=/usr/local/share/julia-depot \
     BUILD_DIR=/build
 

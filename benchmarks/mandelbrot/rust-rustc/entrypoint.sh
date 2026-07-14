@@ -39,30 +39,49 @@ read_peak_memory() {
     fi
 }
 
-# The ISA baseline, translated out of gcc's spelling into rustc's.
+# The ISA target, translated out of gcc's spelling into rustc's.
 #
-# The harness speaks gcc: it hands every backend `-march=x86-64-v3` or
-# `-march=armv8.2-a`. rustc speaks LLVM, and the two do not agree. On x86 LLVM
-# happens to know `x86-64-v3` as a CPU; on AArch64 there is no such CPU -- the
-# baseline is a *feature set*, and asking for `-C target-cpu=armv8.2-a` gets you
-# "not a recognized processor (ignoring processor)" on stderr and a generic binary
-# in your hand. rustc says that about `-C target-cpu=nonsense` too. It warns, it
-# does not fail.
+# The harness speaks gcc: it hands every backend `-march=x86-64-v3`,
+# `-march=armv8.2-a` or `-march=native`. rustc speaks LLVM, and the two do not
+# agree. On x86 LLVM happens to know `x86-64-v3` as a CPU; on AArch64 there is no
+# such CPU -- the baseline is a *feature set*, and asking for
+# `-C target-cpu=armv8.2-a` gets you "not a recognized processor (ignoring
+# processor)" on stderr and a generic binary in your hand. rustc says that about
+# `-C target-cpu=nonsense` too. It warns, it does not fail.
 #
-# So an unknown baseline dies here rather than being quietly downgraded. A silent
+# `native` is the mode that asks for the machine underneath, and it is the one
+# spelling LLVM shares with gcc in meaning if not in flag: `-C target-cpu=native`
+# resolves the host CPU at compile time, on either architecture.
+#
+# So an unknown target dies here rather than being quietly downgraded. A silent
 # fall back to generic would not break the campaign -- it would publish a row that
-# claims an ISA baseline it was not compiled for, which is worse.
+# claims an ISA it was not compiled for, which is worse.
 march_flag() {
     case "${MARCH:-}" in
     '') ;;
     x86-64-v3) printf -- '-Ctarget-cpu=x86-64-v3\n' ;;
     armv8.2-a) printf -- '-Ctarget-feature=+v8.2a\n' ;;
+    native) printf -- '-Ctarget-cpu=native\n' ;;
     *)
         printf 'unknown MARCH for rustc: %s. Add its LLVM spelling to march_flag() rather than\n' "${MARCH}" >&2
         printf 'letting rustc ignore it and hand back a generic binary.\n' >&2
         exit 1
         ;;
     esac
+}
+
+# What the compiler was actually given, echoed back so that a sample can say it.
+# The mode says what was *asked for*; this says what was got. It is the `MARCH`
+# that reached march_flag() and nothing else -- not the LLVM spelling it came back
+# as, which is this backend's private business, and not anything read off the host.
+#
+# An empty `MARCH` means rustc chose its own target and told nobody which, so the
+# field is omitted rather than guessed at. It prints its own trailing comma: the
+# caller splices it into a JSON object that has to stay well-formed without it.
+isa_json() {
+    if [ -n "${MARCH:-}" ]; then
+        printf '"isa":"%s",' "${MARCH}"
+    fi
 }
 
 # Single source of truth for the compiler flags, shared by the image build and by
@@ -74,20 +93,13 @@ march_flag() {
 # columns describe an unstripped binary, and we strip a copy afterwards, outside
 # the timer.
 #
-# There is no floating-point mode to choose. rustc offers no `-ffast-math` and
-# LLVM may not contract an `a * b + c` that the source did not write as `mul_add`,
-# so `strict` is the only semantics this backend has. That is why `bench.yaml`
-# declares `strict` alone, and it is a published fact about Rust, not an omission.
+# Floating-point is strict here, in every mode, and no flag says so: rustc offers
+# no `-ffast-math`, and LLVM may not contract an `a * b + c` that the source did not
+# write as `mul_add`. The arithmetic the kernel writes is the arithmetic that runs,
+# which is what the checksum is checking -- so there is nothing to pass, and nothing
+# a future mode could be tempted to pass instead.
 compile_to() {
     output=$1
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    *)
-        printf 'unknown FP_MODE: %s (this backend distinguishes only strict)\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-
     # rustc only warns when it does not understand an ISA flag, so read its stderr
     # back and refuse the binary if it did. Belt and braces with march_flag().
     #
@@ -109,7 +121,7 @@ compile_to() {
     cat "${diagnostics}" >&2
 
     if grep -qE 'not a recognized processor|unknown and unstable feature' "${diagnostics}"; then
-        printf 'rustc ignored the ISA baseline (MARCH=%s) and compiled for generic.\n' "${MARCH:-}" >&2
+        printf 'rustc ignored the ISA target (MARCH=%s) and compiled for generic.\n' "${MARCH:-}" >&2
         exit 1
     fi
 }
@@ -157,8 +169,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,%s"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "$(isa_json)" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -173,8 +185,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,%s"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "$(isa_json)" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

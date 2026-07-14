@@ -8,18 +8,18 @@
 # timed, so the runtime must survive into the image.
 FROM denoland/deno:debian-2.5.5@sha256:09cda54dca77d1e5b8af6176a8b6c29ecae0183dccf18a56562ed35b9a6f68d8
 
-# `MARCH` and `JOBS` are accepted and unused: V8 is not compiled here, and there
-# is nothing to parallelise. Declaring them keeps this image a drop-in for the
-# harness's build-arg contract.
-ARG FP_MODE=strict
-ARG MARCH
+# No `MARCH`: there is no ahead-of-run code generator here to aim at an ISA. V8
+# JITs the hot loop on the machine it is running on, and a build arg nothing reads
+# is a knob that lies about being turnable. `JOBS` is accepted and unused -- V8 is
+# not compiled here, and there is nothing to parallelise.
 ARG JOBS
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
-LABEL langbench.version="2.5.5" \
-      langbench.flags="fp=${FP_MODE}"
+# Nothing about the ISA is pinned here, so nothing about it is claimed here: the
+# run reports what it actually got.
+LABEL langbench.version="2.5.5"
 
 # DENO_DIR is the *toolchain* cache, and it must be warm before the campaign
 # starts: `deno check` on a module that imports `node:worker_threads` resolves the
@@ -28,8 +28,7 @@ LABEL langbench.version="2.5.5" \
 # Rust's precompiled std and never Go's build cache: hot for the toolchain, cold
 # for our code. The timed build below checks a *copy* in the tmpfs, so the typings
 # are cached while the kernel is checked from scratch.
-ENV FP_MODE=${FP_MODE} \
-    DENO_DIR=/usr/local/share/deno \
+ENV DENO_DIR=/usr/local/share/deno \
     BUILD_DIR=/build
 
 WORKDIR /usr/local/src/mandelbrot

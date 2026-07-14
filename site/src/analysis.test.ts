@@ -70,19 +70,43 @@ describe("the WebAssembly boundary", () => {
   /// `JSON.parse` would have rounded it to the nearest double on the way in.
   it("hands the checksum over as a string, with every bit intact", () => {
     const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
-    const checksum = analysis.workloads[0]?.strict_checksum;
+    const checksum = analysis.workloads[0]?.checksum;
 
     expect(typeof checksum).toBe("string");
     expect(checksum).toMatch(/^\d+$/);
 
-    // Whatever the campaign computed, every strict-mode row agreed on it: that is
-    // the invariant the harness aborts a run over.
+    // *Every* row agreed on it, with no mode qualifying the claim: `baseline` and
+    // `native` are both strict IEEE 754, a wider vector reorders nothing, and the
+    // harness quarantines a backend at the sample that disagrees. There is no
+    // `checksum_delta` beside it any more — there is nothing left to price.
     for (const row of analysis.workloads[0]?.aggregates ?? []) {
-      if (row.mode === "strict") {
-        expect(row.checksum).toBe(checksum);
-        expect(row.checksum_delta).toBe("0");
-      }
+      expect(row.checksum).toBe(checksum);
+      expect(row).not.toHaveProperty("checksum_delta");
     }
+  });
+
+  /// The mode is what the row asked for; the ISA is what the toolchain gave it. Both
+  /// cross the boundary, because the rows where they disagree are the ones with
+  /// something to say — and before this field existed those divergences lived only in
+  /// the free text of a manifest.
+  it("carries the ISA each row actually got, beside the mode it asked for", () => {
+    const analysis = analysisSchema.parse(analyze(ndjson, { include_warmup: false }));
+    const rows = analysis.workloads[0]?.aggregates ?? [];
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const row of rows) {
+      expect(["baseline", "native"]).toContain(row.mode);
+      // A published fact or a published absence — never an empty string pretending to
+      // be either.
+      expect(row.isa === null || row.isa.length > 0).toBe(true);
+    }
+
+    // The campaign this fixture is: a compiled backend honouring the pinned baseline,
+    // the same backend targeting the machine, and CPython on an ISA nobody here chose.
+    const isas = new Set(rows.map((row) => row.isa));
+    expect(isas).toContain("armv8.2-a");
+    expect(isas).toContain("native");
+    expect(isas).toContain("distro");
   });
 
   it("aggregates the warmup rounds only when asked to, and never silently", () => {
@@ -179,9 +203,9 @@ describe("the WebAssembly boundary", () => {
           workload,
           left: {
             backend: first?.backend ?? "c-gcc",
-            mode: first?.mode ?? "strict",
+            mode: first?.mode ?? "baseline",
           },
-          right: { backend: "cobol-gnucobol", mode: "strict" },
+          right: { backend: "cobol-gnucobol", mode: "baseline" },
         },
       ),
     ).toThrow(/cobol-gnucobol/);

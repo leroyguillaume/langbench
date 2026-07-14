@@ -40,27 +40,40 @@ read_peak_memory() {
     fi
 }
 
+# What the compiler was actually given, echoed back so that a sample can say it.
+# The mode says what was *asked for*; this says what was got. It is the `MARCH`
+# that reached the command line and nothing else: reading the ISA back off the
+# binary, or off /proc/cpuinfo, would be a second source of truth about the one
+# thing the mode exists to pin.
+#
+# An empty `MARCH` means the compiler chose a target and told nobody which, so the
+# field is omitted rather than guessed at. It prints its own trailing comma: the
+# caller splices it into a JSON object that has to stay well-formed without it.
+isa_json() {
+    if [ -n "${MARCH:-}" ]; then
+        printf '"isa":"%s",' "${MARCH}"
+    fi
+}
+
 # Single source of truth for the compiler flags, shared by the image build and by
 # the timed rebuild. Deliberately the same flags as `c-gcc`, spelled the same way:
 # clang understands gcc's `-march` and `-ffp-contract` verbatim, so the two rows
 # really do differ in the compiler alone.
 compile_to() {
     output=$1
-    set -- -O3 -std=c11 -pthread -Wall -Wextra
+    # `-ffp-contract=off` is unconditional, in every mode, forever. Clang contracts
+    # into an FMA by default (`-ffp-contract=on`) exactly as gcc does, and an FMA
+    # rounds once where the source says twice: a contracted build computes a
+    # *different* checksum. The checksum is how a run is known to be right, so the
+    # arithmetic is a constraint of the workload and not a knob of the build. No
+    # mode relaxes it, and `-ffast-math` is spelled nowhere in this repository.
+    set -- -O3 -std=c11 -pthread -Wall -Wextra -ffp-contract=off
+    # `MARCH` carries the whole mode: a pinned baseline (`x86-64-v3`, `armv8.2-a`)
+    # or the literal `native`. clang takes gcc's spelling for both, which is the
+    # whole reason the harness speaks gcc.
     if [ -n "${MARCH:-}" ]; then
         set -- "$@" "-march=${MARCH}"
     fi
-    case "${FP_MODE:-strict}" in
-    # Clang contracts into FMA by default (`-ffp-contract=on`), just as gcc does,
-    # so `strict` must say so explicitly here too.
-    strict) set -- "$@" -ffp-contract=off ;;
-    fma) set -- "$@" -ffp-contract=fast ;;
-    fast) set -- "$@" -ffast-math ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
     "${CC}" "$@" -o "${output}" "${SOURCE}"
 }
 
@@ -106,8 +119,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,%s"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "$(isa_json)" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -122,8 +135,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,%s"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "$(isa_json)" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

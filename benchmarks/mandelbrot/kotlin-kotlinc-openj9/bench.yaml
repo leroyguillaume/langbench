@@ -3,12 +3,19 @@ compiler: kotlinc
 interpreter: openj9
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.kt
+# One mode, and it is not a choice this backend made. Testarossa compiles the hot
+# loop while the program runs, on the machine it is running on, and takes that
+# machine's instruction set as it finds it. A JIT has no `baseline` to give --
+# `native` is what a JIT *is*.
 modes:
-  - strict
+  - native
 description: >-
   The same Mandelbrot.kt as kotlin-kotlinc-openjdk, byte for byte, compiled by the
   same kotlinc and executed by Eclipse OpenJ9 instead of HotSpot.
 comments: >-
-  Like every OpenJ9 row, it has NO ISA baseline: OpenJ9 silently ignores unknown -XX:
-  options, so the HotSpot vector caps would have pinned nothing while claiming to. The
-  gap is published rather than papered over.
+  A different virtual machine, not a different build of HotSpot: OpenJ9 brings its own
+  JIT (Testarossa), its own GC and its own object layout, under bytecode that is byte for
+  byte the other Kotlin rows'. Floating point is still the JLS's, and still strict. One
+  quirk is worth carrying, because it makes any future -XX: flag on this row suspect:
+  OpenJ9 silently ignores options it does not know, where HotSpot refuses to boot on them.
+  This entrypoint passes none.

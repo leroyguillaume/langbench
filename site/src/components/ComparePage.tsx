@@ -15,7 +15,7 @@
 // See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 
 import { useEffect, useMemo, useState } from "react";
-import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../analysis";
+import type { Aggregate, Comparison, LoadedCampaign, Metric, Mode } from "../analysis";
 import { compare, compareAcross } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { milliseconds, NOT_AVAILABLE, optional, percent, seconds, size, times } from "../format";
@@ -283,9 +283,9 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           computed, and almost none of it means anything — said here rather than left
           for the reader to work out from a row of numbers that looks exactly like a
           valid one. */}
-      {view?.cross_isa === true && (
+      {view?.cross_architecture === true && (
         <>
-          <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
+          <CrossArchitectureWarning left={view.left.architecture} right={view.right.architecture} />
           {/* And *what* the two machines were. The warning says the timings do not
               compare; this says why, in the only terms that can settle it — two CPUs, two
               clock speeds, two kernels, two sets of reasons the host was a poor target.
@@ -312,13 +312,17 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
                     <th className="numeric">
                       <Name
                         identity={left}
-                        {...(view.cross_isa ? { architecture: view.left.architecture } : {})}
+                        {...(view.cross_architecture
+                          ? { architecture: view.left.architecture }
+                          : {})}
                       />
                     </th>
                     <th className="numeric">
                       <Name
                         identity={right}
-                        {...(view.cross_isa ? { architecture: view.right.architecture } : {})}
+                        {...(view.cross_architecture
+                          ? { architecture: view.right.architecture }
+                          : {})}
                       />
                     </th>
                     <th className="numeric">B ÷ A</th>
@@ -337,8 +341,8 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
                           metric={metric}
                           left={left}
                           right={right}
-                          crossIsa={
-                            view.cross_isa
+                          crossArchitecture={
+                            view.cross_architecture
                               ? {
                                   left: view.left.architecture,
                                   right: view.right.architecture,
@@ -419,7 +423,7 @@ function Headline({ comparison, run }: { comparison: Comparison; run: Metric | n
     );
   }
   const winner = run.verdict === "left" ? comparison.left : comparison.right;
-  if (comparison.cross_isa) {
+  if (comparison.cross_architecture) {
     return (
       <p className="compare-headline tie">
         On the run, the <strong>{winner.architecture}</strong> row came out {percent(run.gap_pct)}{" "}
@@ -445,15 +449,21 @@ function Headline({ comparison, run }: { comparison: Comparison; run: Metric | n
  * not fast, it is wrong.
  */
 function Checksums({ comparison }: { comparison: Comparison }) {
-  const { checksums, left, right } = comparison;
-  if (checksums.violates_strict_invariant) {
+  const { checksums } = comparison;
+  // Three cases, and there is no fourth. Two rows that disagree *are* a violation now —
+  // there is no relaxed mode left to license a difference — so a "different answers, and
+  // that is expected" branch would be a branch about a campaign this harness cannot
+  // produce.
+  if (checksums.violates_checksum_invariant) {
     return (
       <p className="compare-checksum warning">
-        These two rows are both <code>strict</code> and their checksums disagree —{" "}
-        <code>{checksums.left}</code> against <code>{checksums.right}</code>. In <code>strict</code>{" "}
-        mode the checksum is bit-identical across every compiler and language; a divergence is a
-        bug, never a rounding excuse. The harness aborts a campaign over it, so the timings above
-        are not comparable and this file did not come from a clean run.
+        These two rows disagree about the answer — <code>{checksums.left}</code> against{" "}
+        <code>{checksums.right}</code>. Nothing licenses that. The arithmetic is strict IEEE 754 in
+        every mode — a wider vector executes the same operations in the same order — so the checksum
+        is obliged to be bit-identical across every compiler, every language, every ISA target and
+        both architectures. A divergence is a bug, never a rounding excuse. The harness quarantines
+        the backend at the sample that disagreed, so the timings above are not comparable and this
+        file did not come from a clean run.
       </p>
     );
   }
@@ -461,16 +471,6 @@ function Checksums({ comparison }: { comparison: Comparison }) {
     return (
       <p className="compare-checksum">
         Both computed <code>{checksums.left ?? NOT_AVAILABLE}</code>: the same answer, to the bit.
-      </p>
-    );
-  }
-  if (checksums.same === false) {
-    return (
-      <p className="compare-checksum">
-        Different answers — <code>{checksums.left}</code> against <code>{checksums.right}</code>.
-        Expected: <code>{left.mode}</code> and <code>{right.mode}</code> do not promise the same
-        arithmetic, and a relaxed mode's whole purpose is to sell precision for speed. The Δ
-        checksum column on the results page prices it.
       </p>
     );
   }
@@ -486,13 +486,13 @@ function Verdict({
   metric,
   left,
   right,
-  crossIsa,
+  crossArchitecture,
 }: {
   metric: Metric;
   left: Identity;
   right: Identity;
   /** Across an architecture the two sides can be the same triple, and only the machine tells them apart. */
-  crossIsa: { left: string; right: string } | null;
+  crossArchitecture: { left: string; right: string } | null;
 }) {
   switch (metric.verdict) {
     case "unmeasured":
@@ -507,8 +507,9 @@ function Verdict({
       );
     default: {
       const winner = metric.verdict === "left" ? left : right;
-      if (crossIsa !== null) {
-        const architecture = metric.verdict === "left" ? crossIsa.left : crossIsa.right;
+      if (crossArchitecture !== null) {
+        const architecture =
+          metric.verdict === "left" ? crossArchitecture.left : crossArchitecture.right;
         return (
           <span className="tie" title="two machines, not two backends">
             lower on <strong>{architecture}</strong>, by {percent(metric.gap_pct)} — not a result
@@ -609,7 +610,7 @@ function Machines({ left, right }: { left: LoadedCampaign; right: LoadedCampaign
   );
 }
 
-function CrossIsaWarning({ left, right }: { left: string; right: string }) {
+function CrossArchitectureWarning({ left, right }: { left: string; right: string }) {
   const methodology = `${import.meta.env.BASE_URL}methodology/#flags-and-the-architecture-baseline`;
   return (
     <section className="warnings">
@@ -631,9 +632,10 @@ function CrossIsaWarning({ left, right }: { left: string; right: string }) {
       </p>
       <p>
         One column does survive the crossing, and it is the reason this pairing is worth having:{" "}
-        <strong>the checksum</strong>. In <code>strict</code> mode it is obliged to be bit-identical
-        on every architecture, every compiler and every language. If the two below disagree, that is
-        not a curiosity — it is a bug in one of them.
+        <strong>the checksum</strong>. The arithmetic is strict IEEE 754 in every mode, so it is
+        obliged to be bit-identical on every architecture, every compiler, every language and both
+        ISA targets. If the two below disagree, that is not a curiosity — it is a bug in one of
+        them.
       </p>
     </section>
   );
@@ -753,8 +755,8 @@ function Picker({
       </label>
 
       <label className="filter">
-        <span>FP mode</span>
-        <select value={selected.mode} onChange={(event) => setMode(event.target.value as FpMode)}>
+        <span>ISA target</span>
+        <select value={selected.mode} onChange={(event) => setMode(event.target.value as Mode)}>
           {modes.map((mode) => (
             <option key={mode} value={mode}>
               {mode}

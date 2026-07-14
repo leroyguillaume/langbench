@@ -7,11 +7,15 @@ compiler: ~
 interpreter: pypy
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.py
-# One floating-point semantics, and no flag to change it: the JIT is not licensed
-# to contract a multiply-add or reassociate while it traces. That is why this row's
-# checksum is bit-identical to CPython's, and to C's.
+# `native`, and nothing else to offer. PyPy's tracing JIT records the hot loop and
+# assembles it into machine code for the CPU it is running on -- this one, the only
+# one it will ever see -- so the code that does the arithmetic got this machine's
+# instruction set without anyone asking for it, and there is no flag that would
+# hold it back to a pinned baseline. That is exactly what separates this row from
+# python-cpython, which has no JIT at all: what runs there is a Debian-compiled
+# interpreter, built for a fixed ISA long before this campaign started.
 modes:
-  - strict
+  - native
 description: >-
   The same mandelbrot.py as python-cpython, byte for byte, executed by PyPy. The
   source is unchanged, the multiprocessing pool is unchanged; the difference is a

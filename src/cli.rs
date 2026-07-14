@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::mode::FpMode;
+use crate::mode::Mode;
 
 /// A CPU architecture a backend can be built and measured on.
 ///
@@ -105,7 +105,7 @@ pub enum Command {
     /// Check every manifest on disk, and report all of them at once.
     ///
     /// Every failure a campaign would hit at discovery time — a misspelled key, an
-    /// unknown FP mode, a backend that neither compiles nor interprets, two
+    /// unknown mode, a backend that neither compiles nor interprets, two
     /// manifests declaring the same identity, a `bench.yaml` no workload lists —
     /// without building anything.
     ///
@@ -325,15 +325,20 @@ pub struct RunArgs {
     /// typo.
     ///
     /// A param the workload never declared is an error. Changing any param drops the
-    /// workload's declared `strict_checksum` — it is the answer to the declared
+    /// workload's declared `checksum` — it is the answer to the declared
     /// work, not to this one — and the campaign says so, then falls back to checking
     /// that its backends agree with each other.
     #[arg(long = "param", value_name = "NAME=VALUE")]
     pub params: Vec<String>,
 
-    /// Floating-point modes to build and measure.
-    #[arg(long, env = "FP_MODE", value_delimiter = ',', default_values_t = FpMode::ALL)]
-    pub mode: Vec<FpMode>,
+    /// ISA targets to build and measure: a pinned baseline, the machine itself, or
+    /// both.
+    ///
+    /// A backend only builds the modes its manifest declares. Asking for `baseline`
+    /// on a JIT gets a warning and a skipped unit, not a row — there is no way to
+    /// deny a JIT the machine it is running on.
+    #[arg(long, env = "MODE", value_delimiter = ',', default_values_t = Mode::ALL)]
+    pub mode: Vec<Mode>,
 
     /// Threads handed to the kernels and to the compilers.
     ///
@@ -368,7 +373,14 @@ pub struct RunArgs {
     #[arg(long, env = "WARMUP_ROUNDS", default_value_t = 1)]
     pub warmup_rounds: u32,
 
-    /// architecture baseline passed to the compilers as `-march`. Never `native`.
+    /// The pinned ISA baseline of the `baseline` mode, passed to the compilers as
+    /// `-march`. Never `native`.
+    ///
+    /// This flag is what `baseline` *means*, and nothing else reads it: in `native`
+    /// mode the harness hands out `native` regardless of what is set here. So the
+    /// two are not alternatives to choose between — one is a mode, the other is that
+    /// mode's value — and spelling `native` here would be asking the baseline to
+    /// stop being one.
     #[arg(long, env = "MARCH", default_value_t = default_march(), value_parser = parse_march)]
     pub march: String,
 
@@ -420,9 +432,12 @@ fn default_march() -> String {
 fn parse_march(value: &str) -> Result<String, String> {
     if value.eq_ignore_ascii_case("native") {
         return Err(
-            "`-march=native` is forbidden: the CPU model varies between \
-             runs and the architecture baseline would vary with it. Pin an explicit \
-             baseline, e.g. `x86-64-v3`."
+            "`--march native` is a contradiction: this flag is the *baseline* mode's \
+             value, and a baseline that varies with the CPU that built it is not a \
+             baseline. Native targeting is not forbidden here — it is a mode. Ask for \
+             it with `--mode native`, which builds a second image beside this one and \
+             publishes both, instead of quietly turning the pinned column into an \
+             unpinned one."
                 .to_owned(),
         );
     }

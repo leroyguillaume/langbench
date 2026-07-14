@@ -41,7 +41,7 @@
       "type": "string"
     },
     "modes": {
-      "description": "The FP modes this backend distinguishes: `all`, or an explicit list.",
+      "description": "The ISA targets this backend distinguishes: `all`, or an explicit list.",
       "$ref": "#/$defs/Modes"
     },
     "source": {
@@ -91,28 +91,23 @@
         }
       ]
     },
-    "FpMode": {
-      "description": "Floating-point semantics the kernels are compiled under.\n\nThe axis is FP semantics, not \"optimization on/off\": every mode is `-O3`.\nSee `site/src/content/methodology.md#floating-point-modes`.",
+    "Mode": {
+      "description": "The ISA target the kernels are compiled for.\n\nThe axis is *which instructions the code generator may emit* — not\nfloating-point semantics, and not \"optimization on/off\". Every mode is `-O3`,\nand every mode is strict IEEE 754, so the checksum is the gate on both:\nwidening a vector reorders nothing.\n\nThe two values are the two answers a toolchain can give to \"which machine is\nthis code for?\", and *which answers a backend can give* is the subject of this\nproject. An ahead-of-time compiler has to choose, so it has both. A JIT\ngenerates code on the machine it is running on and cannot do otherwise, so it\nhas only [`Native`] — not as a limitation, but as the thing it sells.\n\nSee `site/src/content/methodology.md#the-isa-target`.\n\n[`Native`]: Mode::Native",
       "oneOf": [
         {
-          "description": "`-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.",
+          "description": "A pinned ISA baseline — `x86-64-v3`, `armv8.2-a` — identical for every\nbackend on the architecture. The binary does not depend on the CPU that\nbuilt it, which is what shipping to a fleet means.",
           "type": "string",
-          "const": "strict"
+          "const": "baseline"
         },
         {
-          "description": "FMA contraction allowed: bit-different, but more accurate.",
+          "description": "Whatever this CPU offers, resolved by the toolchain against the machine it\nis on. Not reproducible across machines, and that is the point: it is what\na JIT gets for free, and what an ahead-of-time compiler buys by giving up\nportability.",
           "type": "string",
-          "const": "fma"
-        },
-        {
-          "description": "`-ffast-math`: reassociation allowed, precision sold for speed.",
-          "type": "string",
-          "const": "fast"
+          "const": "native"
         }
       ]
     },
     "Modes": {
-      "description": "`modes: all`, or `modes: [strict, fma]`.\n\nThe list holds *strings*, and the modes are parsed out of them by hand, for\none reason: serde's `untagged` reports a failure as \"data did not match any\nvariant of untagged enum Modes\", which tells the author of a typo neither\nwhat they typed nor what was expected. The schema, meanwhile, is told the\nlist really holds `FpMode`s — so an editor completes the three modes and\nflags a fourth, while the harness keeps a message a human can act on.",
+      "description": "`modes: all`, or `modes: [native]`.\n\nThe list holds *strings*, and the modes are parsed out of them by hand, for\none reason: serde's `untagged` reports a failure as \"data did not match any\nvariant of untagged enum Modes\", which tells the author of a typo neither\nwhat they typed nor what was expected. The schema, meanwhile, is told the\nlist really holds `Mode`s — so an editor completes the two modes and\nflags a fourth, while the harness keeps a message a human can act on.",
       "anyOf": [
         {
           "description": "Every mode the harness knows.",
@@ -122,10 +117,10 @@
           ]
         },
         {
-          "description": "The modes this backend actually distinguishes, e.g. `[strict]`.",
+          "description": "The modes this backend actually distinguishes, e.g. `[native]`.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/FpMode"
+            "$ref": "#/$defs/Mode"
           }
         }
       ]

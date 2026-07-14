@@ -4,12 +4,13 @@ compiler: clang
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.cpp
-# clang distinguishes all three, and spells them exactly as gcc does.
+# clang++ compiles ahead of the run and must pick a machine to emit code for, the
+# same choice cpp-gcc faces and spelled the same way, with `-march`.
 modes: all
 description: >-
   The same mandelbrot.cpp as cpp-gcc, byte for byte, compiled by clang++ at -O3
-  against the same ISA baseline and -- this is the part that matters -- the same
-  libstdc++. One source, one standard library, two code generators.
+  against the same ISA and -- this is the part that matters -- the same libstdc++.
+  One source, one standard library, two code generators.
 comments: >-
   Debian's clang++ links libstdc++, not libc++, and that is deliberate: swapping the
   standard library would be a second variable, and this row exists to isolate the

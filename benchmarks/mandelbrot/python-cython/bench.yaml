@@ -7,11 +7,12 @@ compiler: cython
 interpreter: cpython
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.py
-# The generated C goes through the PyFloat C-API, never a raw double, so there is
-# no multiply-add for gcc to contract and nothing to reassociate. The three modes
-# would produce the same machine code.
-modes:
-  - strict
+# Both. There is a real C compiler at the bottom of this pipeline -- Cython emits C
+# and gcc compiles it -- so this backend must choose a machine to emit code for, and
+# it takes the harness's `-march` verbatim, baseline or `native`, exactly as the C
+# rows do. Whether a wider ISA reaches the loop at all is the question the two modes
+# ask: the answer runs through the CPython C-API, not through raw doubles.
+modes: all
 description: >-
   The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
   a C extension module instead of interpreted. Cython is the compiler here,
@@ -20,4 +21,7 @@ comments: >-
   The source is python-cpython's, byte for byte, and that includes the absence of type
   annotations — annotating it would be a different program, and this row is here to
   compile the same one. Unannotated, the generated C manipulates PyFloat objects
-  through the C-API rather than raw doubles.
+  through the C-API rather than raw doubles. gcc is handed `-ffp-contract=off` in every
+  mode: the ISA target decides which instructions it may emit, never what the arithmetic
+  means. The `isa` it reports is the `-march` it was given, verbatim — gcc is the
+  vocabulary the harness already speaks.
