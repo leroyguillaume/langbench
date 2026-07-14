@@ -131,19 +131,5 @@ const [lede, ...rest] = paragraphs(workload.description);
         )
       }
     </section>
-
-    <section class="card">
-      <h2>The implementations it declares</h2>
-      <p>
-        A workload <em>lists</em> the directories that implement it. The harness does not walk
-        the tree and take whatever it finds: the position of a directory decides nothing, so a
-        benchmark can be moved, nested or renamed without changing what gets measured. What
-        each of these backends actually is — the language, the compiler, the interpreter — is
-        the campaign's business, and it is on the campaign's page.
-      </p>
-      <ul class="impl-index">
-        {workload.implementations.map((implementation) => <li>{implementation}</li>)}
-      </ul>
-    </section>
   </main>
 </Layout>

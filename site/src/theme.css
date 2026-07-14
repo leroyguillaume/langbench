@@ -1004,24 +1004,6 @@ td.better {
   font-size: 0.85rem;
 }
 
-.impl-index {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.impl-index > li {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  background: var(--surface-2);
-  border-radius: 4px;
-  padding: 0.15rem 0.45rem;
-}
-
 .footnote {
   color: var(--text-muted);
   font-size: 0.85rem;
