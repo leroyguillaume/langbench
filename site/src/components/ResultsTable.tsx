@@ -207,9 +207,19 @@ interface Props {
   rows: Aggregate[];
   sort: Sort;
   onSort: (key: SortKey) => void;
+  /**
+   * The page that says what these backends *are* — the workload's, which is where the
+   * manifests are rendered. A row's Language cell links into it, at the anchor of its
+   * triple.
+   *
+   * It is another page, and deliberately: what a backend is comes from its `bench.yaml`
+   * and does not depend on which machine ran it, so it is described once, on the page
+   * about the work, rather than repeated under every campaign's table.
+   */
+  backendsHref: string;
 }
 
-export function ResultsTable({ rows, sort, onSort }: Props) {
+export function ResultsTable({ rows, sort, onSort, backendsHref }: Props) {
   // The ratio is against the fastest row *on screen*: the reader chose this set,
   // and a baseline drawn from rows they filtered out is a baseline they cannot see.
   const fastest = rows.reduce<number | null>((best, row) => {
@@ -263,11 +273,12 @@ export function ResultsTable({ rows, sort, onSort }: Props) {
                 {/* To the card that says what this thing *is*. A row of fifteen
                     numbers is not self-explanatory, and the implementation describes
                     itself — including the caveats about what its numbers do not say.
-                    The report's Language cell links to the same place. */}
+                    That card is on the workload's page: what a backend is does not
+                    change with the machine that ran it. */}
                 <td className="text">
                   <a
                     className="row-link"
-                    href={`#${anchorId(row)}`}
+                    href={`${backendsHref}#${anchorId(row)}`}
                     title={`what ${label(row)} is, and what its author wanted you to know`}
                   >
                     {row.language}

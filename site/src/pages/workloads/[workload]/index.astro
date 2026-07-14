@@ -12,7 +12,9 @@
 // is one YAML string, and blank lines are the only structure it has.
 
 import Layout from "../../../layouts/Layout.astro";
+import { anchorId, toolchain } from "../../../identity";
 import { campaignsOf, paragraphs, workloads } from "../../../site";
+import { NOT_AVAILABLE } from "../../../format";
 
 export function getStaticPaths() {
 	return workloads.map((workload) => ({
@@ -25,6 +27,14 @@ const { workload } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const measured = campaignsOf(workload.id);
 const [lede, ...rest] = paragraphs(workload.description);
+
+// By language, then by the toolchain under it — the order a reader scans for a row,
+// and never the order the manifest happened to list the directories in.
+const backends = [...workload.backends].sort(
+	(left, right) =>
+		left.language.localeCompare(right.language) ||
+		toolchain(left).localeCompare(toolchain(right)),
+);
 ---
 
 <Layout
@@ -130,6 +140,53 @@ const [lede, ...rest] = paragraphs(workload.description);
           </>
         )
       }
+    </section>
+
+    {/* The backends, on the page about the *work* rather than under a table of results.
+        These are the ones the workload declares — which is not the same set as the rows of
+        any campaign: one declared today has no numbers yet, and one that crashed has a
+        failure instead of a row. A reader who wants to know what `cython` is should not
+        have to pick a machine first. Each row of a campaign's table links straight back
+        here, to the anchor of its triple. */}
+    <section class="card">
+      <h2>The implementations</h2>
+      <p>
+        What each one is, and what the person who wrote it wanted you to know. Three fields
+        identify an implementation — the <strong>language</strong> the program is written in,
+        the <strong>compiler</strong> that turned it into machine code, and the{" "}
+        <strong>interpreter</strong> that executed it. Most have only one of the last two, and{" "}
+        <code>{NOT_AVAILABLE}</code> is an answer rather than a gap: a compiled binary has no
+        interpreter, and an interpreted language has nothing compiled ahead of the run.
+      </p>
+      <div class="impls">
+        {
+          backends.map((backend) => (
+            <article class="impl" id={anchorId(backend)}>
+              <header class="impl-head">
+                <h3>{backend.language}</h3>
+                <span class="impl-chain">{toolchain(backend)}</span>
+              </header>
+
+              <dl class="impl-triple">
+                <div class="impl-field">
+                  <dt>compiler</dt>
+                  <dd>{backend.compiler ?? NOT_AVAILABLE}</dd>
+                </div>
+                <div class="impl-field">
+                  <dt>interpreter</dt>
+                  <dd>{backend.interpreter ?? NOT_AVAILABLE}</dd>
+                </div>
+              </dl>
+
+              <p class="impl-desc">{backend.description}</p>
+
+              {/* The manifest's `comments`: a caveat, a pinned version, what this backend
+                  had to do differently. It reads as a footnote, so it looks like one. */}
+              {backend.comments !== null && <p class="impl-note">{backend.comments}</p>}
+            </article>
+          ))
+        }
+      </div>
     </section>
   </main>
 </Layout>

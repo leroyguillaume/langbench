@@ -263,6 +263,13 @@ the ones a reader is most likely to think were violated:
   an AArch64 run is the worst thing this project could publish, and every number on it
   would be internally consistent. What is left in the query string is how you are
   looking at the rows: the filters, the sort, the warmup toggle.
+- **A backend is described on the *workload's* page, never under a campaign's table.**
+  What an implementation is comes from its `bench.yaml` — it does not change with the
+  machine that ran it, and it exists before any campaign has. The declared set is also
+  not the measured set: a backend added today has no row yet, and one that crashed has a
+  failure instead of one. Each row of a results table links back to the card, at the
+  anchor of its triple. The site reads those manifests through the harness
+  (`langbench implementation list --json`), never with a YAML parser of its own.
 - **A row is named by its triple, never by a slug.** `language`, `compiler`,
   `interpreter` — the columns the results table prints, and the fields a `bench.yaml`
   declares. The `backend` slug on the wire is the handle the WASM picks rows by, and

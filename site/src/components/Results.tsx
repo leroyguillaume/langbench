@@ -17,7 +17,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, dispersion, mebibytes, milliseconds, optional, ratio } from "../format";
-import { anchorId, label, labelWithMode, toolchain } from "../identity";
+import { label, labelWithMode } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
 import { BarChart, type ChartRow } from "./BarChart";
@@ -341,7 +341,12 @@ function Report({ loaded, workload: id, state, setState, columns, pending }: Rep
           <code>strict</code> row is obliged to produce. Click any header to sort; the charts above
           keep their own order. <a href={compareHref(scope)}>Put two languages head to head →</a>
         </p>
-        <ResultsTable rows={visible} sort={state.sort} onSort={onSort} />
+        <ResultsTable
+          rows={visible}
+          sort={state.sort}
+          onSort={onSort}
+          backendsHref={`${import.meta.env.BASE_URL}workloads/${campaign.workload.id}/`}
+        />
       </section>
 
       <Failures failures={failures} total={analysis.failures.length} />
@@ -351,50 +356,6 @@ function Report({ loaded, workload: id, state, setState, columns, pending }: Rep
           the Kotlin. Rendered from `docs/columns.md` by Astro, at build time, and
           slotted in here — the browser never sees a Markdown renderer. */}
       <section className="card reference">{columns}</section>
-
-      <section className="card">
-        <h2>The implementations</h2>
-        <p>
-          One card per row of the table: what it is, and what the person who wrote it wanted you to
-          know. Three fields identify an implementation — the <strong>language</strong> the program
-          is written in, the <strong>compiler</strong> that turned it into machine code, and the{" "}
-          <strong>interpreter</strong> that executed it. Most implementations have only one of the
-          last two, and <code>n/a</code> is an answer rather than a gap: a compiled binary has no
-          interpreter, and an interpreted language has nothing compiled ahead of the run.
-        </p>
-        <div className="impls">
-          {analysis.backends
-            .filter((entry) => entry.workload === workload?.workload)
-            .map((entry) => (
-              // The anchor a table row links to. Its `id` is the triple, like every
-              // other thing on this site a reader can point at.
-              <article className="impl" id={anchorId(entry)} key={entry.id}>
-                <header className="impl-head">
-                  <h3>{entry.language}</h3>
-                  <span className="impl-chain">{toolchain(entry)}</span>
-                </header>
-
-                <dl className="impl-triple">
-                  <div className="impl-field">
-                    <dt>compiler</dt>
-                    <dd>{optional(entry.compiler)}</dd>
-                  </div>
-                  <div className="impl-field">
-                    <dt>interpreter</dt>
-                    <dd>{optional(entry.interpreter)}</dd>
-                  </div>
-                </dl>
-
-                <p className="impl-desc">{entry.description}</p>
-
-                {/* The manifest's `comments`: a caveat, a pinned version, a warning about
-                    what this row does *not* say. It reads as a footnote, so it looks like
-                    one — never as a second paragraph of the description. */}
-                {entry.comments !== null && <p className="impl-note">{entry.comments}</p>}
-              </article>
-            ))}
-        </div>
-      </section>
 
       <section className="card">
         <h2>The machine, and the campaign</h2>

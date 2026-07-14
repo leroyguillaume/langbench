@@ -25,7 +25,28 @@ const paramSchema = z.object({
 });
 
 /**
- * A workload as its `workload.yaml` declares it *today*.
+ * A backend that does the work, as its `bench.yaml` declares it.
+ *
+ * The triple is the identity — no name, no slug — and each half of the toolchain may be
+ * absent: gcc compiles and nothing interprets, CPython interprets and nothing compiles
+ * ahead of the run, Cython does both. An absence is a published fact, so it is rendered
+ * rather than blanked.
+ *
+ * These are the *declared* backends, which is not the same set as the rows of any
+ * campaign: one declared today has no numbers yet, and one that crashed has a failure
+ * instead of a row. That is the point of describing them here — on the page about the
+ * work — rather than under a table of results that may not contain them.
+ */
+export const backendSchema = z.object({
+  language: z.string(),
+  compiler: z.string().nullable(),
+  interpreter: z.string().nullable(),
+  description: z.string(),
+  comments: z.string().nullable(),
+});
+
+/**
+ * A workload as its `workload.yaml` declares it *today*, and the backends that implement it.
  *
  * Not what a campaign measured: that is the snapshot inside the campaign's own header,
  * and the two are allowed to differ. This is the work; that is the run.
@@ -36,7 +57,9 @@ const paramSchema = z.object({
 export const workloadSchema = z.object({
   id: z.string(),
   description: z.string(),
+  /** Directory names. The harness's business: never displayed, never linked. */
   implementations: z.array(z.string()),
+  backends: z.array(backendSchema),
   params: z.array(paramSchema),
   checksum: z.string().nullable(),
 });
@@ -57,6 +80,7 @@ const siteSchema = z.object({
 });
 
 export type Workload = z.infer<typeof workloadSchema>;
+export type Backend = z.infer<typeof backendSchema>;
 export type CampaignRef = z.infer<typeof campaignSchema>;
 
 const site = siteSchema.parse(generated);

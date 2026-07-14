@@ -136,6 +136,7 @@ describe("the table", () => {
         rows={[C_GCC, PYTHON]}
         sort={{ key: "run", descending: false }}
         onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
       />,
     );
     expect(screen.getByText("gcc")).toBeInTheDocument();
@@ -151,12 +152,32 @@ describe("the table", () => {
     expect(screen.queryByText("c-gcc")).not.toBeInTheDocument();
   });
 
+  // What a backend *is* comes from its `bench.yaml` and does not depend on the machine
+  // that ran it, so it is described once — on the workload's page — and every campaign's
+  // table links there rather than repeating it. The anchor is the triple, like every
+  // other thing on this site a reader can point at.
+  it("links a row to what it is, on the page about the work", () => {
+    render(
+      <ResultsTable
+        rows={[C_GCC]}
+        sort={{ key: "run", descending: false }}
+        onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "c" })).toHaveAttribute(
+      "href",
+      "/workloads/mandelbrot/#impl-c-gcc-none",
+    );
+  });
+
   it("ratios every row against the fastest one on screen", () => {
     render(
       <ResultsTable
         rows={[C_GCC, PYTHON]}
         sort={{ key: "run", descending: false }}
         onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
       />,
     );
     expect(screen.getByText("1.00×")).toBeInTheDocument();
@@ -175,6 +196,7 @@ describe("the table", () => {
         ]}
         sort={{ key: "run", descending: false }}
         onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
       />,
     );
     const cell = screen.getByText("7.40%");
@@ -194,6 +216,7 @@ describe("the table", () => {
         ]}
         sort={{ key: "run", descending: false }}
         onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
       />,
     );
     expect(screen.getByText("n/a (n=2)")).toBeInTheDocument();

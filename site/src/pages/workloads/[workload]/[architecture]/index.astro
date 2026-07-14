@@ -11,9 +11,13 @@
 // The island reads the campaign whose *header* says it is this one — never the file
 // whose name looks right. The path is a URL; the header is what the run recorded.
 //
-// The column reference is slotted in rather than placed after: it belongs between the
-// table it explains and the backends that come next. It is a methodology page,
-// rendered at build time, and the browser gets no Markdown renderer for it.
+// The column reference is slotted in rather than placed after: it belongs under the
+// table it explains. It is a methodology page, rendered at build time, and the browser
+// gets no Markdown renderer for it.
+//
+// What the backends *are* is not here. That comes from their manifests, it does not
+// change with the machine that ran them, and it is on the workload's page — each row of
+// the table links straight to it.
 
 import { Results } from "../../../../components/Results";
 import Layout from "../../../../layouts/Layout.astro";

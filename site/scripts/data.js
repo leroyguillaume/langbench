@@ -136,30 +136,40 @@ for (const file of files) {
 writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(files, null, 2)}\n`);
 console.log(`published ${files.length} campaign(s) from ${chosen}: ${files.join(", ")}`);
 
-// The workloads, as the manifests declare them *today* — through the harness, which is
-// the only thing in this repository that reads a `workload.yaml`. A YAML parser here
-// would be a second reader of a file whose schema is generated from the Rust structs,
-// and the two would drift the first time one of them was taught something.
+// The workloads and their backends, as the manifests declare them *today* — through the
+// harness, which is the only thing in this repository that reads a `workload.yaml` or a
+// `bench.yaml`. A YAML parser here would be a second reader of files whose schemas are
+// generated from the Rust structs, and the two would drift the first time one of them
+// was taught something.
 //
 // `--json` spells the checksum as a string, so this parse is safe. Diagnostics go to
 // stderr; stdout carries the JSON alone.
-function workloads() {
-  const json = execFileSync(
-    "cargo",
-    ["run", "--quiet", "--", "workload", "list", "--json"],
-    // `benchmarks/` is relative to the repository root, which is where the harness is
-    // normally run from.
-    { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  );
+//
+// `benchmarks/` is relative to the repository root, which is where the harness is
+// normally run from.
+function harness(...args) {
+  const json = execFileSync("cargo", ["run", "--quiet", "--", ...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
   return JSON.parse(json);
 }
 
 let declared;
 try {
-  declared = workloads();
+  // A workload's `implementations` are directory names — the harness's business, never
+  // the reader's. What an implementation *is* is the triple and what its author wrote
+  // about it, so the manifests are read and travel with the workload. A backend that
+  // exists but has never been measured still appears on the workload's page, which is
+  // right: it is declared work, and the campaign is what has not happened yet.
+  declared = harness("workload", "list", "--json").map((workload) => ({
+    ...workload,
+    backends: harness("implementation", "list", workload.id, "--json"),
+  }));
 } catch (error) {
   fail(
-    `cannot list the workloads: ${error.message}\n` +
+    `cannot read the manifests: ${error.message}\n` +
       "The site describes the work from the manifests, and the harness is what reads them.\n" +
       "A Rust toolchain is required to build the site — the same one `npm run wasm` needs.",
   );
