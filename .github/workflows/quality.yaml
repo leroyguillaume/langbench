@@ -61,6 +61,26 @@ jobs:
       - name: install pre-commit
         run: pip install pre-commit
 
+      # `hadolint-docker` is a `docker_image` hook: pre-commit runs `docker run
+      # ghcr.io/hadolint/hadolint` over batches of files, in parallel. Nothing pulls the
+      # image first, so the batches race each other to the registry -- and a change that
+      # touches thirty Dockerfiles reliably earns a `context deadline exceeded` on
+      # ghcr.io's token endpoint, failing the hook on the network rather than on a
+      # Dockerfile. Pull it once, here, and every `docker run` below finds it locally.
+      #
+      # Retried, because the fix would otherwise have the flake it exists to remove.
+      - name: pre-pull the hadolint image
+        run: |
+          for attempt in 1 2 3; do
+            if docker pull ghcr.io/hadolint/hadolint:latest; then
+              exit 0
+            fi
+            echo "ghcr.io did not answer (attempt ${attempt}/3); retrying"
+            sleep 5
+          done
+          echo '::error::could not pull the hadolint image after three attempts'
+          exit 1
+
       # Every hook, on every file. No suite among them: `cargo test` and `vitest`
       # are the `test` workflow's, and they are a slow hook to pay on every commit
       # for a check a runner makes in parallel anyway.
