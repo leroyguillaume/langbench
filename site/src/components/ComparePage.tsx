@@ -284,7 +284,15 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           for the reader to work out from a row of numbers that looks exactly like a
           valid one. */}
       {view?.cross_isa === true && (
-        <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
+        <>
+          <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
+          {/* And *what* the two machines were. The warning says the timings do not
+              compare; this says why, in the only terms that can settle it — two CPUs, two
+              clock speeds, two kernels, two sets of reasons the host was a poor target.
+              A reader told "these are different machines" and shown nothing has been
+              given a rule to obey; shown the machines, they can see it. */}
+          <Machines left={leftCampaign} right={rightCampaign} />
+        </>
       )}
 
       {comparison.error !== null && <p className="compare-error">{comparison.error}</p>}
@@ -524,6 +532,83 @@ function Verdict({
  * to divide the two numbers by hand, with nothing on screen to tell them not to. So
  * the numbers are there, and so is this.
  */
+/**
+ * The two machines, side by side — shown only when the pair crosses an architecture.
+ *
+ * Within one campaign there is one machine, and it is on the campaign's own page. Across
+ * two, the machine stops being context and becomes the *confounding variable*: it is the
+ * thing that moved along with the treatment, and the reader is entitled to see exactly
+ * what changed. A row that differs is a reason the numbers above cannot be divided.
+ *
+ * The fields are the harness's own — the same `machine_fields` a campaign's page prints,
+ * in the order it recorded them — so a machine that reported something new does not have
+ * to be taught to this table. A field one campaign carries and the other does not is
+ * `n/a` on the side that did not: an older campaign is missing a fact, not holding a zero.
+ */
+function Machines({ left, right }: { left: LoadedCampaign; right: LoadedCampaign }) {
+  const labels: string[] = [];
+  for (const field of [...left.analysis.machine_fields, ...right.analysis.machine_fields]) {
+    if (!labels.includes(field.label)) {
+      labels.push(field.label);
+    }
+  }
+  const fieldOf = (campaign: LoadedCampaign, label: string): string =>
+    campaign.analysis.machine_fields.find((field) => field.label === label)?.value ?? NOT_AVAILABLE;
+
+  const side = (campaign: LoadedCampaign) =>
+    campaign.analysis.hostname === null
+      ? campaign.analysis.architecture
+      : `${campaign.analysis.architecture} · ${campaign.analysis.hostname}`;
+
+  return (
+    <section className="card">
+      <h2>The two machines</h2>
+      <p>
+        What actually differs between the two rows above, beyond the backend you asked about. Every
+        line where these two columns disagree is a reason the timings cannot be divided by one
+        another — and on a cross-architecture pair, they disagree about the silicon itself.
+      </p>
+      <div className="table-scroll">
+        <table className="machines">
+          <thead>
+            <tr>
+              <th className="text">Property</th>
+              <th className="text">{side(left)}</th>
+              <th className="text">{side(right)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {labels.map((label) => {
+              const [a, b] = [fieldOf(left, label), fieldOf(right, label)];
+              return (
+                <tr key={label}>
+                  <td className="text muted-cell">{label}</td>
+                  {/* A difference is marked, never left for the eye to find in twenty rows
+                      of near-identical text. Never colour alone: the cell is bold too. */}
+                  <td className={a === b ? "text" : "text differs"}>{a}</td>
+                  <td className={a === b ? "text" : "text differs"}>{b}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* The warnings each host carried. They travel with the numbers everywhere else on
+          this site, and a head-to-head across two machines is the last place to drop them:
+          a "result" from two noisy hosts is two campaigns' noise, divided. */}
+      {[left, right].map((campaign) =>
+        campaign.analysis.warnings.length === 0 ? null : (
+          <p className="warmup-note" key={campaign.analysis.architecture}>
+            <strong>{side(campaign)} was not a clean benchmark target:</strong>{" "}
+            {campaign.analysis.warnings.join(" · ")}
+          </p>
+        ),
+      )}
+    </section>
+  );
+}
+
 function CrossIsaWarning({ left, right }: { left: string; right: string }) {
   const methodology = `${import.meta.env.BASE_URL}methodology/#flags-and-the-architecture-baseline`;
   return (

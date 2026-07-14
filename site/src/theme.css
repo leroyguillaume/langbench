@@ -1311,3 +1311,31 @@ td.muted-cell {
   font-size: 0.7rem;
   font-weight: 600;
 }
+
+/* The two machines of a cross-architecture pair. The confounding variable, spelled out:
+ * every row where the columns disagree is a reason the timings above cannot be divided. */
+.machines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.machines th,
+.machines td {
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.machines th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* A row the two machines disagree on. Weight *and* colour, never colour alone. */
+.machines td.differs {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  font-weight: 600;
+}
