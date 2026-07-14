@@ -558,11 +558,23 @@ td.numeric {
 /* A second paragraph in a card, quieter than the first: the caveats about the table
  * below, for the reader who wants them. */
 .card-aside {
-  margin: -0.75rem 0 1.5rem;
+  margin: 0 0 1.5rem;
   max-width: 75ch;
   line-height: 1.6;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+/* The negative pull belongs to *one* position: an aside sitting right under a card's
+ * intro paragraph, which already carries 1.5rem of its own. Anywhere else — under a
+ * definition list, say — it was subtracting space that was never there, and the aside
+ * climbed over what it followed. */
+.card > h2 + p + .card-aside {
+  margin-top: -0.75rem;
+}
+
+.card-aside:last-child {
+  margin-bottom: 0;
 }
 
 /* The shared column reference, slotted into a card between the table it explains and
@@ -600,6 +612,12 @@ td.numeric {
   gap: 0.2rem 1rem;
   margin: 0;
   font-size: 0.85rem;
+}
+
+/* A list that ends a card owes the card nothing; one with prose under it owes it a
+ * line's worth of air. */
+.machine:not(:last-child) {
+  margin-bottom: 1.25rem;
 }
 
 .machine dt {
