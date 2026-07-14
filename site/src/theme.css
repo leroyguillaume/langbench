@@ -555,6 +555,20 @@ td.numeric {
   line-height: 1.55;
 }
 
+/* A machine this backend cannot be built on at all. It is louder than a note and
+ * quieter than an error, because it is neither: it is a fact about the toolchain, and
+ * the alternative is a reader finding a hole in a table and inventing a reason for it. */
+.impl-missing {
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--warning-border);
+  background: var(--warning-bg);
+  border-radius: 0 4px 4px 0;
+  color: var(--warning-text);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
 /* A second paragraph in a card, quieter than the first: the caveats about the table
  * below, for the reader who wants them. */
 .card-aside {

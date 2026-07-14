@@ -572,7 +572,7 @@ interface PickerProps {
  *
  * Each list is built from the rows this campaign actually measured, and each is
  * scoped by the answer above it: pick `python` and the toolchains are `cpython`,
- * `cython + cpython`, `pypy`, because those are the ones that ran. Changing a
+ * `cython · cpython`, `pypy`, because those are the ones that ran. Changing a
  * language keeps the mode if the new language has it and falls back to its first row
  * if it does not — a selector that can land on a row the campaign never measured is
  * a selector that can produce a blank page.

@@ -35,6 +35,15 @@ const backends = [...workload.backends].sort(
 		left.language.localeCompare(right.language) ||
 		toolchain(left).localeCompare(toolchain(right)),
 );
+
+// Every machine some backend of this workload can be built on. A backend that does not
+// cover all of them is missing from a campaign *by construction*, and the card says so
+// rather than leaving the reader to notice a hole in a table and assume the campaign
+// lost it. The set is the one the manifests declare — not the one that happens to have
+// been measured, which would make the fact disappear the moment a campaign was late.
+const architectures = [...new Set(backends.flatMap((backend) => backend.architectures))].sort();
+const missing = (backend: { architectures: string[] }) =>
+	architectures.filter((architecture) => !backend.architectures.includes(architecture));
 ---
 
 <Layout
@@ -176,7 +185,25 @@ const backends = [...workload.backends].sort(
                   <dt>interpreter</dt>
                   <dd>{backend.interpreter ?? NOT_AVAILABLE}</dd>
                 </div>
+                <div class="impl-field">
+                  <dt>architectures</dt>
+                  <dd>{backend.architectures.join(" · ")}</dd>
+                </div>
               </dl>
+
+              {/* A toolchain that does not exist is not a slow toolchain. This backend is
+                  absent from that machine's campaign for a reason, and the reason belongs
+                  here — beside the backend — rather than in the reader's head as "the
+                  campaign must have lost it". */}
+              {
+                missing(backend).length > 0 && (
+                  <p class="impl-missing">
+                    Not built on <strong>{missing(backend).join(", ")}</strong>: the toolchain does
+                    not exist there. A campaign on that machine skips this backend and says so —
+                    it is a fact about the backend, not a row the campaign lost.
+                  </p>
+                )
+              }
 
               <p class="impl-desc">{backend.description}</p>
 

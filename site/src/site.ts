@@ -43,6 +43,17 @@ export const backendSchema = z.object({
   interpreter: z.string().nullable(),
   description: z.string(),
   comments: z.string().nullable(),
+  /**
+   * The machines this backend can be built on at all.
+   *
+   * Not a preference: a toolchain either exists for an architecture or it does not.
+   * Kotlin/Native publishes no `linux-aarch64` host compiler, and the two ways around
+   * that — emulation, cross-building — are both forbidden here, so a campaign on the
+   * other machine skips the row. Published on the card so that a reader who finds a
+   * backend missing from one campaign and present in another learns *why* on the page
+   * about the work, instead of concluding that the campaign lost it.
+   */
+  architectures: z.array(z.string()),
 });
 
 /**
