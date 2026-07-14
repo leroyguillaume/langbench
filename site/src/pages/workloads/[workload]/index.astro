@@ -217,3 +217,11 @@ const missing = (backend: { architectures: string[] }) =>
     </section>
   </main>
 </Layout>
+
+{/* The mark on the card the address bar names. See `src/target.ts` — `:target` is not
+    enough here, because the router navigates by `pushState`. */}
+<script>
+  import { watchTarget } from "../../../target";
+
+  watchTarget();
+</script>

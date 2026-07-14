@@ -485,6 +485,46 @@ td.numeric {
   padding: 1rem 1.25rem;
 }
 
+/* The card the URL points at.
+ *
+ * A row of the results table links here to answer "what *is* this thing", and it lands
+ * the reader in the middle of thirty cards that all look alike. So the one they asked
+ * for says so: `:target` is the browser telling us which anchor is in the address bar,
+ * and it needs no JavaScript to do it.
+ *
+ * Never colour alone — a ring *and* a heavier border, so it survives a monochrome
+ * display and every kind of colour blindness. The fade is a courtesy for the reader who
+ * arrived by scrolling past it; the border stays, so the mark is still there a minute
+ * later when they come back to the tab.
+ *
+ * `scroll-margin-top` because a card scrolled flush against the top edge reads as a
+ * page that begins there, and half the point is seeing that it sits among others. */
+.impl {
+  scroll-margin-top: 1.5rem;
+}
+
+.impl:target,
+.impl.found {
+  border-color: var(--series-1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--series-1) 22%, transparent);
+  animation: impl-found 1.6s ease-out;
+}
+
+@keyframes impl-found {
+  from {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--series-1) 45%, transparent);
+  }
+}
+
+/* A flash that cannot be turned off is a flash somebody did not ask for. The mark
+ * itself stays — it is the information; the animation was only how it announced itself. */
+@media (prefers-reduced-motion: reduce) {
+  .impl:target,
+  .impl.found {
+    animation: none;
+  }
+}
+
 .impl-head {
   display: flex;
   flex-wrap: wrap;
