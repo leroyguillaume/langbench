@@ -1,6 +1,5 @@
 ---
-title: The columns
-order: 9
+title: Metrics
 summary: What every column of a campaign means, and how to read a row in thirty seconds.
 ---
 

@@ -21,7 +21,6 @@
 
 import { Results } from "../../../../components/Results";
 import Layout from "../../../../layouts/Layout.astro";
-import { Content as Columns } from "../../../../content/methodology/columns.md";
 import { campaigns } from "../../../../site";
 
 export function getStaticPaths() {
@@ -38,12 +37,5 @@ const { campaign } = Astro.props;
   title={`${campaign.workload} on ${campaign.architecture} — langbench`}
   description={`Every backend of the ${campaign.workload} workload, measured on ${campaign.architecture}. Raw samples, aggregated in your browser by the harness itself.`}
 >
-  <Results client:only="react" workload={campaign.workload} architecture={campaign.architecture}>
-    {/* The prose lives *inside* a `.page`, never as one: `.page` is a flex column with a
-        gap sized for sections, and a Markdown document whose every paragraph is a direct
-        child of it comes out with a section's worth of air per line. */}
-    <div slot="columns" class="prose" id="columns">
-      <Columns />
-    </div>
-  </Results>
+  <Results client:only="react" workload={campaign.workload} architecture={campaign.architecture} />
 </Layout>

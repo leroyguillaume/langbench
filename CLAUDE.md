@@ -263,6 +263,11 @@ the ones a reader is most likely to think were violated:
   an AArch64 run is the worst thing this project could publish, and every number on it
   would be internally consistent. What is left in the query string is how you are
   looking at the rows: the filters, the sort, the warmup toggle.
+- **A metric is explained on `/metrics/`, never under the table that prints it.** The
+  columns are the same on every campaign, because they *are* what this project measures
+  — so `site/src/content/metrics.md` explains them once and every results table links to
+  it. A reference re-rendered under each campaign is a reference that gets improved in
+  one of them.
 - **A backend is described on the *workload's* page, never under a campaign's table.**
   What an implementation is comes from its `bench.yaml` — it does not change with the
   machine that ran it, and it exists before any campaign has. The declared set is also

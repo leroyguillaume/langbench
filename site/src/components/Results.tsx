@@ -13,7 +13,7 @@
 // campaign — never the filters. A pair is not a table, and a reader who narrowed this
 // table to one language has not thereby declined to compare it with another.
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, dispersion, mebibytes, milliseconds, optional, ratio } from "../format";
@@ -30,16 +30,9 @@ interface ResultsProps {
   workload: string;
   /** The architecture it measured it on, from the route. */
   architecture: string;
-  /**
-   * The column reference, rendered from `methodology/columns.md` by Astro and slotted
-   * into this island as HTML. It is prose, it is the same prose the methodology
-   * publishes as a page of its own, and it is built at build time — the browser gets
-   * no Markdown and no renderer for it.
-   */
-  columns?: ReactNode;
 }
 
-export function Results({ workload, architecture, columns }: ResultsProps) {
+export function Results({ workload, architecture }: ResultsProps) {
   // The URL is read once, on mount, and written on every change: the address bar
   // describes what is on screen, and a link to it puts somebody else in front of
   // the same claim. The *campaign* is not in the query string — it is the path.
@@ -96,7 +89,6 @@ export function Results({ workload, architecture, columns }: ResultsProps) {
       workload={workload}
       state={state}
       setState={setState}
-      columns={columns}
       pending={pending}
     />
   );
@@ -107,12 +99,11 @@ interface ReportProps {
   workload: string;
   state: ResultsState;
   setState: (state: ResultsState) => void;
-  columns?: ReactNode;
   /** The harness is re-aggregating; these numbers are the previous ones. */
   pending: boolean;
 }
 
-function Report({ loaded, workload: id, state, setState, columns, pending }: ReportProps) {
+function Report({ loaded, workload: id, state, setState, pending }: ReportProps) {
   const { analysis } = loaded;
   const { campaign } = analysis;
 
@@ -327,10 +318,11 @@ function Report({ loaded, workload: id, state, setState, columns, pending }: Rep
         <h2>Every number</h2>
         <p>
           Nineteen columns, and none of them mean what you would guess from the name alone. If this
-          is your first benchmark table, read <a href="#columns">what each column means</a> — it is
-          written for exactly that, and it starts with how to read a row in thirty seconds. The
-          short version: look at <strong>Dispersion</strong> first, because nothing else on a row
-          can be more trustworthy than it.
+          is your first benchmark table, read{" "}
+          <a href={`${import.meta.env.BASE_URL}metrics/`}>what each column means</a> — it is written
+          for exactly that, and it starts with how to read a row in thirty seconds. The short
+          version: look at <strong>Dispersion</strong> first, because nothing else on a row can be
+          more trustworthy than it.
         </p>
         <p className="card-aside">
           Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
@@ -351,11 +343,10 @@ function Report({ loaded, workload: id, state, setState, columns, pending }: Rep
 
       <Failures failures={failures} total={analysis.failures.length} />
 
-      {/* What the columns mean, before what the rows are: a reader who has just met
-          this table needs `Startup` explained before they need to know which JVM ran
-          the Kotlin. Rendered from `docs/columns.md` by Astro, at build time, and
-          slotted in here — the browser never sees a Markdown renderer. */}
-      <section className="card reference">{columns}</section>
+      {/* What the columns mean is not repeated here. They are the same on every campaign
+          — they are what this project measures — so they are explained on **Metrics**,
+          once, and the table above links to it. A reference re-rendered under every
+          campaign is a reference that gets improved in one of them. */}
 
       <section className="card">
         <h2>The machine, and the campaign</h2>

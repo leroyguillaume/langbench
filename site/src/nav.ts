@@ -56,7 +56,12 @@ export function sections(base: string): NavSection[] {
     },
     {
       title: "Tools",
-      links: [{ href: `${base}compare/`, label: "Compare" }],
+      links: [
+        { href: `${base}compare/`, label: "Compare" },
+        // The columns are the same on every campaign, because they are what this project
+        // measures. They are explained once, here, and every results table links to it.
+        { href: `${base}metrics/`, label: "Metrics" },
+      ],
     },
     {
       title: "Methodology",
