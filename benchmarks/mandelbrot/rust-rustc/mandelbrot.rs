@@ -15,7 +15,7 @@
 //! invariant. Rust makes this easy to keep: `f64` arithmetic is IEEE 754 and the
 //! compiler is never allowed to contract or reassociate it -- there is no
 //! `-ffast-math` to reach for, which is why this backend declares `strict` alone.
-//! See site/src/content/methodology/floating-point.md#the-strict-mode-invariant.
+//! See site/src/content/methodology.md#floating-point-modes.
 //!
 //! `std::thread` and an atomic cursor, never `rayon`: a third-party work-stealing
 //! scheduler is a different experiment, and this one is about the backend.

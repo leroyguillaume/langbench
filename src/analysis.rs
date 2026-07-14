@@ -9,7 +9,7 @@
 //! implementation of min-of-N in TypeScript would be a second definition of what
 //! this project measures, and the two would drift the first time one of them was
 //! "fixed". The website is a rendering of the samples — it does not get its own
-//! statistics. See `site/src/content/methodology/statistics.md#why-min-of-n-not-the-median`.
+//! statistics. See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 //!
 //! Everything here is derived and can be recomputed from `samples.ndjson`.
 //! Aggregates never replace the samples.
@@ -56,7 +56,7 @@ pub struct Analysis {
     /// site has to be able to tell them apart structurally — from the header the
     /// campaign recorded, never from the name of the file it was served under. A
     /// filename is a label somebody types; this is what the machine said about
-    /// itself. See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
+    /// itself. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
     pub architecture: String,
     pub hostname: Option<String>,
     pub machine_fields: Vec<Field>,
@@ -110,7 +110,7 @@ pub struct WorkloadAnalysis {
     /// A string on the wire: it is a 64-bit integer, and a JSON number wider than
     /// 2^53 is rounded by every JavaScript parser that reads it. The correctness
     /// gate of the whole harness does not travel as a float.
-    /// See `site/src/content/methodology/floating-point.md#the-strict-mode-invariant`.
+    /// See `site/src/content/methodology.md#floating-point-modes`.
     #[serde(serialize_with = "as_string")]
     pub strict_checksum: Option<u64>,
     /// Fastest first, on the minimum wall-clock — the statistic the report
@@ -177,7 +177,7 @@ pub struct Aggregate {
     /// CPU clock (threads spinning) and the compute clock alike, in both
     /// directions, so there is no one-sided noise to argue from and no reason the
     /// extreme should be the estimate. See
-    /// `site/src/content/methodology/measurement.md#parallel-efficiency-is-a-median-not-a-minimum`.
+    /// `site/src/content/methodology.md#how-a-run-is-measured`.
     pub run_cores: Option<Summary>,
     /// The peak memory the container needed, min-of-N. The minimum is right for
     /// the same reason it is right for a timing, and for once the argument is
@@ -187,7 +187,7 @@ pub struct Aggregate {
     pub run_peak_bytes: Option<Summary>,
     /// The compiler's own elapsed time, from inside the container — never the
     /// `docker build` wall-clock. See
-    /// `site/src/content/methodology/measurement.md#the-build-column-reports-the-internal-clock-the-run-column-the-external-one`.
+    /// `site/src/content/methodology.md#how-a-run-is-measured`.
     pub build_elapsed: Option<Summary>,
     /// What the *compiler* did with the cores it was given. A single-threaded
     /// front end is a fact about a toolchain, and it is invisible in a wall-clock.
@@ -438,7 +438,7 @@ pub fn backend_id(workload: &str, backend: &str) -> String {
 ///
 /// Keyed by workload id all the same, because that is the key the samples carry and
 /// the renderers look up. A campaign has exactly one.
-/// See `site/src/content/methodology/floating-point.md#the-strict-mode-invariant`.
+/// See `site/src/content/methodology.md#floating-point-modes`.
 fn strict_references(workload: &Workload, samples: &[Sample]) -> HashMap<String, u64> {
     let mut references = HashMap::new();
     if let Some(declared) = workload.checksum {

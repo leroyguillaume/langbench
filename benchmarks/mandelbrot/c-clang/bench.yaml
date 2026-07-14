@@ -1,5 +1,5 @@
 # What this backend is. The harness reads this file and nothing else: not the
-# directory name, not the image labels. See site/src/content/methodology/declaring-the-work.md.
+# directory name, not the image labels. See CLAUDE.md#declaring-the-work.
 language: c
 compiler: clang
 # Nothing executes the binary but the CPU.

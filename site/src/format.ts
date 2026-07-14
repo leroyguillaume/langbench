@@ -109,7 +109,7 @@ export function optional(value: string | null): string {
  *
  * The only cross-backend number the site publishes. Absolute timings are a
  * property of the machine; a ratio within one campaign, on one architecture, is a
- * property of the backends. See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
+ * property of the backends. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
  */
 export function ratio(value: number, reference: number): string {
   if (reference === 0) {

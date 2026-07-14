@@ -1,0 +1,32 @@
+---
+// How the tests are actually performed. One page, and nothing else.
+//
+// It was eleven, and half of what was on them was not methodology at all: how a manifest
+// declares itself, why a path is not metadata, where the schemas are generated. Those are
+// rules about this *repository*, they live in `CLAUDE.md`, and a reader who came here to
+// dispute a number had to walk past them to find the argument they wanted.
+//
+// What is left is the document a sceptic reads: what is under test, how the work has to be
+// written for the number to mean anything, how a run is measured, what may be concluded
+// from it, and what may not.
+//
+// The prose is `src/content/methodology.md`, a fragment with no route of its own — a
+// Markdown *page* would carry its own layout, and importing its `Content` anywhere else
+// would drag that layout in with it.
+
+import Layout from "../layouts/Layout.astro";
+import { Content, frontmatter } from "../content/methodology.md";
+---
+
+<Layout title={`${frontmatter.title} — langbench`} description={frontmatter.summary}>
+  <main class="page">
+    <header class="masthead">
+      <h1>{frontmatter.title}</h1>
+      <p>{frontmatter.summary}</p>
+    </header>
+
+    <div class="prose">
+      <Content />
+    </div>
+  </main>
+</Layout>

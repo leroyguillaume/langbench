@@ -17,7 +17,7 @@ arguments about what may be concluded from them, live on the website:
 
 - **[The results](https://leroyguillaume.github.io/langbench/)** — one page per
   campaign, recomputed in the browser from the samples this repository publishes.
-- **[The methodology](site/src/content/methodology/)** — what is measured, what is
+- **[The methodology](site/src/content/methodology.md)** — what is measured, what is
   deliberately not, and why a benchmark that skips those questions produces confident
   nonsense. **Read it before trusting a number.** It is rendered
   [on the site](https://leroyguillaume.github.io/langbench/methodology/) too.
@@ -26,7 +26,7 @@ The campaigns themselves are in **[`samples/`](samples/)**, as
 `samples/<workload>/<architecture>.ndjson`: the only artefact a run produces that
 cannot be recomputed, and the source of every chart, table and ratio anywhere else.
 They are never merged, because **an absolute timing does not cross an architecture**
-([why](site/src/content/methodology/flags-and-architectures.md#the-architecture-rule)).
+([why](site/src/content/methodology.md#flags-and-the-architecture-baseline)).
 
 ## Requirements
 
@@ -117,13 +117,13 @@ Three behaviours are worth knowing before you start one:
   `--memory-limit-mb` is pinned identically for every container — and changing it
   changes the *timings* too. Campaigns run under different budgets do not compare, on
   any column
-  ([why](site/src/content/methodology/measurement.md#memory-is-only-comparable-under-a-pinned-budget)).
+  ([why](site/src/content/methodology.md#how-a-run-is-measured)).
 - **A backend that fails is quarantined, not propagated.** A build that fails, a
   container that crashes or hangs, a checksum that disagrees with the reference: each
   takes out that one `(implementation, mode)` unit, at the point it breaks. The
   campaign keeps measuring the rest, exits 0, and **publishes the failure** as a record
   beside the samples. Only a campaign where *every* unit failed exits non-zero
-  ([why](site/src/content/methodology/what-we-record.md#a-backend-that-fails-is-not-a-campaign-that-fails)).
+  ([why](site/src/content/methodology.md#sampling-and-what-may-be-concluded)).
 - **Ctrl-C stops it cleanly.** The container in flight is killed — it runs on the
   daemon, in another process tree, and leaving it holding every core would bias
   whatever gets measured next — and the interrupted run is *not* written down. The
@@ -400,7 +400,7 @@ Five things the entrypoint is responsible for:
   `/sys/fs/cgroup/cpu.stat` and `memory.peak`, read from inside, before the entrypoint
   returns. Never from `getrusage`: the workload runs under `containerd-shim`, in another
   process tree, and the harness's own rusage would measure argument parsing
-  ([why](site/src/content/methodology/measurement.md#cpu-time-comes-from-the-cgroup-never-from-rusage)).
+  ([why](site/src/content/methodology.md#how-a-run-is-measured)).
   `peak_bytes` is `null` on a kernel that exposes neither file — `null`, never `0`.
 - **`elapsed_ns` is the program's own clock**, around the compute alone. The harness adds
   the external wall-clock, which is the one number nothing inside the container can

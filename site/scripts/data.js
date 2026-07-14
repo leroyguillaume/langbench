@@ -7,7 +7,7 @@
 // step and no intermediate format: the raw samples are the only thing a run writes
 // and the only thing that cannot be recomputed, so they are what gets published.
 // Everything the site shows about a campaign, it derives — with the harness's own
-// code, compiled to WebAssembly. See `site/src/content/methodology/what-we-record.md`.
+// code, compiled to WebAssembly. See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 //
 // **The workloads** come from `langbench workload list --json`: the harness reading
 // the manifests, never a YAML parser of our own. They are what the *workload* page
@@ -17,7 +17,8 @@
 // from three months ago says it ran.
 //
 // One campaign per (workload, architecture), because **an absolute timing never
-// crosses an architecture** (`flags-and-architectures.md#the-architecture-rule`). The
+// crosses an architecture** (`site/src/content/methodology.md#flags-and-the-architecture-baseline`).
+// The
 // path is a convenience for a human reading `ls`; it is *not* what the site keys on.
 // The workload and the architecture are read out of the header the run recorded — a
 // filename is a label somebody typed.

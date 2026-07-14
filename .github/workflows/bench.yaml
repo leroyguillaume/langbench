@@ -7,7 +7,7 @@ name: bench
 # `samples/<workload>/aarch64.ndjson`, side by side, never merged. An absolute timing does
 # not cross an architecture, and the site enforces that by showing one campaign at a
 # time.
-# See `site/src/content/methodology/flags-and-architectures.md#the-architecture-rule`.
+# See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces

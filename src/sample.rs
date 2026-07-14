@@ -4,7 +4,7 @@
 //! thing that cannot be recomputed. Every other artifact — the CSV, the report —
 //! is a rendering of these lines, produced after the fact -- by `langbench sample convert`,
 //! and by the website. Aggregates never replace the samples; a discarded sample is
-//! gone forever. See `site/src/content/methodology/what-we-record.md#sampling`.
+//! gone forever. See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -39,7 +39,7 @@ impl Phase {
 ///
 /// The checksum is an integer. It is a sum of 64-bit iteration counts and the
 /// correctness gate for the whole harness; anything that rounds it destroys the
-/// invariant. See `site/src/content/methodology/floating-point.md#the-strict-mode-invariant`.
+/// invariant. See `site/src/content/methodology.md#floating-point-modes`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ContainerRecord {
     pub elapsed_ns: u64,

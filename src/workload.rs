@@ -12,7 +12,7 @@
 //! the campaign header carries a **snapshot** of the workload it ran, and the site
 //! reads that header. The same struct is therefore both what `workload.yaml`
 //! declares and what a campaign records — one definition, so the two cannot drift.
-//! See `site/src/content/methodology/declaring-the-work.md`.
+//! See `CLAUDE.md#declaring-the-work`.
 
 use std::fmt;
 

@@ -5,10 +5,11 @@
 // anybody remembering. So it is built from the same two lists the routes are built
 // from — which is also the guarantee that every entry points at a page that exists.
 //
-// The methodology is the exception in kind, not in principle: its pages are Markdown
-// files, and they are globbed rather than listed, ordered by their frontmatter.
+// The three fixed pages — what this is, the measurements, the methodology — are the ones
+// that do not come from data. There is one of each, and there is no third: the methodology
+// was eleven pages and is now one, because a reader disputing a number should not have to
+// pick which of eleven documents holds the argument.
 
-import { href, pages } from "./methodology";
 import { campaignsOf, workloads } from "./site";
 
 export interface NavLink {
@@ -53,6 +54,8 @@ export function sections(base: string): NavSection[] {
         // langbench itself rather than to any one campaign, and every results table links
         // here. Not "Data": the data is `samples.ndjson`, which this page contains none of.
         { href: `${base}measurements/`, label: "Measurements" },
+        // How those numbers are produced, and what may be concluded from them.
+        { href: `${base}methodology/`, label: "Methodology" },
       ],
     },
     {
@@ -64,13 +67,6 @@ export function sections(base: string): NavSection[] {
     {
       title: "Tools",
       links: [{ href: `${base}compare/`, label: "Compare" }],
-    },
-    {
-      title: "Methodology",
-      links: pages.map((page) => ({
-        href: href(base, page),
-        label: page.frontmatter.title,
-      })),
     },
   ];
 }

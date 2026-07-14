@@ -272,6 +272,13 @@ kilobyte, and the linker pads function entry points to alignment boundaries. A
 difference of a dozen instructions can therefore leave the number completely
 unchanged. When it does not move, the answer is in the disassembly, not here.
 
+**And never read it as a proxy for speed.** Cython emits 50.5 KiB of machine code
+against C's 1.3 KiB — thirty-nine times more — and runs forty-two times slower. The
+disassembly says why in one line: Cython's hot loop is 142 `bl` instructions into the
+CPython C-API and a single `fadd`, where the C kernel has six `fadd`, five `fmul`,
+three `fsub` and no call at all. More code, doing less arithmetic. `.text` is the
+*cost* of an optimization, never its reward.
+
 `n/a` means the backend emits no artifact to measure. That is a property of the
 backend, not of the language — `native-image` produces a binary from the very same
 Java source that a JIT-only run does not.
