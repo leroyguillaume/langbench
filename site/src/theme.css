@@ -508,10 +508,13 @@ td.numeric {
   padding: 0.1rem 0.6rem;
 }
 
+/* One field per line — compiler, interpreter, architectures. Side by side they read as
+ * one run-on sentence, and the labels are what tell an `n/a` apart from a value: they
+ * have to line up under each other for the eye to compare two cards at all. */
 .impl-triple {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1.5rem;
+  flex-direction: column;
+  gap: 0.25rem;
   margin: 0;
 }
 
@@ -522,11 +525,16 @@ td.numeric {
   font-size: 0.8rem;
 }
 
+/* The labels are three different lengths, so the values would start in three different
+ * places. A fixed column puts them under each other, which is the only way two cards can
+ * be compared at a glance. */
 .impl-field dt {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.7rem;
+  flex: none;
+  width: 7rem;
 }
 
 .impl-field dd {
