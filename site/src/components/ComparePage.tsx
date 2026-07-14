@@ -94,6 +94,16 @@ interface Props {
 function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const { analysis } = loaded;
 
+  // **The workload of the campaign that actually loaded, never the one the query string
+  // asked for.** They differ every time somebody arrives here without asking for one —
+  // from the sidebar, say — and `state.workload` is then `null`. Every lookup below
+  // names a campaign by `(workload, architecture)`, and a lookup for the workload
+  // `null` matches nothing: the page rendered, because the campaign fell back to the
+  // first published one, and then every control on it quietly did nothing, because they
+  // all went looking for a campaign that does not exist. So the fallback is resolved
+  // *once*, here, and what came out of it is what the rest of the page is about.
+  const id = analysis.campaign.workload.id;
+
   // Each side names its own campaign. A side that names none belongs to the one in
   // scope — which is what every link written before this page could cross an architecture says.
   //
@@ -101,29 +111,27 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   // are two backends doing the same work, and comparing a Mandelbrot to a JSON parse
   // would not be a slow backend, it would be a category error. So the workload comes
   // from the scope, and both sides are read out of a campaign that measured it.
-  const sideOf = (raw: string | null): LoadedCampaign => {
-    const { architecture } = readSide(raw);
-    return (
-      campaigns.find(
-        (entry) =>
-          entry.analysis.architecture === architecture &&
-          entry.analysis.campaign.workload.id === state.workload,
-      ) ?? loaded
+  const campaignOn = (architecture: string | null): LoadedCampaign | undefined =>
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === architecture && entry.analysis.campaign.workload.id === id,
     );
-  };
+
+  const sideOf = (raw: string | null): LoadedCampaign =>
+    campaignOn(readSide(raw).architecture) ?? loaded;
+
   const leftCampaign = sideOf(state.left);
   const rightCampaign = sideOf(state.right);
 
   const rowsOf = (campaign: LoadedCampaign): Aggregate[] => {
-    const found = campaign.analysis.workloads.find((entry) => entry.workload === state.workload);
+    const found = campaign.analysis.workloads.find((entry) => entry.workload === id);
     const chosen = found ?? campaign.analysis.workloads[0];
     return (chosen?.aggregates ?? []).filter((row) => row.run_wall !== null);
   };
   const leftRows = rowsOf(leftCampaign);
   const rightRows = rowsOf(rightCampaign);
 
-  const workload =
-    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
+  const workload = analysis.workloads.find((entry) => entry.workload === id);
 
   // The default pair is the fastest row and the fastest row of *another language*.
   // Two rows of the same language, one compiled by gcc and one by clang, is a fine
@@ -165,7 +173,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
     return (
       <main className="page">
         <header className="masthead">
-          <h1>Head to head</h1>
+          <h1>Compare</h1>
         </header>
         <section className="card">
           <p>
@@ -186,11 +194,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const moveTo = (side: "left" | "right", architecture: string) => {
     // The other machine, the *same* work: switching architecture asks "and how does
     // this backend do over there", which is only a question about one workload.
-    const campaign = campaigns.find(
-      (entry) =>
-        entry.analysis.architecture === architecture &&
-        entry.analysis.campaign.workload.id === state.workload,
-    );
+    const campaign = campaignOn(architecture);
     if (campaign === undefined) {
       return;
     }
@@ -210,7 +214,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   return (
     <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
-        <h1>Head to head</h1>
+        <h1>Compare</h1>
         <p>
           Two rows, and the verdict the campaign can defend. A gap smaller than the dispersion the
           two rows carry is <strong>not a difference</strong> — it is the same number, measured
@@ -521,7 +525,7 @@ function Verdict({
  * the numbers are there, and so is this.
  */
 function CrossIsaWarning({ left, right }: { left: string; right: string }) {
-  const methodology = `${import.meta.env.BASE_URL}methodology/#the-architecture-rule`;
+  const methodology = `${import.meta.env.BASE_URL}methodology/flags-and-architectures/#the-architecture-rule`;
   return (
     <section className="warnings">
       <h2>

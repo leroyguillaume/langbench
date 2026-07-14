@@ -56,7 +56,7 @@ export function sections(base: string): NavSection[] {
     },
     {
       title: "Tools",
-      links: [{ href: `${base}compare/`, label: "Head to head" }],
+      links: [{ href: `${base}compare/`, label: "Compare" }],
     },
     {
       title: "Methodology",
