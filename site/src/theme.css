@@ -107,11 +107,11 @@ a {
   letter-spacing: -0.02em;
 }
 
-/* Prose wants a measure: past ~75 characters the eye loses the start of the next
- * line, and this is the paragraph that says what everything below it is. */
+/* The text fills the column it is given. A cap of its own would stop it two thirds of
+ * the way across the card and leave the rest blank, which reads as a layout bug — the
+ * page's own width is the measure, and `line-height` is what carries a long line. */
 .masthead p {
   margin: 0;
-  max-width: 75ch;
   line-height: 1.6;
   color: var(--text-secondary);
 }
@@ -136,7 +136,6 @@ a {
 
 .card > h2 + p {
   margin: 0 0 1.5rem;
-  max-width: 75ch;
   line-height: 1.6;
   color: var(--text-secondary);
   font-size: 0.875rem;
@@ -573,7 +572,6 @@ td.numeric {
  * below, for the reader who wants them. */
 .card-aside {
   margin: 0 0 1.5rem;
-  max-width: 75ch;
   line-height: 1.6;
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -963,12 +961,10 @@ td.better {
 .lede {
   font-size: 1.05rem;
   line-height: 1.65;
-  max-width: 70ch;
 }
 
 .card > p,
 .card > .lede {
-  max-width: 75ch;
   color: var(--text-secondary);
   line-height: 1.65;
 }
@@ -987,7 +983,6 @@ td.better {
 
 .glossary dd {
   margin: 0.15rem 0 0;
-  max-width: 75ch;
   color: var(--text-secondary);
   line-height: 1.6;
 }
@@ -995,7 +990,6 @@ td.better {
 .claims {
   margin: 0 0 1rem;
   padding-left: 1.1rem;
-  max-width: 75ch;
   color: var(--text-secondary);
   line-height: 1.6;
 }
@@ -1104,8 +1098,9 @@ td.muted-cell {
    METHODOLOGY.md, rendered. Prose, and nothing else on the page.
    --------------------------------------------------------------------------- */
 
+/* No measure of its own: the page is the column, and the prose fills it. */
 .prose {
-  max-width: 46rem;
+  max-width: none;
 }
 
 .prose h1 {
@@ -1195,7 +1190,6 @@ td.muted-cell {
 
 .warmup-note {
   margin: 0;
-  max-width: 75ch;
   line-height: 1.6;
   color: var(--text-muted);
   font-size: 0.85rem;
