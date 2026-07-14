@@ -319,8 +319,8 @@ function Report({ loaded, workload: id, state, setState, pending }: ReportProps)
         <p>
           Nineteen columns, and none of them mean what you would guess from the name alone. If this
           is your first benchmark table, read{" "}
-          <a href={`${import.meta.env.BASE_URL}data/`}>what each column means</a> — written for
-          exactly that. The short version: look at <strong>Dispersion</strong> first, because
+          <a href={`${import.meta.env.BASE_URL}measurements/`}>what each column means</a> — written
+          for exactly that. The short version: look at <strong>Dispersion</strong> first, because
           nothing else on a row can be more trustworthy than it.
         </p>
         <p className="card-aside">

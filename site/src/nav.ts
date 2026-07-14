@@ -48,10 +48,11 @@ export function sections(base: string): NavSection[] {
       title: "langbench",
       links: [
         { href: base, label: "What this is" },
-        // What every column of a campaign is. The columns are the same on every one of
-        // them — they *are* what this project measures — so they belong to langbench
-        // itself rather than to any one campaign, and every results table links here.
-        { href: `${base}data/`, label: "Data" },
+        // What every number a campaign records means. The measurements are the same on
+        // every campaign — they *are* what this project measures — so they belong to
+        // langbench itself rather than to any one campaign, and every results table links
+        // here. Not "Data": the data is `samples.ndjson`, which this page contains none of.
+        { href: `${base}measurements/`, label: "Measurements" },
       ],
     },
     {

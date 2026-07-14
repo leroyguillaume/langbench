@@ -1,6 +1,6 @@
 ---
-title: Data
-summary: What every column of a campaign means, and what it does not mean.
+title: Measurements
+summary: What every number a campaign records means — and, for each one, what it does not.
 ---
 
 ## Language

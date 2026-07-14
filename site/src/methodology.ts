@@ -6,7 +6,7 @@
 // which is how the column reference, slotted under a campaign's table, once brought a
 // second `<html>` document with it. Content is content; a route is a route. So these
 // files are prose with frontmatter, `[...slug].astro` gives them their routes, and the
-// `/data/` page imports `data.md` as what it is: a fragment.
+// `/measurements/` page imports `measurements.md` as what it is: a fragment.
 //
 // The pages are globbed, never listed. Adding one is adding a file — the route, the
 // sidebar entry and the index all follow from its frontmatter.
