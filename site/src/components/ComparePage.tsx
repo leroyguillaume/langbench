@@ -611,7 +611,7 @@ function Machines({ left, right }: { left: LoadedCampaign; right: LoadedCampaign
 }
 
 function CrossArchitectureWarning({ left, right }: { left: string; right: string }) {
-  const methodology = `${import.meta.env.BASE_URL}methodology/#flags-and-the-architecture-baseline`;
+  const methodology = `${import.meta.env.BASE_URL}methodology/#the-architecture`;
   return (
     <section className="warnings">
       <h2>

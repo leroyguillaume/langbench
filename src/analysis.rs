@@ -56,7 +56,7 @@ pub struct Analysis {
     /// site has to be able to tell them apart structurally — from the header the
     /// campaign recorded, never from the name of the file it was served under. A
     /// filename is a label somebody types; this is what the machine said about
-    /// itself. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+    /// itself. See `site/src/content/methodology.md#the-architecture`.
     pub architecture: String,
     pub hostname: Option<String>,
     pub machine_fields: Vec<Field>,

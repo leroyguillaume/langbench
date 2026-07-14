@@ -26,7 +26,7 @@ The campaigns themselves are in **[`samples/`](samples/)**, as
 `samples/<workload>/<architecture>.ndjson`: the only artefact a run produces that
 cannot be recomputed, and the source of every chart, table and ratio anywhere else.
 They are never merged, because **an absolute timing does not cross an architecture**
-([why](site/src/content/methodology.md#flags-and-the-architecture-baseline)).
+([why](site/src/content/methodology.md#the-architecture)).
 
 ## Requirements
 

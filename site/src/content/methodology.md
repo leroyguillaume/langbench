@@ -259,7 +259,7 @@ side. Both the licence and the column are gone. `baseline` and `native` compute 
 same bits, so a divergence in either is not a trade-off with a magnitude worth
 printing. It is a wrong run, and it takes the backend out of the campaign.
 
-## Flags, and the architecture baseline
+## Flags, and how each toolchain spells the ISA target
 
 - **`native` is a mode, never a default.** A native build depends on the CPU that
   built it, so it is asked for explicitly, published as its own row, and never
@@ -359,7 +359,12 @@ what every other backend was held to, which is one below. The row is handicapped
 rather than flattered, that is the safe direction to be wrong in, and it reports
 `armv8.1-a` as its ISA so the reader can see it.
 
-### The architecture rule
+## The architecture
+
+**The chip, and nothing else: `x86_64` or `aarch64`.** Not to be confused with the ISA
+target above — that is what a compiler is asked to emit *for* this chip, and the two
+words are kept apart on purpose. One campaign runs on one architecture; a backend
+declares which architectures it can be built on; the ISA target varies *within* one.
 
 **Absolute cross-architecture timings are never published.**
 

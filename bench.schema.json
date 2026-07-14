@@ -58,7 +58,7 @@
   ],
   "$defs": {
     "Architecture": {
-      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the architecture rule is\nwritten for. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
+      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the architecture rule is\nwritten for. See `site/src/content/methodology.md#the-architecture`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
       "oneOf": [
         {
           "description": "64-bit x86. `-march=x86-64-v3` and friends.",

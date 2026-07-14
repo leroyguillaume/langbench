@@ -11,7 +11,7 @@ use crate::mode::Mode;
 /// A CPU architecture a backend can be built and measured on.
 ///
 /// The two this project supports, because they are the two the architecture rule is
-/// written for. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+/// written for. See `site/src/content/methodology.md#the-architecture`.
 ///
 /// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
 /// publishes no `linux-aarch64` host compiler, so a backend using it cannot be

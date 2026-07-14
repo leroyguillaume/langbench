@@ -123,7 +123,7 @@ the only thing the harness reads.**
 - `architectures: all`, unless the backend's **toolchain does not exist** for an
   architecture — a fact, not a preference. A campaign on the other machine skips the row
   loudly at discovery rather than failing halfway through a `docker build`.
-  ([why](site/src/content/methodology.md#flags-and-the-architecture-baseline))
+  ([why](site/src/content/methodology.md#the-architecture))
 - **A manifest describes the work, never the results.** An implementation's `comments`
   are what is pinned, what its entrypoint has to do, how it deviates, what its build
   phase actually *is* — never what to expect from the table ("read this against c-gcc",
@@ -307,7 +307,7 @@ change to the harness must not break.
   used as a key-value store. Prometheus is for the bench machine's *health* — frequency,
   temperature, throttling — and never for the measurement.
 - Never publish an absolute cross-architecture timing. Within-architecture ratios only.
-  ([why](site/src/content/methodology.md#flags-and-the-architecture-baseline))
+  ([why](site/src/content/methodology.md#the-architecture))
 - Never run a benchmark under QEMU / `binfmt` emulation.
 - Never let `native` be a **default**, and never let it stand in for the pinned baseline.
   It is asked for explicitly (`--mode native`), it builds its own image, and it gets its own

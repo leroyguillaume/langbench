@@ -103,10 +103,11 @@ pub fn compare(
 /// anyway because refusing would only send somebody off to divide the two numbers by
 /// hand, with nothing on screen to tell them not to.
 ///
-/// The checksums are the exception, and the reason this is worth having at all: in
-/// `strict` mode they are obliged to be bit-identical across every architecture, and a
-/// divergence here is a genuine bug rather than a curiosity.
-/// See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+/// The checksums are the exception, and the reason this is worth having at all: they
+/// are obliged to be bit-identical across every architecture — in *both* ISA targets,
+/// since neither relaxes the arithmetic — and a divergence here is a genuine bug rather
+/// than a curiosity.
+/// See `site/src/content/methodology.md#the-architecture`.
 #[wasm_bindgen]
 pub fn compare_across(
     left_ndjson: &str,

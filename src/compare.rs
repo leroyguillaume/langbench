@@ -87,7 +87,7 @@ pub struct Metric {
     ///
     /// A ratio, and never an absolute difference: two backends of one campaign on
     /// one architecture is exactly the comparison this project is allowed to publish, and
-    /// the ratio is the part of it that travels. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+    /// the ratio is the part of it that travels. See `site/src/content/methodology.md#the-architecture`.
     pub ratio: Option<f64>,
     /// The gap, as a percentage of the smaller of the two. Always positive.
     pub gap_pct: Option<f64>,
@@ -142,7 +142,7 @@ pub struct Comparison {
     /// The two rows come from two architectures, and **every timing below is
     /// therefore meaningless as a comparison**. It is computed here rather than
     /// left to the caller to notice: a renderer that forgot to check would publish
-    /// exactly the claim `site/src/content/methodology.md#flags-and-the-architecture-baseline` exists to forbid. A ratio
+    /// exactly the claim `site/src/content/methodology.md#the-architecture` exists to forbid. A ratio
     /// travels between architectures; a millisecond does not.
     ///
     /// The checksums, on the other hand, are *more* interesting across an architecture
@@ -191,7 +191,7 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
 /// hand; what the harness will not do is let the pair pass for a comparable one. A
 /// millisecond on x86-64 and a millisecond on AArch64 are two different machines
 /// answering two different questions, and no ratio of them means anything.
-/// See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+/// See `site/src/content/methodology.md#the-architecture`.
 pub fn compare_across(
     left_analysis: &Analysis,
     right_analysis: &Analysis,
@@ -786,7 +786,7 @@ mod tests {
     /// Two architectures, deliberately. The pair is computed — refusing would only
     /// send somebody off to divide the two numbers by hand — but it is *flagged*,
     /// because a millisecond does not cross an architecture and a renderer that forgot to say
-    /// so would publish the one claim `site/src/content/methodology.md#flags-and-the-architecture-baseline` forbids.
+    /// so would publish the one claim `site/src/content/methodology.md#the-architecture` forbids.
     #[test]
     fn a_pair_drawn_from_two_architectures_says_so() {
         let x86 = on_arch(

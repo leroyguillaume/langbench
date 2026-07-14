@@ -291,7 +291,7 @@ export const comparisonSchema = z.object({
    * therefore meaningless as a comparison**. The harness decides this, and the site's
    * only job is to say it out loud: a ratio travels between architectures, a
    * millisecond does not.
-   * See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+   * See `site/src/content/methodology.md#the-architecture`.
    *
    * Not `cross_isa`, and the distinction is the whole reason for the name: `isa` is a
    * published column now — the `-march` target a row got — and one word cannot mean
@@ -405,7 +405,7 @@ export async function fetchCampaign(
  * Every campaign this build publishes, summarized — one per architecture.
  *
  * They are kept apart on purpose. **An absolute timing never crosses an architecture**
- * (`site/src/content/methodology.md#flags-and-the-architecture-baseline`): an x86-64 millisecond and an aarch64
+ * (`site/src/content/methodology.md#the-architecture`): an x86-64 millisecond and an aarch64
  * millisecond are not the same claim, and a chart that puts them in one bar
  * group invites exactly the comparison the methodology forbids. So the site
  * loads them all and shows one at a time.

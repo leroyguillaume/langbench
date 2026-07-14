@@ -256,7 +256,7 @@ function replace(query: URLSearchParams): void {
  * The filters do not travel: they narrow a table, and a pair is not a table. But
  * the campaign and the workload do — an absolute timing never crosses an architecture, and
  * a "Compare" link that quietly switched architecture would be inviting exactly the
- * comparison `site/src/content/methodology.md#flags-and-the-architecture-baseline` forbids.
+ * comparison `site/src/content/methodology.md#the-architecture` forbids.
  */
 export function compareHref(scope: Scope, left?: string, right?: string): string {
   const query = new URLSearchParams();

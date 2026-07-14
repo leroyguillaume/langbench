@@ -7,7 +7,7 @@ name: bench
 # `samples/<workload>/aarch64.ndjson`, side by side, never merged. An absolute timing does
 # not cross an architecture, and the site enforces that by showing one campaign at a
 # time.
-# See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+# See `site/src/content/methodology.md#the-architecture`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces
@@ -102,8 +102,8 @@ jobs:
           path: samples/${{ inputs.workload }}/${{ matrix.arch }}.ndjson
           if-no-files-found: error
 
-  # One job, one push. Two matrix jobs committing to `main` would race, and the
-  # loser would have to rebase a file it holds the only copy of.
+  # One job, one push. Two matrix jobs committing to the same branch would race, and
+  # the loser would have to rebase a file it holds the only copy of.
   commit:
     needs: bench
     runs-on: ubuntu-24.04
