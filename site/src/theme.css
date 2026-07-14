@@ -1171,8 +1171,16 @@ td.muted-cell {
   letter-spacing: -0.02em;
 }
 
+/* A heading's top margin separates it from what came *before* it. The first one in the
+ * document has nothing before it — the page's own `gap` already put it below the
+ * masthead — so its margin is a second helping of the same space, and the page opens on
+ * a hole. */
 .prose h2 {
   margin-top: 2.5rem;
+}
+
+.prose > :first-child {
+  margin-top: 0;
 }
 
 /* METHODOLOGY.md separates its sections with a rule of its own. A border on the
