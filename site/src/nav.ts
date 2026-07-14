@@ -46,7 +46,13 @@ export function sections(base: string): NavSection[] {
   return [
     {
       title: "langbench",
-      links: [{ href: base, label: "What this is" }],
+      links: [
+        { href: base, label: "What this is" },
+        // What the columns mean. They are the same on every campaign — they *are* what
+        // this project measures — so they belong to langbench itself rather than to any
+        // one campaign, and every results table links here.
+        { href: `${base}metrics/`, label: "Metrics" },
+      ],
     },
     {
       // Empty only in a repository with no `workload.yaml` at all, which the build
@@ -56,12 +62,7 @@ export function sections(base: string): NavSection[] {
     },
     {
       title: "Tools",
-      links: [
-        { href: `${base}compare/`, label: "Compare" },
-        // The columns are the same on every campaign, because they are what this project
-        // measures. They are explained once, here, and every results table links to it.
-        { href: `${base}metrics/`, label: "Metrics" },
-      ],
+      links: [{ href: `${base}compare/`, label: "Compare" }],
     },
     {
       title: "Methodology",
