@@ -453,15 +453,42 @@ not the arithmetic.
   runs lets the hourly log flush land on one of them and become a bias
   indistinguishable from the effect under study. Blocking converts variance into
   bias, and no number of repetitions removes bias.
-- **Keep the warmup samples, flagged.** The first run of an image faults its
-  layers into page cache. Mark them in the data rather than deleting them; the
-  day something looks wrong, you will want to see them.
+- **Keep the warm-up samples, flagged.** Recorded like any other round, and left out of
+  the numbers — see below.
 - **Verify the checksum on every run**, not once. A run with the wrong value is
   not a slow run, it is a wrong run, and it must never enter the statistics.
 - **Store raw samples, never aggregates.** One NDJSON line per run, with the
   machine metadata and the campaign's parameters in a header record. Aggregates
   are recomputed when the samples are rendered; a discarded sample is gone forever.
   This is the highest-return rule in the protocol, and the one most regretted later.
+
+### Warm-up rounds
+
+The first round of every implementation is run and recorded exactly like the others, and
+then left out of the published numbers. **A program's first run is its worst one**, and
+for reasons that have nothing to do with the backend: the image's layers are being
+faulted into the page cache, a JIT has not compiled the hot loop yet, a JVM is still
+loading classes. It says more about the machine getting going than about what is under
+test.
+
+**Nothing is deleted.** The rounds are in `samples.ndjson`, flagged `warmup`, and the
+website has a box that folds them back into the aggregation. That is deliberate: an
+exclusion you cannot inspect is an exclusion you have to take on trust, and this project
+asks for none. Turning them on re-aggregates the campaign — with the harness's own code,
+over the same samples — and the numbers on screen say so while it is on, because they are
+then not the figures this project publishes.
+
+What happens when you do is itself the argument for excluding them. **Run min cannot go
+up**: a minimum taken over more samples can only fall or stay, and the warm-up round is
+the slow one, so it stays. **Dispersion** is a *median* absolute deviation, built to
+ignore a single outlier — which is precisely what a warm-up round is — so it barely
+moves. The one column that always changes is the sample count. A table that hardly
+flinches is the demonstration that the exclusion is hiding nothing; a row that *does*
+lurch has an expensive first run, and that row's samples are worth reading.
+
+Warm-up rounds are a **property of the campaign**, not of the reader: the count is
+`--warmup-rounds`, it is recorded in the campaign header, and a campaign run with zero of
+them has nothing to fold in.
 
 ### Why min-of-N, not the median
 
