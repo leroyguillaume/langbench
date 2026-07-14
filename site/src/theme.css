@@ -953,6 +953,31 @@ td.better {
   font-size: 0.8rem;
 }
 
+/* The one link in the nav that leaves the site, so it does not look like the others: it
+ * is set below them, behind a rule, with the mark that says where it goes. */
+.sidebar-source {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 1rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.sidebar-source:hover {
+  color: var(--text-primary);
+}
+
+/* The arrow out of a box, quieter than the label it qualifies — it is a note about where
+ * the link goes, not the reason to click it. */
+.sidebar-source .external {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
 .content {
   flex: 1;
   min-width: 0;
@@ -983,7 +1008,11 @@ td.better {
   }
 
   .sidebar-nav {
-    padding: 0.75rem 1.25rem 2rem;
+    padding: 0.75rem 1.25rem 1rem;
+  }
+
+  .sidebar-source {
+    margin: 0 1.25rem 1.5rem;
   }
 }
 
