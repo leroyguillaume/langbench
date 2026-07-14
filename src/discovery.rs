@@ -9,7 +9,7 @@
 //! and the (language, compiler, interpreter) triple that turns it into
 //! instructions. Two directories declaring the same triple are the same
 //! implementation declared twice, and that is an error.
-//! See `METHODOLOGY.md#repository-layout`.
+//! See `CLAUDE.md#declaring-the-work`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -57,7 +57,7 @@ struct Manifest {
     /// Declared rather than guessed: the harness would otherwise have to decide
     /// which of the files beside the manifest is *the source*, and the only way to
     /// do that is to pattern-match a name — which is parsing the path, under
-    /// another name. See `METHODOLOGY.md#repository-layout`.
+    /// another name. See `CLAUDE.md#declaring-the-work`.
     source: String,
     /// The FP modes this backend distinguishes: `all`, or an explicit list.
     modes: Modes,

@@ -12,7 +12,7 @@
 // here divides, compares or rounds a measurement — it picks two rows, spells what
 // the harness said about them, and colours the answer. A tie is not a formatting
 // choice; it is the campaign refusing to defend a claim it cannot afford.
-// See `METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
+// See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 
 import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Comparison, FpMode, LoadedCampaign, Metric } from "../analysis";
@@ -94,6 +94,16 @@ interface Props {
 function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const { analysis } = loaded;
 
+  // **The workload of the campaign that actually loaded, never the one the query string
+  // asked for.** They differ every time somebody arrives here without asking for one —
+  // from the sidebar, say — and `state.workload` is then `null`. Every lookup below
+  // names a campaign by `(workload, architecture)`, and a lookup for the workload
+  // `null` matches nothing: the page rendered, because the campaign fell back to the
+  // first published one, and then every control on it quietly did nothing, because they
+  // all went looking for a campaign that does not exist. So the fallback is resolved
+  // *once*, here, and what came out of it is what the rest of the page is about.
+  const id = analysis.campaign.workload.id;
+
   // Each side names its own campaign. A side that names none belongs to the one in
   // scope — which is what every link written before this page could cross an architecture says.
   //
@@ -101,29 +111,27 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   // are two backends doing the same work, and comparing a Mandelbrot to a JSON parse
   // would not be a slow backend, it would be a category error. So the workload comes
   // from the scope, and both sides are read out of a campaign that measured it.
-  const sideOf = (raw: string | null): LoadedCampaign => {
-    const { architecture } = readSide(raw);
-    return (
-      campaigns.find(
-        (entry) =>
-          entry.analysis.architecture === architecture &&
-          entry.analysis.campaign.workload.id === state.workload,
-      ) ?? loaded
+  const campaignOn = (architecture: string | null): LoadedCampaign | undefined =>
+    campaigns.find(
+      (entry) =>
+        entry.analysis.architecture === architecture && entry.analysis.campaign.workload.id === id,
     );
-  };
+
+  const sideOf = (raw: string | null): LoadedCampaign =>
+    campaignOn(readSide(raw).architecture) ?? loaded;
+
   const leftCampaign = sideOf(state.left);
   const rightCampaign = sideOf(state.right);
 
   const rowsOf = (campaign: LoadedCampaign): Aggregate[] => {
-    const found = campaign.analysis.workloads.find((entry) => entry.workload === state.workload);
+    const found = campaign.analysis.workloads.find((entry) => entry.workload === id);
     const chosen = found ?? campaign.analysis.workloads[0];
     return (chosen?.aggregates ?? []).filter((row) => row.run_wall !== null);
   };
   const leftRows = rowsOf(leftCampaign);
   const rightRows = rowsOf(rightCampaign);
 
-  const workload =
-    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
+  const workload = analysis.workloads.find((entry) => entry.workload === id);
 
   // The default pair is the fastest row and the fastest row of *another language*.
   // Two rows of the same language, one compiled by gcc and one by clang, is a fine
@@ -165,7 +173,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
     return (
       <main className="page">
         <header className="masthead">
-          <h1>Head to head</h1>
+          <h1>Compare</h1>
         </header>
         <section className="card">
           <p>
@@ -186,11 +194,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   const moveTo = (side: "left" | "right", architecture: string) => {
     // The other machine, the *same* work: switching architecture asks "and how does
     // this backend do over there", which is only a question about one workload.
-    const campaign = campaigns.find(
-      (entry) =>
-        entry.analysis.architecture === architecture &&
-        entry.analysis.campaign.workload.id === state.workload,
-    );
+    const campaign = campaignOn(architecture);
     if (campaign === undefined) {
       return;
     }
@@ -210,7 +214,7 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
   return (
     <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
-        <h1>Head to head</h1>
+        <h1>Compare</h1>
         <p>
           Two rows, and the verdict the campaign can defend. A gap smaller than the dispersion the
           two rows carry is <strong>not a difference</strong> — it is the same number, measured
@@ -280,7 +284,15 @@ function Head2Head({ loaded, campaigns, state, setState, pending }: Props) {
           for the reader to work out from a row of numbers that looks exactly like a
           valid one. */}
       {view?.cross_isa === true && (
-        <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
+        <>
+          <CrossIsaWarning left={view.left.architecture} right={view.right.architecture} />
+          {/* And *what* the two machines were. The warning says the timings do not
+              compare; this says why, in the only terms that can settle it — two CPUs, two
+              clock speeds, two kernels, two sets of reasons the host was a poor target.
+              A reader told "these are different machines" and shown nothing has been
+              given a rule to obey; shown the machines, they can see it. */}
+          <Machines left={leftCampaign} right={rightCampaign} />
+        </>
       )}
 
       {comparison.error !== null && <p className="compare-error">{comparison.error}</p>}
@@ -520,8 +532,85 @@ function Verdict({
  * to divide the two numbers by hand, with nothing on screen to tell them not to. So
  * the numbers are there, and so is this.
  */
+/**
+ * The two machines, side by side — shown only when the pair crosses an architecture.
+ *
+ * Within one campaign there is one machine, and it is on the campaign's own page. Across
+ * two, the machine stops being context and becomes the *confounding variable*: it is the
+ * thing that moved along with the treatment, and the reader is entitled to see exactly
+ * what changed. A row that differs is a reason the numbers above cannot be divided.
+ *
+ * The fields are the harness's own — the same `machine_fields` a campaign's page prints,
+ * in the order it recorded them — so a machine that reported something new does not have
+ * to be taught to this table. A field one campaign carries and the other does not is
+ * `n/a` on the side that did not: an older campaign is missing a fact, not holding a zero.
+ */
+function Machines({ left, right }: { left: LoadedCampaign; right: LoadedCampaign }) {
+  const labels: string[] = [];
+  for (const field of [...left.analysis.machine_fields, ...right.analysis.machine_fields]) {
+    if (!labels.includes(field.label)) {
+      labels.push(field.label);
+    }
+  }
+  const fieldOf = (campaign: LoadedCampaign, label: string): string =>
+    campaign.analysis.machine_fields.find((field) => field.label === label)?.value ?? NOT_AVAILABLE;
+
+  const side = (campaign: LoadedCampaign) =>
+    campaign.analysis.hostname === null
+      ? campaign.analysis.architecture
+      : `${campaign.analysis.architecture} · ${campaign.analysis.hostname}`;
+
+  return (
+    <section className="card">
+      <h2>The two machines</h2>
+      <p>
+        What actually differs between the two rows above, beyond the backend you asked about. Every
+        line where these two columns disagree is a reason the timings cannot be divided by one
+        another — and on a cross-architecture pair, they disagree about the silicon itself.
+      </p>
+      <div className="table-scroll">
+        <table className="machines">
+          <thead>
+            <tr>
+              <th className="text">Property</th>
+              <th className="text">{side(left)}</th>
+              <th className="text">{side(right)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {labels.map((label) => {
+              const [a, b] = [fieldOf(left, label), fieldOf(right, label)];
+              return (
+                <tr key={label}>
+                  <td className="text muted-cell">{label}</td>
+                  {/* A difference is marked, never left for the eye to find in twenty rows
+                      of near-identical text. Never colour alone: the cell is bold too. */}
+                  <td className={a === b ? "text" : "text differs"}>{a}</td>
+                  <td className={a === b ? "text" : "text differs"}>{b}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* The warnings each host carried. They travel with the numbers everywhere else on
+          this site, and a head-to-head across two machines is the last place to drop them:
+          a "result" from two noisy hosts is two campaigns' noise, divided. */}
+      {[left, right].map((campaign) =>
+        campaign.analysis.warnings.length === 0 ? null : (
+          <p className="warmup-note" key={campaign.analysis.architecture}>
+            <strong>{side(campaign)} was not a clean benchmark target:</strong>{" "}
+            {campaign.analysis.warnings.join(" · ")}
+          </p>
+        ),
+      )}
+    </section>
+  );
+}
+
 function CrossIsaWarning({ left, right }: { left: string; right: string }) {
-  const methodology = `${import.meta.env.BASE_URL}methodology/#the-architecture-rule`;
+  const methodology = `${import.meta.env.BASE_URL}methodology/#flags-and-the-architecture-baseline`;
   return (
     <section className="warnings">
       <h2>
@@ -568,7 +657,7 @@ interface PickerProps {
  *
  * Each list is built from the rows this campaign actually measured, and each is
  * scoped by the answer above it: pick `python` and the toolchains are `cpython`,
- * `cython + cpython`, `pypy`, because those are the ones that ran. Changing a
+ * `cython · cpython`, `pypy`, because those are the ones that ran. Changing a
  * language keeps the mode if the new language has it and falls back to its first row
  * if it does not — a selector that can land on a row the campaign never measured is
  * a selector that can produce a blank page.

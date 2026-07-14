@@ -16,10 +16,6 @@ description: >-
   same arithmetic -- the language in front of the JIT is the only thing that
   changes.
 comments: >-
-  Read the Run column against java-javac-openjdk and expect them to land close
-  together: the two compile to bytecode that the same JIT turns into the same
-  machine code.
-  The Build column is where they part, and hard -- kotlinc is the slowest compiler
-  in this table, several times javac on the same one-file kernel -- while the
-  Startup column carries the Kotlin stdlib the JVM must load. That is the honest
-  cost of Kotlin here: compile time and startup, not compute.
+  One kotlinc invocation on one file — no Gradle, no Maven, no jar — so the build
+  phase times the compiler and nothing else. The Kotlin standard library is on the
+  classpath, and the JVM loads it at startup.

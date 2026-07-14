@@ -10,7 +10,7 @@
 //! Two feature flags carve the crate accordingly:
 //!
 //! - `cli` (default): everything that touches the machine — discovery, Docker,
-//!   the campaign, the Markdown renderer. The `langbench` binary needs it.
+//!   the campaign. The `langbench` binary needs it.
 //! - `wasm`: the `wasm-bindgen` boundary the website calls.
 //!
 //! Between them sits the part that is nothing but data and arithmetic —
@@ -34,8 +34,6 @@ pub mod discovery;
 pub mod engine;
 #[cfg(feature = "cli")]
 pub mod output;
-#[cfg(feature = "cli")]
-pub mod report;
 #[cfg(feature = "cli")]
 pub mod runner;
 #[cfg(feature = "cli")]

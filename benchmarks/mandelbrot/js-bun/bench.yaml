@@ -17,6 +17,6 @@ description: >-
   a different engine underneath, which makes it the only one where a gap is about
   the compiler rather than the runtime around it.
 comments: >-
-  The Build column is `bun build` -- a transpile and bundle -- where Node reports a
-  parse and Deno a type check. Three runtimes, three different notions of "before
-  the run": read each Build number against its own runtime, never across the rows.
+  The build phase is `bun build` — a transpile and a bundle. Node's is a parse and
+  Deno's a type check: the three runtimes do not agree on what happens before a run,
+  and each build number describes its own runtime's idea of it.

@@ -16,7 +16,6 @@ description: >-
   runtime that has run TypeScript natively since its first release, on the same V8
   Node uses. If the head start shows up anywhere, it shows up here.
 comments: >-
-  The Build column is `deno check`, a real type check, where ts-nodejs reports a
-  parse that erases the types without reading them. That is the honest difference
-  between the two: Deno is doing strictly more work, and only Deno's number can
-  tell you what type-checking this kernel costs.
+  The build phase is `deno check`, a real type check, where ts-nodejs runs a parse
+  that erases the types without reading them. Only Deno's number says what type-
+  checking this kernel costs; the other two never do it.

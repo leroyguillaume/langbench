@@ -1,5 +1,5 @@
 # What this backend is. The harness reads this file and nothing else: not the
-# directory name, not the image labels. See METHODOLOGY.md#repository-layout.
+# directory name, not the image labels. See CLAUDE.md#declaring-the-work.
 language: c
 compiler: clang
 # Nothing executes the binary but the CPU.
@@ -14,6 +14,7 @@ description: >-
   the same ISA baseline, on the same Debian, with the same flags. One source, two
   code generators: whatever separates these two rows is LLVM against GCC.
 comments: >-
-  Read this row only against c-gcc, and read the difference as codegen -- the
-  distribution, the libc and the linker are held constant precisely so that it
-  can be. Like gcc it links libc dynamically, so compare `.text`, never Binary.
+  Debian's clang, on the same base image, against the same libc and the same linker as
+  c-gcc: the distribution and the standard library are held constant so that the code
+  generator is the only thing that differs. Like gcc it links libc dynamically, so the
+  binary it ships does not contain the C library.

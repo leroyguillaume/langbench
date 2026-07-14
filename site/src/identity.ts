@@ -1,7 +1,7 @@
 // What names a row, on this site: the triple, and never a slug.
 //
 // An implementation is `(workload, language, compiler, interpreter)` — that is what a
-// `bench.yaml` declares, and it is what `report.md` puts in its columns. The
+// `bench.yaml` declares, and it is what the results table puts in its columns. The
 // harness also carries a `backend` slug on the wire, because its Markdown template
 // needs a string to hang an anchor off; the site never shows it and never sorts on
 // it. `java-native-image` reads as "java, native" and is in fact
@@ -28,21 +28,21 @@ export interface Identity extends Triple {
 }
 
 /**
- * What ran the language: `gcc`, `javac + openjdk`, `cpython`, `cython + cpython`.
+ * What ran the language: `gcc`, `javac · openjdk`, `cpython`, `cython · cpython`.
  *
  * An absence is a fact, not a hole — a backend that compiles ahead of time has no
  * interpreter, and saying so is the point of keeping the two fields apart. But a
  * label is not a table: here the absent half is simply not mentioned, because
- * `gcc + n/a` reads like a bug.
+ * `gcc · n/a` reads like a bug.
  */
 export function toolchain(triple: Triple): string {
   const parts = [triple.compiler, triple.interpreter].filter(
     (part): part is string => part !== null,
   );
-  return parts.length === 0 ? NOT_AVAILABLE : parts.join(" + ");
+  return parts.length === 0 ? NOT_AVAILABLE : parts.join(" · ");
 }
 
-/** A row, in one line: `c · gcc`, `java · javac + openjdk`, `python · cython + cpython`. */
+/** A row, in one line: `c · gcc`, `java · javac · openjdk`, `python · cython · cpython`. */
 export function label(triple: Triple): string {
   return `${triple.language} · ${toolchain(triple)}`;
 }

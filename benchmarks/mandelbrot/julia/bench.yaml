@@ -20,7 +20,6 @@ description: >-
   passed explicitly, because Julia's default is to compile for the host CPU -- the
   one thing this project never allows.
 comments: >-
-  The JIT's compile time sits inside the measured run, because that is where it
-  happens: a script's native code is cached nowhere, so every run pays for it
-  again. Julia is the only backend whose Build and Run columns measure overlapping
-  work, and that is the honest shape of a JIT, not a flaw in the protocol.
+  The JIT compiles on first call, inside the measured run: a script's native code is
+  cached nowhere, so every run pays for it again. There is no warm-up phase to hide
+  that in, and hiding it would be a different benchmark.

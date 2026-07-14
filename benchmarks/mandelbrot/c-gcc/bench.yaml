@@ -1,5 +1,5 @@
 # What this backend is. The harness reads this file and nothing else: not the
-# directory name, not the image labels. See METHODOLOGY.md#repository-layout.
+# directory name, not the image labels. See CLAUDE.md#declaring-the-work.
 language: c
 compiler: gcc
 # Nothing executes the binary but the CPU.
@@ -14,5 +14,5 @@ description: >-
   ISA baseline, with std threads and an atomic work queue. Every other row in
   this table is read against this one.
 comments: >-
-  gcc links libc dynamically, so the Binary column looks small: the code is still
-  there, in libc.so, outside the file we measured. Compare `.text`, never Binary.
+  gcc links libc dynamically: the binary this row ships does not contain the C
+  library. The code is in libc.so, outside the file the harness measures.

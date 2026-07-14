@@ -16,7 +16,6 @@ description: >-
   engine: module resolution, the permission checks, and how quickly it can boot a
   worker isolate.
 comments: >-
-  The Build column here is `deno check`, a full type check, where js-nodejs
-  reports `node --check`, a parse. Strictly more work, and not a like-for-like
-  comparison -- read the Build column against Deno itself. DENO_DIR ships warm
-  with the node typings, because a measured run has no network to fetch them from.
+  The build phase is `deno check`, a full type check, where js-nodejs runs `node
+  --check`, a parse. DENO_DIR ships warm with the node typings, because a measured run
+  has no network to fetch them from.

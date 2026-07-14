@@ -1,29 +1,39 @@
-// Copies the campaigns the site publishes into `public/`, where Vite serves them.
+// What the site is built from: the campaigns, and the workloads that declare the work.
 //
-// The site's data files are the campaigns in `samples/` — or wherever `SAMPLES_DIR`
-// points — byte for byte. There is no export step and no intermediate format: the
-// raw samples are the only thing a run writes and the only thing that cannot be
-// recomputed, so they are what gets published. Everything the site shows, it
-// derives — with the harness's own code, compiled to WebAssembly.
-// See `METHODOLOGY.md#sampling`.
+// Two inputs, and they answer two different questions.
 //
-// One campaign per (workload, architecture), because **an absolute timing never crosses an
-// architecture**
-// (`METHODOLOGY.md#the-architecture-rule`). The architecture in the filename is a
-// convenience for a human reading `ls`; it is *not* what the site keys on. The
-// architecture is read out of the machine record inside each file, by the WASM — a
-// filename is a label somebody typed, and the header is what the machine said
-// about itself.
+// **The campaigns** — `samples/<workload>/<architecture>.ndjson`, or wherever
+// `SAMPLES_DIR` points — are copied into `public/` byte for byte. There is no export
+// step and no intermediate format: the raw samples are the only thing a run writes
+// and the only thing that cannot be recomputed, so they are what gets published.
+// Everything the site shows about a campaign, it derives — with the harness's own
+// code, compiled to WebAssembly. See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
+//
+// **The workloads** come from `langbench workload list --json`: the harness reading
+// the manifests, never a YAML parser of our own. They are what the *workload* page
+// describes — the work as it is declared today. A campaign page describes the work as
+// it *was measured*, which is the snapshot inside the campaign's own header, and the
+// two are allowed to differ: editing `workload.yaml` cannot rewrite what a campaign
+// from three months ago says it ran.
+//
+// One campaign per (workload, architecture), because **an absolute timing never
+// crosses an architecture** (`site/src/content/methodology.md#flags-and-the-architecture-baseline`).
+// The
+// path is a convenience for a human reading `ls`; it is *not* what the site keys on.
+// The workload and the architecture are read out of the header the run recorded — a
+// filename is a label somebody typed.
 //
 // A config file the tooling requires in JS: the site's own source is TypeScript.
 
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..");
 const target = resolve(here, "..", "public", "data");
+const generated = resolve(here, "..", "src", "generated");
 
 const DEFAULT_SOURCE = "samples";
 
@@ -39,13 +49,12 @@ const chosen =
 
 const CAMPAIGN = /\.ndjson$/;
 
-// `samples/<workload>/<architecture>.ndjson`, and also a plain `*.ndjson` at the top
-// level — `samples.local/` holds one file, written by hand with `--output`.
-//
-// The directory name is a convenience for a human reading `ls`, exactly like the
-// architecture in the filename: **neither is what the site keys on**. Both the
-// workload and the architecture are read out of the campaign's own header, by the
-// WASM. A path is a label somebody typed; the header is what the run recorded.
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+/** `samples/<workload>/<architecture>.ndjson`, and a plain `*.ndjson` at the top level. */
 function campaignsIn(dir) {
   let entries;
   try {
@@ -53,10 +62,7 @@ function campaignsIn(dir) {
   } catch (error) {
     // A pointed-at directory that does not exist is a typo, not an empty campaign
     // set. Say which path, and say who chose it.
-    console.error(
-      `cannot read the campaign directory ${dir}: ${error.message}\n` + `It came from ${chosen}.`,
-    );
-    process.exit(1);
+    fail(`cannot read the campaign directory ${dir}: ${error.message}\nIt came from ${chosen}.`);
   }
 
   const found = [];
@@ -70,60 +76,119 @@ function campaignsIn(dir) {
   return found;
 }
 
-const campaigns = campaignsIn(source);
+/**
+ * The facts a *route* needs about a campaign: which workload, which architecture, when,
+ * and on what host. Read out of the campaign's own header — never out of its path.
+ *
+ * This is the one place JavaScript parses a campaign, and it is a build script rather
+ * than the browser. It reads the header line and four fields of it; it never touches a
+ * checksum, which is a 64-bit integer that `JSON.parse` would silently round past 2^53.
+ * (The header spells checksums as strings for that very reason, and the samples under
+ * it are never parsed here at all.) In the browser the rule stands unweakened: the
+ * campaign is fetched as text and parsed in Rust.
+ */
+function header(file) {
+  const line = readFileSync(join(source, file), "utf8").split("\n", 1)[0];
+  let record;
+  try {
+    record = JSON.parse(line);
+  } catch (error) {
+    fail(`${file} does not start with a campaign header: ${error.message}`);
+  }
+  const workload = record.campaign?.workload?.id;
+  const architecture = record.machine?.architecture;
+  if (typeof workload !== "string" || typeof architecture !== "string") {
+    fail(
+      `${file} has no workload or no architecture in its header.\n` +
+        "A campaign is one machine measuring one workload, and it records both.",
+    );
+  }
+  return {
+    file,
+    workload,
+    architecture,
+    timestamp: record.campaign?.timestamp ?? null,
+    hostname: record.machine?.hostname ?? null,
+  };
+}
 
-if (campaigns.length === 0) {
+const files = campaignsIn(source);
+
+if (files.length === 0) {
   // Not a warning to be scrolled past: a site built without a campaign is a site
   // that renders an error page. Fail here, where the message is legible.
-  console.error(
+  fail(
     `no campaign to publish: no .ndjson in ${source} (${chosen}).\n` +
       "Run one:\n" +
       "  langbench workload run mandelbrot --output samples/mandelbrot/x86_64.ndjson\n" +
       "Or point the site at a campaign you already have:\n" +
       "  SAMPLES_DIR=samples.local npm run dev",
   );
-  process.exit(1);
 }
 
-for (const campaign of campaigns) {
-  const destination = join(target, campaign);
+for (const file of files) {
+  const destination = join(target, file);
   mkdirSync(dirname(destination), { recursive: true });
-  copyFileSync(join(source, campaign), destination);
+  copyFileSync(join(source, file), destination);
 }
 
-// The index the site fetches first. Filenames only — every fact about a campaign
-// (its workload, its architecture, its host, its date) lives in the campaign itself.
-writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(campaigns, null, 2)}\n`);
-console.log(`published ${campaigns.length} campaign(s) from ${chosen}: ${campaigns.join(", ")}`);
+// The index the islands fetch first. Filenames only — every *number* about a campaign
+// lives in the campaign, and the WASM is what reads it.
+writeFileSync(join(target, "campaigns.json"), `${JSON.stringify(files, null, 2)}\n`);
+console.log(`published ${files.length} campaign(s) from ${chosen}: ${files.join(", ")}`);
 
-// METHODOLOGY.md, copied rather than rewritten.
+// The workloads and their backends, as the manifests declare them *today* — through the
+// harness, which is the only thing in this repository that reads a `workload.yaml` or a
+// `bench.yaml`. A YAML parser here would be a second reader of files whose schemas are
+// generated from the Rust structs, and the two would drift the first time one of them
+// was taught something.
 //
-// It is the document every rule in this repository links to when it looks like
-// excessive caution, and the site publishes it for the same reason the README
-// leads with it: a number nobody can audit is a number nobody should trust. It is
-// copied *in*, at build time, because Astro only renders Markdown it can see under
-// `src/` — and a second, hand-maintained copy of it on the site would be a
-// methodology that drifts from the one the harness is written against, which is
-// the failure `bench.schema.json` is generated to avoid.
-// The same goes for `docs/columns.md`: what every column of the results table means,
-// and how to read a row. `langbench md` interpolates that file into the report and
-// the site renders it under the same table — one explanation of why we report the
-// minimum and not the average, written once, for a reader who has never opened a
-// benchmark before, and improved in one place.
-const generated = resolve(here, "..", "src", "generated");
-mkdirSync(generated, { recursive: true });
-
-const shared = [
-  { from: resolve(root, "METHODOLOGY.md"), to: "methodology.md" },
-  { from: resolve(root, "docs", "columns.md"), to: "columns.md" },
-];
-
-for (const { from, to } of shared) {
-  try {
-    copyFileSync(from, join(generated, to));
-  } catch (error) {
-    console.error(`cannot read ${from}: ${error.message}`);
-    process.exit(1);
-  }
-  console.log(`published ${from}`);
+// `--json` spells the checksum as a string, so this parse is safe. Diagnostics go to
+// stderr; stdout carries the JSON alone.
+//
+// `benchmarks/` is relative to the repository root, which is where the harness is
+// normally run from.
+function harness(...args) {
+  const json = execFileSync("cargo", ["run", "--quiet", "--", ...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  return JSON.parse(json);
 }
+
+let declared;
+try {
+  // A workload's `implementations` are directory names — the harness's business, never
+  // the reader's. What an implementation *is* is the triple and what its author wrote
+  // about it, so the manifests are read and travel with the workload. A backend that
+  // exists but has never been measured still appears on the workload's page, which is
+  // right: it is declared work, and the campaign is what has not happened yet.
+  declared = harness("workload", "list", "--json").map((workload) => ({
+    ...workload,
+    backends: harness("implementation", "list", workload.id, "--json"),
+  }));
+} catch (error) {
+  fail(
+    `cannot read the manifests: ${error.message}\n` +
+      "The site describes the work from the manifests, and the harness is what reads them.\n" +
+      "A Rust toolchain is required to build the site — the same one `npm run wasm` needs.",
+  );
+}
+
+// What the *routes* are made of: one page per workload, one page per campaign, and a
+// sidebar that lists both. Imported by Astro at build time — never fetched.
+//
+// A workload with no campaign is kept, deliberately: it is work somebody declared and
+// nobody has measured yet, and the page says so. A campaign whose workload no longer
+// exists on disk is kept too — it *ran*, and deleting the manifest afterwards does not
+// unrun it.
+mkdirSync(generated, { recursive: true });
+const campaigns = files.map(header);
+writeFileSync(
+  join(generated, "site.json"),
+  `${JSON.stringify({ workloads: declared, campaigns }, null, 2)}\n`,
+);
+console.log(
+  `published ${declared.length} workload(s): ${declared.map((workload) => workload.id).join(", ")}`,
+);

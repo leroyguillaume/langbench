@@ -19,9 +19,8 @@ required-features = ["cli"]
 
 [features]
 default = ["cli"]
-# Everything that touches the machine: discovery, Docker, the campaign, the
-# Markdown renderer.
-cli = ["dep:chrono", "dep:clap", "dep:liquid", "dep:signal-hook", "dep:tracing-subscriber"]
+# Everything that touches the machine: discovery, Docker, the campaign.
+cli = ["dep:chrono", "dep:clap", "dep:signal-hook", "dep:tracing-subscriber"]
 # The `wasm-bindgen` boundary the website calls. Never built for the host.
 wasm = ["dep:console_error_panic_hook", "dep:js-sys", "dep:serde-wasm-bindgen", "dep:wasm-bindgen"]
 
@@ -35,7 +34,6 @@ tracing = "0.1.44"
 
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "std"], optional = true }
 clap = { version = "4.6.1", features = ["derive", "env"], optional = true }
-liquid = { version = "0.26.11", optional = true }
 signal-hook = { version = "0.4.4", optional = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
 

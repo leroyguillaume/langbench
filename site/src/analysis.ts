@@ -67,7 +67,7 @@ export const aggregateSchema = z.object({
    * Contention inflates a spinning thread's CPU clock and the compute clock alike, in
    * both directions, so there is no one-sided noise to argue from and no reason the
    * extreme should be the estimate.
-   * See `METHODOLOGY.md#parallel-efficiency-is-a-median-not-a-minimum`.
+   * See `site/src/content/methodology.md#how-a-run-is-measured`.
    */
   run_cores: summarySchema.nullable(),
   /** The container's peak memory, min-of-N. */
@@ -245,7 +245,7 @@ export const comparisonSchema = z.object({
    * The two rows come from two architectures, and **every timing above is therefore
    * meaningless as a comparison**. The harness decides this, and the site's only job
    * is to say it out loud: a ratio travels between architectures, a millisecond does not.
-   * See `METHODOLOGY.md#the-architecture-rule`.
+   * See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
    *
    * The checksums are the exception, and the reason the crossing is worth offering:
    * in `strict` mode they are obliged to be bit-identical on x86-64 and on AArch64
@@ -354,7 +354,7 @@ export async function fetchCampaign(
  * Every campaign this build publishes, summarized — one per architecture.
  *
  * They are kept apart on purpose. **An absolute timing never crosses an architecture**
- * (`METHODOLOGY.md#the-architecture-rule`): an x86-64 millisecond and an aarch64
+ * (`site/src/content/methodology.md#flags-and-the-architecture-baseline`): an x86-64 millisecond and an aarch64
  * millisecond are not the same claim, and a chart that puts them in one bar
  * group invites exactly the comparison the methodology forbids. So the site
  * loads them all and shows one at a time.
@@ -383,7 +383,7 @@ export async function fetchCampaigns(baseUrl: string, options: Options): Promise
  * the gap has to clear, and the verdict when it does not. A gap smaller than the
  * noise the campaign carries is a **tie**, however different the two minima look
  * — and deciding that is `src/compare.rs`'s job, not this file's. See
- * `METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
+ * `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
  *
  * Synchronous, and the WASM has to be up: every caller reaches this through a
  * campaign that `fetchCampaign` already loaded. Throws on a row the campaign

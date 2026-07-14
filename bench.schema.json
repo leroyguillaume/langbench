@@ -45,7 +45,7 @@
       "$ref": "#/$defs/Modes"
     },
     "source": {
-      "description": "The kernel, relative to this manifest's directory. One file, because the\nbenchmark rule is one file — and its size in bytes is a published metric.\n\nDeclared rather than guessed: the harness would otherwise have to decide\nwhich of the files beside the manifest is *the source*, and the only way to\ndo that is to pattern-match a name — which is parsing the path, under\nanother name. See `METHODOLOGY.md#repository-layout`.",
+      "description": "The kernel, relative to this manifest's directory. One file, because the\nbenchmark rule is one file — and its size in bytes is a published metric.\n\nDeclared rather than guessed: the harness would otherwise have to decide\nwhich of the files beside the manifest is *the source*, and the only way to\ndo that is to pattern-match a name — which is parsing the path, under\nanother name. See `CLAUDE.md#declaring-the-work`.",
       "type": "string"
     }
   },
@@ -58,7 +58,7 @@
   ],
   "$defs": {
     "Architecture": {
-      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the architecture rule is\nwritten for. See `METHODOLOGY.md#the-architecture-rule`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
+      "description": "A CPU architecture a backend can be built and measured on.\n\nThe two this project supports, because they are the two the architecture rule is\nwritten for. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.\n\nThis exists because a toolchain is allowed to be *missing*. Kotlin/Native\npublishes no `linux-aarch64` host compiler, so a backend using it cannot be\nbuilt on an AArch64 bench machine at all — not slowly, not under emulation\n(which this project forbids outright): it simply does not exist there. That is\na fact about the backend, so the backend declares it, and a campaign on the\nother architecture skips the row and says why. The alternative is a `docker\nbuild` that fails halfway through a campaign with a 404.",
       "oneOf": [
         {
           "description": "64-bit x86. `-march=x86-64-v3` and friends.",
@@ -92,7 +92,7 @@
       ]
     },
     "FpMode": {
-      "description": "Floating-point semantics the kernels are compiled under.\n\nThe axis is FP semantics, not \"optimization on/off\": every mode is `-O3`.\nSee `METHODOLOGY.md#floating-point-modes`.",
+      "description": "Floating-point semantics the kernels are compiled under.\n\nThe axis is FP semantics, not \"optimization on/off\": every mode is `-O3`.\nSee `site/src/content/methodology.md#floating-point-modes`.",
       "oneOf": [
         {
           "description": "`-ffp-contract=off`, no fast-math. Bit-reproducible IEEE 754.",

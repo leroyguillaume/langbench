@@ -1,34 +1,139 @@
 ---
-// The results of one campaign: the tiles, the charts, the table, and what the
-// campaign lost. An island, because there is nothing to render until a browser has
-// fetched a campaign and the WebAssembly has aggregated it.
+// What this is, for somebody who has just arrived.
 //
-// The column reference is *not* an island, and not a second explanation either: it
-// is `docs/columns.md`, the same file `langbench md` interpolates into the report. A
-// table of fifteen columns is unreadable without it if you have never opened a
-// benchmark before — and "why the minimum and not the average" deserves to be
-// answered once, in one place, rather than twice in two voices.
+// It is the one page on the site that shows no number, and that is deliberate: a
+// reader who lands on a chart of thirty backends without being told what was measured
+// will read it as a ranking of languages, which is precisely the claim this project
+// refuses to make. So the front page says what a workload is, what a campaign is, and
+// what a row of a table can and cannot mean — and then hands over to the work.
 //
-// It is *slotted into* the island rather than placed after it, because it belongs
-// between the table it explains and the implementations that come next. Astro
-// renders the Markdown at build time and hands the island the resulting HTML; no
-// Markdown renderer ever reaches the browser.
+// Static, and no island: there is nothing here that comes out of a campaign.
 
-import { Results } from "../components/Results";
-import { Content as Columns } from "../generated/columns.md";
 import Layout from "../layouts/Layout.astro";
+import { campaigns, campaignsOf, workloads } from "../site";
+
+const base = import.meta.env.BASE_URL;
 ---
 
 <Layout
   title="langbench — compiler and runtime backends, measured"
-  description="Given the same source, how do different compiler and runtime backends compare? Raw samples, aggregated by the harness itself."
+  description="Given the same source, how do different compiler and runtime backends compare? Raw samples, aggregated by the harness itself, published with the machine that produced them."
 >
-  <Results client:only="react">
-    {/* The prose lives *inside* a `.page`, never as one: `.page` is a flex column
-        with a gap sized for sections, and a Markdown document whose every paragraph
-        is a direct child of it comes out with a section's worth of air per line. */}
-    <div slot="columns" class="prose" id="columns">
-      <Columns />
-    </div>
-  </Results>
+  <main class="page">
+    <header class="masthead">
+      <h1>langbench</h1>
+      <p>
+        Compiler and runtime backends, measured — and published with everything you need to
+        argue with the result.
+      </p>
+    </header>
+
+    <section class="card">
+      <h2>The question</h2>
+      <p class="lede">
+        Given the same source, how do different backends compare? gcc against clang on
+        identical C. CPython against PyPy against Cython on identical Python. HotSpot against
+        OpenJ9 against an ahead-of-time GraalVM binary, on identical bytecode.
+      </p>
+      <p>
+        The subject is the <strong>backend</strong> — the tuple of a language, the compiler
+        that turned it into machine code, and the interpreter that executed it. Not the
+        language. A language does not have a speed; a backend that ran a program on a machine
+        on a Tuesday does, and even that only means something once you know what it ran, on
+        what, and how far apart the repetitions landed.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>How it works</h2>
+      <dl class="glossary">
+        <div>
+          <dt>A workload is the work</dt>
+          <dd>
+            What is computed, how it is sized, and what the right answer is — declared in a
+            manifest, not baked into the harness. Mandelbrot is one workload; it is not the
+            point. Every workload says on its own page what it puts under the light and, just
+            as importantly, what it says nothing about.
+          </dd>
+        </div>
+        <div>
+          <dt>An implementation is a backend doing that work</dt>
+          <dd>
+            One source file, zero third-party dependencies, one Dockerfile. The thread count
+            and the size of the work arrive on the command line, so nothing can be
+            constant-folded away, and the answer is always printed, so nothing can be
+            optimised out of existence.
+          </dd>
+        </div>
+        <div>
+          <dt>A campaign is one machine measuring one workload</dt>
+          <dd>
+            Every implementation, every floating-point mode, interleaved round-robin, each run
+            in its own container under a pinned memory budget with the network switched off.
+            It writes one file: the raw samples, one line per run. Nothing else.
+          </dd>
+        </div>
+        <div>
+          <dt>Everything you see here is recomputed from those samples</dt>
+          <dd>
+            In your browser, by the harness itself — <code>src/analysis.rs</code>, compiled to
+            WebAssembly. This site sorts, formats and draws; it does no arithmetic on a
+            sample. There is no export step and no summary file to trust: the samples are
+            published byte for byte, and every chart is a function of them.
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>What it will not tell you</h2>
+      <ul class="claims">
+        <li>
+          <strong>Which language is fastest.</strong> It compares backends. A cross-language number
+          is confounded by construction — different source, different runtime, different standard
+          library — and is worth an order of magnitude, never a percentage.
+        </li>
+        <li>
+          <strong>Whether ARM beats x86.</strong> Absolute timings never cross an architecture:
+          changing architecture changes the silicon, and the confound is perfectly collinear with
+          the treatment. Only the ratios inside one campaign travel.
+        </li>
+        <li>
+          <strong>That a 3% gap is real</strong> — unless the campaign's own dispersion says it can
+          be. A difference smaller than the noise is a tie, whichever minimum came out lower, and
+          the head-to-head will say so rather than crown a winner.
+        </li>
+      </ul>
+      <p>
+        <a href={`${base}methodology/`}>The methodology says why, at length</a> — including the
+        things this project measured, found it could not defend, and deleted.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>The work, and what has been measured</h2>
+      <p>
+        {workloads.length === 1 ? "One workload" : `${workloads.length} workloads`} declared,
+        {campaigns.length === 1 ? " one campaign" : ` ${campaigns.length} campaigns`} published.
+        Pick the work first; a campaign is only ever read in the context of what it computed.
+      </p>
+      <ul class="workload-index">
+        {
+          workloads.map((workload) => (
+            <li>
+              <a href={`${base}workloads/${workload.id}/`}>{workload.id}</a>
+              <span class="muted">
+                {workload.implementations.length} implementations ·{" "}
+                {campaignsOf(workload.id).length === 0
+                  ? "not measured yet"
+                  : campaignsOf(workload.id)
+                      .map((campaign) => campaign.architecture)
+                      .join(", ")}
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+  </main>
 </Layout>

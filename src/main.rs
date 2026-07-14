@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use langbench::cli::{Cli, Command, ImplementationCommand, ReportCommand, WorkloadCommand};
+use langbench::cli::{Cli, Command, ImplementationCommand, SampleCommand, WorkloadCommand};
 use langbench::engine::DockerEngine;
 use langbench::machine::Machine;
 use langbench::{discovery, output, runner, shutdown};
@@ -38,8 +38,7 @@ fn main() -> Result<()> {
             output::bench_schema(&args)
         }
 
-        Command::Report(ReportCommand::Csv(args)) => output::csv(&args),
-        Command::Report(ReportCommand::Md(args)) => output::markdown(&args),
+        Command::Sample(SampleCommand::Convert(args)) => output::convert(&args),
 
         Command::Validate(args) => discovery::validate(&args.paths).map(|_| ()),
         Command::Machine => {

@@ -3,7 +3,7 @@
 //! Contention noise is one-sided: it can only slow a run down, never speed it
 //! up. So the minimum estimates the machine's capability, and the dispersion is
 //! a verdict on the campaign rather than an error bar on the result.
-//! See `METHODOLOGY.md#why-min-of-n-not-the-median`.
+//! See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 
 use serde::Serialize;
 

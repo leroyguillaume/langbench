@@ -1,6 +1,6 @@
 //! `docker build` prepares. `docker run` measures.
 //!
-//! See `METHODOLOGY.md#measurement-protocol`.
+//! See `site/src/content/methodology.md#how-a-run-is-measured`.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -45,7 +45,7 @@ pub struct RunSpec {
     /// Node, Bun and every other runtime with a garbage collector. Left
     /// unconstrained, they read the *host's* RAM — and the peak we published
     /// would describe the bench machine, not the backend. See
-    /// `METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget`.
+    /// `site/src/content/methodology.md#how-a-run-is-measured`.
     pub memory_limit_mb: u64,
     /// A wall-clock ceiling for one invocation. A container that exceeds it is
     /// killed and the campaign fails: a hung run must not be mistaken for a slow

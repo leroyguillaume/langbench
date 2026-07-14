@@ -19,6 +19,9 @@ interface Props {
   compact?: boolean;
 }
 
+/** The section of the methodology that argues for the exclusion this box undoes. */
+const METHODOLOGY = `${import.meta.env.BASE_URL}methodology/#warm-up-rounds`;
+
 export function Warmup({ rounds, includeWarmup, onChange, compact = false }: Props) {
   // A campaign run with `--warmup-rounds 0` has nothing to fold in, and a toggle
   // that changes nothing is a toggle that reads as broken.
@@ -41,7 +44,14 @@ export function Warmup({ rounds, includeWarmup, onChange, compact = false }: Pro
         </span>
       </label>
 
-      {!compact && (
+      {compact ? (
+        // The compare page has said most of this already, but never the *why*: a control
+        // that changes what the numbers are owes the reader the argument, wherever it
+        // appears.
+        <p className="warmup-note">
+          <a href={METHODOLOGY}>Why they are left out →</a>
+        </p>
+      ) : (
         <p className="warmup-note">
           {first} of every implementation {rounds === 1 ? "is" : "are"} run and recorded like any
           other, then left out of the numbers. A program's first run is its worst one — a JIT has
@@ -49,7 +59,8 @@ export function Warmup({ rounds, includeWarmup, onChange, compact = false }: Pro
           — and it says more about the machine getting going than about the backend. Nothing is
           deleted: the {rounds === 1 ? "round is" : "rounds are"} in <code>samples.ndjson</code>,
           flagged, and this box is how you look at {rounds === 1 ? "it" : "them"} — an exclusion you
-          cannot inspect is one you have to take on trust.
+          cannot inspect is one you have to take on trust.{" "}
+          <a href={METHODOLOGY}>The methodology makes the case in full →</a>
         </p>
       )}
     </div>
@@ -78,7 +89,8 @@ export function WarmupBanner({ rounds }: { rounds: number }) {
       <br />
       That is the point rather than a disappointment: it is the demonstration that the exclusion is
       not hiding anything. If a row <em>does</em> lurch when you tick this, that row's first run was
-      expensive, and it is worth reading its samples.
+      expensive, and it is worth reading its samples.{" "}
+      <a href={METHODOLOGY}>Warm-up rounds, in the methodology →</a>
     </p>
   );
 }

@@ -11,6 +11,6 @@ description: >-
   against the same ISA baseline and -- this is the part that matters -- the same
   libstdc++. One source, one standard library, two code generators.
 comments: >-
-  Debian's clang++ links libstdc++, not libc++, and that is deliberate: an STL
-  swap would be a second variable, and this row is here to isolate the first.
-  Read it against cpp-gcc, and read c-clang against c-gcc for the same reason.
+  Debian's clang++ links libstdc++, not libc++, and that is deliberate: swapping the
+  standard library would be a second variable, and this row exists to isolate the
+  first.

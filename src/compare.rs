@@ -6,7 +6,7 @@
 //! campaign is entitled to that claim only when the gap survives its own noise.
 //! A 3% gap between two rows that each wobble by 5% is not a result; it is the
 //! same number, measured twice, on a machine that was busy.
-//! See `METHODOLOGY.md#a-difference-smaller-than-the-dispersion-is-not-a-difference`.
+//! See `site/src/content/methodology.md#sampling-and-what-may-be-concluded`.
 //!
 //! So the verdict is computed **here**, in the harness, and not in the browser
 //! that displays it. Min-of-N, the dispersion, and what counts as a difference
@@ -87,7 +87,7 @@ pub struct Metric {
     ///
     /// A ratio, and never an absolute difference: two backends of one campaign on
     /// one architecture is exactly the comparison this project is allowed to publish, and
-    /// the ratio is the part of it that travels. See `METHODOLOGY.md#the-architecture-rule`.
+    /// the ratio is the part of it that travels. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
     pub ratio: Option<f64>,
     /// The gap, as a percentage of the smaller of the two. Always positive.
     pub gap_pct: Option<f64>,
@@ -104,7 +104,7 @@ pub struct Metric {
 ///
 /// Strings on the wire, because the checksum is a 64-bit integer and a JavaScript
 /// `Number` is a double. Compared here, in Rust, on the full width. See
-/// `METHODOLOGY.md#the-strict-mode-invariant`.
+/// `site/src/content/methodology.md#floating-point-modes`.
 #[derive(Clone, Debug, Serialize)]
 pub struct Checksums {
     #[serde(serialize_with = "crate::analysis::as_string")]
@@ -131,7 +131,7 @@ pub struct Comparison {
     /// The two rows come from two architectures, and **every timing below is
     /// therefore meaningless as a comparison**. It is computed here rather than
     /// left to the caller to notice: a renderer that forgot to check would publish
-    /// exactly the claim `METHODOLOGY.md#the-architecture-rule` exists to forbid. A ratio
+    /// exactly the claim `site/src/content/methodology.md#flags-and-the-architecture-baseline` exists to forbid. A ratio
     /// travels between architectures; a millisecond does not.
     ///
     /// The checksums, on the other hand, are *more* interesting across an architecture than
@@ -179,7 +179,7 @@ pub fn compare(analysis: &Analysis, selection: &Selection) -> Result<Comparison>
 /// hand; what the harness will not do is let the pair pass for a comparable one. A
 /// millisecond on x86-64 and a millisecond on AArch64 are two different machines
 /// answering two different questions, and no ratio of them means anything.
-/// See `METHODOLOGY.md#the-architecture-rule`.
+/// See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
 pub fn compare_across(
     left_analysis: &Analysis,
     right_analysis: &Analysis,
@@ -768,7 +768,7 @@ mod tests {
     /// Two architectures, deliberately. The pair is computed — refusing would only
     /// send somebody off to divide the two numbers by hand — but it is *flagged*,
     /// because a millisecond does not cross an architecture and a renderer that forgot to say
-    /// so would publish the one claim `METHODOLOGY.md#the-architecture-rule` forbids.
+    /// so would publish the one claim `site/src/content/methodology.md#flags-and-the-architecture-baseline` forbids.
     #[test]
     fn a_pair_drawn_from_two_architectures_says_so() {
         let x86 = on_arch(

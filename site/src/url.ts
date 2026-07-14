@@ -8,9 +8,14 @@
 // trusted. `?mode=strict,rubbish` narrows to `strict`; `?sort=drop_table` falls
 // back to the default rather than reaching the sort with a key it has no column for.
 //
-// Three pages, one vocabulary: `architecture`, `workload` and `warmup` mean the same thing on
-// each of them, and `compareHref` carries them across so that clicking "Compare"
-// from an aarch64 campaign does not silently land on the x86-64 one.
+// **A campaign is not in the query string on the results page: it is the path.**
+// `/workloads/mandelbrot/x86_64/` names one, and a `?architecture=` beside it would be
+// a second answer to a question the URL has already answered — free to contradict the
+// first. The head-to-head is the exception, and it has to be: a pair may be drawn from
+// two campaigns, so each *side* carries its own architecture, and the page's scope is
+// only the default for a side that names none. `compareHref` is what carries the scope
+// across, so that clicking "Compare" from an aarch64 campaign does not silently land on
+// the x86-64 one.
 
 import { z } from "zod";
 import { type FpMode, fpModeSchema } from "./analysis";
@@ -56,7 +61,16 @@ export interface Filters {
   modes: FpMode[];
 }
 
-export interface ResultsState extends Scope {
+/**
+ * What the results page keeps in its address bar — and the campaign is *not* in it.
+ *
+ * Which workload, on which machine, is the route. What is left is how the reader is
+ * looking at it: which rows, in what order, and whether the warmup rounds are in the
+ * aggregation.
+ */
+export interface ResultsState {
+  /** Warmup rounds are always recorded. This decides whether they are aggregated. */
+  includeWarmup: boolean;
   filters: Filters;
   sort: Sort;
 }
@@ -109,7 +123,7 @@ export function writeSide(architecture: string, key: string): string {
   return `${architecture}:${key}`;
 }
 
-/** Fastest first, on the statistic the report headlines. The same default as `report.md`. */
+/** Fastest first, on the statistic the table headlines: the minimum of the run phase. */
 const DEFAULT_SORT: Sort = { key: "run", descending: false };
 
 export const NO_FILTERS: Filters = {
@@ -155,7 +169,7 @@ export function readResults(): ResultsState {
   const sortKey = sortKeySchema.safeParse(query.get("sort"));
 
   return {
-    ...readScope(query),
+    includeWarmup: query.get("warmup") === "1",
     filters: {
       language: query.get("language"),
       compiler: query.get("compiler"),
@@ -173,7 +187,9 @@ export function readResults(): ResultsState {
 
 export function writeResults(state: ResultsState): void {
   const query = new URLSearchParams();
-  writeScope(query, state);
+  if (state.includeWarmup) {
+    query.set("warmup", "1");
+  }
 
   const { filters } = state;
   if (filters.language !== null) {
@@ -239,7 +255,7 @@ function replace(query: URLSearchParams): void {
  * The filters do not travel: they narrow a table, and a pair is not a table. But
  * the campaign and the workload do — an absolute timing never crosses an architecture, and
  * a "Compare" link that quietly switched architecture would be inviting exactly the
- * comparison `METHODOLOGY.md#the-architecture-rule` forbids.
+ * comparison `site/src/content/methodology.md#flags-and-the-architecture-baseline` forbids.
  */
 export function compareHref(scope: Scope, left?: string, right?: string): string {
   const query = new URLSearchParams();

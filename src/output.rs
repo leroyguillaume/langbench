@@ -1,13 +1,19 @@
-//! Rendering a recorded campaign: `langbench report csv` and `langbench report md`.
+//! Reading a recorded campaign back: `langbench sample convert`.
 //!
-//! Neither command measures anything. They read a `samples.ndjson` and are pure
-//! functions of it, which is what makes a report reproducible: the same file
-//! always renders the same table, on any host, months later.
+//! It measures nothing. It reads a `samples.ndjson` and is a pure function of it,
+//! which is what makes a conversion reproducible: the same file always converts to
+//! the same table, on any host, months later.
 //!
-//! Each rendering is a file, not a stream: `SAMPLES_OUTPUT` names the campaign —
-//! the same value `run` wrote to — while `CSV_OUTPUT` and `MD_OUTPUT` name the
-//! artifacts rendered from it. Three names, three meanings, no redirection to
-//! remember, and nothing on stdout.
+//! **It aggregates nothing either.** One row per sample, the columns the samples
+//! carry — because the human rendering of a campaign is the website, and the website
+//! recomputes min-of-N and the rest from these very samples with the harness's own
+//! code compiled to WebAssembly. A second aggregator here would be a second
+//! definition of what this project measures, and the two would drift the first time
+//! one of them was fixed.
+//!
+//! The conversion is a file, not a stream: `SAMPLES_OUTPUT` names the campaign — the
+//! same value `run` wrote to — while `CONVERT_OUTPUT` names what comes out of it. Two
+//! names, two meanings, no redirection to remember, and nothing on stdout.
 
 use std::fs;
 use std::path::Path;
@@ -15,30 +21,19 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::cli::{
-    CsvArgs, DEFAULT_BENCH_SCHEMA_OUTPUT, DEFAULT_WORKLOAD_SCHEMA_OUTPUT, ImplementationListArgs,
-    JsonSchemaArgs, ListArgs, MarkdownArgs,
+    ConvertArgs, DEFAULT_BENCH_SCHEMA_OUTPUT, DEFAULT_WORKLOAD_SCHEMA_OUTPUT,
+    ImplementationListArgs, JsonSchemaArgs, ListArgs, SampleFormat,
 };
 use crate::discovery;
-use crate::report;
 use crate::sample;
 use crate::workload::{self, Workload};
 
-pub fn csv(args: &CsvArgs) -> Result<()> {
-    let recording = sample::load(&args.render.samples)?;
-    write(&args.output, &sample::to_csv(&recording.samples))
-}
-
-pub fn markdown(args: &MarkdownArgs) -> Result<()> {
-    let template = match &args.template {
-        None => report::DEFAULT_TEMPLATE.to_owned(),
-        Some(path) => fs::read_to_string(path)
-            .with_context(|| format!("reading the template {}", path.display()))?,
+pub fn convert(args: &ConvertArgs) -> Result<()> {
+    let recording = sample::load(&args.samples)?;
+    let converted = match args.format {
+        SampleFormat::Csv => sample::to_csv(&recording.samples),
     };
-    let recording = sample::load(&args.render.samples)?;
-    write(
-        &args.output,
-        &report::render(&report::build(&recording), &template)?,
-    )
+    write(&args.output(), &converted)
 }
 
 /// A manifest schema, written where an editor and the pre-commit hook expect it.
@@ -135,17 +130,18 @@ fn write(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::workload::Workload;
     use tempfile::TempDir;
 
     use super::*;
-    use crate::cli::RenderArgs;
     use crate::machine::Machine;
     use crate::mode::FpMode;
     use crate::sample::{Campaign, Phase, Sample, SampleWriter};
 
     /// A one-sample campaign on disk, as `run` would have left it.
-    fn campaign(dir: &TempDir) -> RenderArgs {
+    fn campaign(dir: &TempDir) -> PathBuf {
         let samples = dir.path().join("samples.ndjson");
         let mut writer = SampleWriter::create(&samples).unwrap();
         writer
@@ -189,36 +185,52 @@ mod tests {
                 text_bytes: None,
             })
             .unwrap();
-        RenderArgs { samples }
+        samples
     }
 
     #[test]
-    fn csv_renders_to_its_own_file_and_not_to_stdout() {
+    fn a_conversion_writes_its_own_file_and_never_stdout() {
         let dir = TempDir::new().unwrap();
         let output = dir.path().join("out/samples.csv");
-        csv(&CsvArgs {
-            render: campaign(&dir),
-            output: output.clone(),
+        convert(&ConvertArgs {
+            samples: campaign(&dir),
+            format: SampleFormat::Csv,
+            output: Some(output.clone()),
         })
         .unwrap();
 
-        let rendered = fs::read_to_string(&output).unwrap();
-        assert!(rendered.starts_with("workload,"), "{rendered}");
-        assert!(rendered.contains("mandelbrot,c,gcc,"), "{rendered}");
+        let converted = fs::read_to_string(&output).unwrap();
+        assert!(converted.starts_with("workload,"), "{converted}");
+        assert!(converted.contains("mandelbrot,c,gcc,"), "{converted}");
     }
 
+    /// One row per sample, and nothing else: a conversion is not an analysis. The
+    /// header plus the one sample this campaign holds — never a min-of-N of it.
     #[test]
-    fn markdown_renders_to_its_own_file_and_not_to_stdout() {
+    fn a_conversion_aggregates_nothing() {
         let dir = TempDir::new().unwrap();
-        let output = dir.path().join("out/report.md");
-        markdown(&MarkdownArgs {
-            render: campaign(&dir),
-            output: output.clone(),
-            template: None,
+        let output = dir.path().join("samples.csv");
+        convert(&ConvertArgs {
+            samples: campaign(&dir),
+            format: SampleFormat::Csv,
+            output: Some(output.clone()),
         })
         .unwrap();
 
-        let rendered = fs::read_to_string(&output).unwrap();
-        assert!(rendered.contains("mandelbrot"), "{rendered}");
+        assert_eq!(fs::read_to_string(&output).unwrap().lines().count(), 2);
+    }
+
+    /// The default is the format's, not the caller's: a CSV lands in `samples.csv`.
+    #[test]
+    fn a_conversion_that_names_no_output_lands_where_its_format_says() {
+        assert_eq!(
+            ConvertArgs {
+                samples: PathBuf::from("samples.ndjson"),
+                format: SampleFormat::Csv,
+                output: None,
+            }
+            .output(),
+            PathBuf::from("samples.csv"),
+        );
     }
 }

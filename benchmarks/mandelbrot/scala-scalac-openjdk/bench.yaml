@@ -16,8 +16,6 @@ description: >-
   deliberately: the algorithm is the contract, and a foldLeft over a lazy Iterator
   would measure the collections library instead of the backend.
 comments: >-
-  Three languages, one JIT: read the Run column against the java and kotlin rows
-  and expect them to land close together, because all three hand C2 the same loop.
-  Where Scala pays is the Build column -- scalac takes several times javac's time
-  on this one file -- and the Startup column, which carries both the Scala 3
-  library and the 2.13 one it still stands on.
+  One scalac invocation on one file — no sbt, no Gradle, no jar — so the build phase
+  times the compiler and nothing else. Both the Scala 3 library and the 2.13 one it
+  still stands on are on the classpath, and the JVM loads them at startup.

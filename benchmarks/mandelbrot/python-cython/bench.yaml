@@ -17,7 +17,7 @@ description: >-
   a C extension module instead of interpreted. Cython is the compiler here,
   exactly as gcc is for the C kernel -- not a library the kernel imports.
 comments: >-
-  It is slower than the interpreter it compiles, and that is a result, not a bug.
-  Without type annotations the generated C manipulates PyFloat objects through
-  the C-API -- its hot loop holds 142 call instructions -- while CPython's
-  specializing interpreter takes a fast path for float arithmetic.
+  The source is python-cpython's, byte for byte, and that includes the absence of type
+  annotations — annotating it would be a different program, and this row is here to
+  compile the same one. Unannotated, the generated C manipulates PyFloat objects
+  through the C-API rather than raw doubles.

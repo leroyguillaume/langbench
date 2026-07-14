@@ -10,7 +10,7 @@ description: >-
   GraalVM native-image into a standalone ELF -- with the Scala runtime linked in.
   scalac runs first, as a step in this compiler's pipeline.
 comments: >-
-  Scala brings the heaviest runtime in this table -- the 3.x library plus the 2.13
-  one it still stands on -- and this row is what it costs to AOT-compile all of it
-  and then ship it: watch Build and Binary, not compute. Not to be confused with
-  scala-scala-native, which is Scala Native (LLVM), a different compiler entirely.
+  scalac runs first, as a step in this compiler's pipeline; native-image then analyses
+  and links the whole Scala runtime — the 3.x library plus the 2.13 one it still
+  stands on — into the ELF. Not to be confused with scala-scala-native, which is Scala
+  Native through LLVM: a different compiler entirely.

@@ -11,7 +11,7 @@ use crate::mode::FpMode;
 /// A CPU architecture a backend can be built and measured on.
 ///
 /// The two this project supports, because they are the two the architecture rule is
-/// written for. See `METHODOLOGY.md#the-architecture-rule`.
+/// written for. See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
 ///
 /// This exists because a toolchain is allowed to be *missing*. Kotlin/Native
 /// publishes no `linux-aarch64` host compiler, so a backend using it cannot be
@@ -83,8 +83,8 @@ pub struct Cli {
 /// Three resources, and the verbs that act on them.
 ///
 /// `workload` and `implementation` read the tree — what could be measured.
-/// `report` reads a campaign — what was. Neither family can be folded into the
-/// other: a workload does not render, and a campaign is not on disk until one has
+/// `sample` reads a campaign — what was. Neither family can be folded into the
+/// other: a workload does not convert, and a campaign is not on disk until one has
 /// run. The two that are left over, `validate` and `machine`, belong to no resource
 /// because they are about *everything* — every manifest at once, and the host under
 /// all of them.
@@ -98,9 +98,9 @@ pub enum Command {
     #[command(subcommand, alias = "impl")]
     Implementation(ImplementationCommand),
 
-    /// Render a recorded campaign. Never measures anything.
+    /// The samples a campaign recorded. Never measures anything.
     #[command(subcommand)]
-    Report(ReportCommand),
+    Sample(SampleCommand),
 
     /// Check every manifest on disk, and report all of them at once.
     ///
@@ -129,7 +129,8 @@ pub enum WorkloadCommand {
     /// Build every implementation of a workload and measure it.
     ///
     /// Writes `samples.ndjson` and nothing else — one machine, one workload, one
-    /// campaign. Render it with `langbench report`.
+    /// campaign. Read it on the website, or convert it with `langbench sample
+    /// convert`.
     Run(Box<RunArgs>),
 
     /// Write the JSON Schema of a `workload.yaml`.
@@ -150,12 +151,49 @@ pub enum ImplementationCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum ReportCommand {
-    /// Render a campaign's samples as CSV, for a spreadsheet or a dataframe.
-    Csv(CsvArgs),
+pub enum SampleCommand {
+    /// Convert a campaign's samples into another format, for a spreadsheet or a
+    /// dataframe.
+    ///
+    /// A pure function of `samples.ndjson`: it reads the file a campaign wrote and
+    /// writes the same rows in another shape. Nothing is aggregated, nothing is
+    /// dropped, nothing is measured — the human rendering is the website, which
+    /// recomputes every statistic from these same samples with the harness's own
+    /// code.
+    Convert(ConvertArgs),
+}
 
-    /// Render a campaign's samples as a Markdown report.
-    Md(MarkdownArgs),
+/// What `sample convert` can write.
+///
+/// An enum with one variant today rather than a `--csv` flag, and the difference is
+/// not cosmetic: a boolean would have to be *mandatory* — convert to what, otherwise?
+/// — which is a flag you always type and that therefore says nothing. A format is a
+/// value, so it is spelled as one, and the day this grows a `parquet` the command
+/// line that asks for CSV today still asks for CSV.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+#[value(rename_all = "snake_case")]
+pub enum SampleFormat {
+    /// One row per sample, the columns `samples.ndjson` carries. Raw, never aggregated.
+    #[default]
+    Csv,
+}
+
+impl SampleFormat {
+    /// Where this format lands when nobody says otherwise. The extension is the
+    /// format's business, not the caller's.
+    pub fn default_output(self) -> PathBuf {
+        match self {
+            Self::Csv => PathBuf::from("samples.csv"),
+        }
+    }
+}
+
+impl fmt::Display for SampleFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Csv => f.write_str("csv"),
+        }
+    }
 }
 
 /// A listing is read by a person *and* by a script. `--json` because a listing that
@@ -182,16 +220,10 @@ pub struct ImplementationListArgs {
     pub list: ListArgs,
 }
 
-/// The one file a campaign writes, and the one file a rendering reads.
-/// `SAMPLES_OUTPUT` names it on both sides, so a `run` and the `md` that follows
-/// agree without being told twice.
+/// The one file a campaign writes, and the one file a conversion reads.
+/// `SAMPLES_OUTPUT` names it on both sides, so a `run` and the `convert` that
+/// follows agree without being told twice.
 pub const DEFAULT_SAMPLES_OUTPUT: &str = "samples.ndjson";
-
-/// Where `langbench report csv` writes its table.
-pub const DEFAULT_CSV_OUTPUT: &str = "samples.csv";
-
-/// Where `langbench report md` writes its report.
-pub const DEFAULT_MD_OUTPUT: &str = "report.md";
 
 /// Where the two schemas are written. At the repo root, because that is where an
 /// editor's `yaml.schemas` mapping looks for them, and a pre-commit hook keeps them
@@ -236,14 +268,14 @@ impl JsonSchemaArgs {
     }
 }
 
-/// Reading a campaign back. Rendering is never part of measuring: the samples
-/// are the source of truth, and every artifact is recomputed from them.
+/// Reading a campaign back. Converting is never part of measuring: the samples
+/// are the source of truth, and everything else is recomputed from them.
 ///
-/// The samples are an *input* here, so they keep their own name —
-/// `SAMPLES_OUTPUT`, the value `run` wrote — and each rendering names its own
+/// The samples are an *input* here, so they keep the name they were written under —
+/// `SAMPLES_OUTPUT`, the value `run` wrote — and the conversion names its own
 /// destination separately.
 #[derive(Args, Debug)]
-pub struct RenderArgs {
+pub struct ConvertArgs {
     /// The `samples.ndjson` a campaign wrote.
     #[arg(
         value_name = "SAMPLES",
@@ -251,33 +283,26 @@ pub struct RenderArgs {
         default_value_os_t = PathBuf::from(DEFAULT_SAMPLES_OUTPUT),
     )]
     pub samples: PathBuf,
+
+    /// What to write.
+    #[arg(long, short, env = "FORMAT", default_value_t = SampleFormat::default())]
+    pub format: SampleFormat,
+
+    /// Where to write it. Defaults to the format's own name — `samples.csv`.
+    /// Missing parent directories are created.
+    #[arg(long, short, env = "CONVERT_OUTPUT")]
+    pub output: Option<PathBuf>,
 }
 
-#[derive(Args, Debug)]
-pub struct CsvArgs {
-    #[command(flatten)]
-    pub render: RenderArgs,
-
-    /// Path of the CSV to write. Missing parent directories are created.
-    #[arg(long, short, env = "CSV_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_CSV_OUTPUT))]
-    pub output: PathBuf,
-}
-
-#[derive(Args, Debug)]
-pub struct MarkdownArgs {
-    #[command(flatten)]
-    pub render: RenderArgs,
-
-    /// Path of the report to write. Missing parent directories are created.
-    #[arg(long, short, env = "MD_OUTPUT", default_value_os_t = PathBuf::from(DEFAULT_MD_OUTPUT))]
-    pub output: PathBuf,
-
-    /// A Liquid template to render instead of the built-in one.
-    ///
-    /// It receives exactly the same variables. The built-in one lives at
-    /// `templates/report.md.liquid`; copy it as a starting point.
-    #[arg(long, env = "TEMPLATE")]
-    pub template: Option<PathBuf>,
+impl ConvertArgs {
+    /// The file this conversion writes. The default follows the *format*, never the
+    /// caller: a CSV that landed in `samples.parquet` would be a file that lies about
+    /// itself.
+    pub fn output(&self) -> PathBuf {
+        self.output
+            .clone()
+            .unwrap_or_else(|| self.format.default_output())
+    }
 }
 
 #[derive(Args, Debug)]
@@ -313,7 +338,7 @@ pub struct RunArgs {
     /// Threads handed to the kernels and to the compilers.
     ///
     /// The harness resolves a default and passes it explicitly; the kernels
-    /// themselves must never auto-detect. See `METHODOLOGY.md#anti-cheating-contract`.
+    /// themselves must never auto-detect. See `site/src/content/methodology.md#the-work`.
     #[arg(long, env = "CPUS", default_value_t = default_cpu())]
     pub cpu: usize,
 
@@ -364,7 +389,7 @@ pub struct RunArgs {
     /// GraalVM's `native-image` is what sets this floor, and the build-phase
     /// tmpfs is charged to the same cgroup. Changing it changes the numbers —
     /// campaigns run under different budgets are not comparable.
-    /// See `METHODOLOGY.md#memory-is-only-comparable-under-a-pinned-budget`.
+    /// See `site/src/content/methodology.md#how-a-run-is-measured`.
     #[arg(long, env = "MEMORY_LIMIT_MB", default_value_t = 8192)]
     pub memory_limit_mb: u64,
 

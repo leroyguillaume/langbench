@@ -69,7 +69,7 @@ fn every_key_on_the_wire_is_snake_case() {
 }
 
 /// [`Workload`] round-trips: it *wrote* the campaign header, and it has to read it
-/// back — `langbench report` on the campaign `langbench workload run` just finished is
+/// back — `langbench sample convert` on the campaign `langbench workload run` just finished is
 /// exactly that. It reads kebab and writes snake, so this is where the two
 /// conventions could quietly stop meeting.
 ///

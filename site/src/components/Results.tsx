@@ -1,15 +1,23 @@
 // One campaign, read out: the tiles, the charts, the table, and what it lost.
 //
-// The head-to-head used to be a card at the bottom of this page. It has a page of
-// its own now, and this one links to it carrying the architecture and the workload — never
-// the filters. A pair is not a table, and a reader who narrowed this table to one
-// language has not thereby declined to compare it with another.
+// **Which campaign is the route's business, not this island's.** The page is
+// `/workloads/<workload>/<architecture>/`, and the two names arrive as props — so
+// there is no campaign selector here, and there cannot be two architectures on one
+// screen. The architecture rule is enforced by the shape of the site rather than by a
+// note under a chart.
+//
+// The campaign is then picked by what its *header* says, never by the file whose name
+// matched: a path is a label somebody typed, and the header is what the run recorded.
+//
+// The head-to-head is a page of its own, and this one links to it carrying the
+// campaign — never the filters. A pair is not a table, and a reader who narrowed this
+// table to one language has not thereby declined to compare it with another.
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Aggregate, Analysis, Failure, LoadedCampaign } from "../analysis";
 import { useCampaigns } from "../campaigns";
 import { bytes, dispersion, mebibytes, milliseconds, optional, ratio } from "../format";
-import { anchorId, label, labelWithMode, toolchain } from "../identity";
+import { label, labelWithMode } from "../identity";
 import { modeSeries, SEQUENTIAL, WALL_SERIES } from "../series";
 import { compareHref, type ResultsState, readResults, writeResults } from "../url";
 import { BarChart, type ChartRow } from "./BarChart";
@@ -18,19 +26,16 @@ import { filterRows, ResultsTable, type Sort, type SortKey, sortRows } from "./R
 import { Warmup, WarmupBanner } from "./Warmup";
 
 interface ResultsProps {
-  /**
-   * The column reference, rendered from `docs/columns.md` by Astro and slotted into
-   * this island as HTML. It is prose, it is the same prose `langbench md`
-   * interpolates into the report, and it is built at build time — the browser gets
-   * no Markdown and no renderer for it.
-   */
-  columns?: ReactNode;
+  /** The workload this campaign measured, from the route. */
+  workload: string;
+  /** The architecture it measured it on, from the route. */
+  architecture: string;
 }
 
-export function Results({ columns }: ResultsProps) {
+export function Results({ workload, architecture }: ResultsProps) {
   // The URL is read once, on mount, and written on every change: the address bar
   // describes what is on screen, and a link to it puts somebody else in front of
-  // the same claim.
+  // the same claim. The *campaign* is not in the query string — it is the path.
   const [state, setState] = useState<ResultsState>(readResults);
   const { campaigns, error, pending } = useCampaigns(state.includeWarmup);
 
@@ -51,38 +56,27 @@ export function Results({ columns }: ResultsProps) {
   // collapses the document, and the browser takes the reader's scroll position with
   // it.
   if (campaigns === null) {
-    return <p className="status">Reading the campaigns…</p>;
+    return <p className="status">Reading the campaign…</p>;
   }
 
-  // One architecture at a time, always. Two campaigns from two architectures are two
-  // experiments: an x86-64 millisecond and an aarch64 millisecond are not the same
-  // claim, and a chart that puts them in one bar group invites exactly the
-  // comparison `METHODOLOGY.md#the-architecture-rule` forbids. The reader picks an architecture; the
-  // site never adds one to another.
-  // A campaign is one machine measuring one workload, so it takes **both** to name
-  // one. Keying on the architecture alone was enough when Mandelbrot was the only
-  // work there was; with two workloads on one architecture it would show whichever
-  // campaign happened to be published first, under the other one's name.
-  //
-  // The fallbacks widen one field at a time — the workload on this architecture, then
-  // anything at all — so a stale link keeps as much of what it asked for as still
-  // exists, rather than falling all the way back to the first campaign in the list.
-  const loaded =
-    campaigns.find(
-      (entry) =>
-        entry.analysis.architecture === state.architecture &&
-        entry.analysis.campaign.workload.id === state.workload,
-    ) ??
-    campaigns.find((entry) => entry.analysis.architecture === state.architecture) ??
-    campaigns.find((entry) => entry.analysis.campaign.workload.id === state.workload) ??
-    campaigns[0];
+  // The campaign this route names, identified by its own header. No fallback: a page
+  // that quietly rendered a *different* campaign than the one in its address would be
+  // publishing a number under the wrong machine's name, which is the one mistake this
+  // whole project is arranged to prevent.
+  const loaded = campaigns.find(
+    (entry) =>
+      entry.analysis.architecture === architecture &&
+      entry.analysis.campaign.workload.id === workload,
+  );
   if (loaded === undefined) {
     return (
       <main className="page">
         <div className="warnings">
-          <h2>This build publishes no campaign</h2>
+          <h2>This campaign is not in the build</h2>
           <p>
-            No <code>samples/&lt;architecture&gt;.ndjson</code> was found when the site was built.
+            No published campaign says it measured <code>{workload}</code> on{" "}
+            <code>{architecture}</code>. The routes come from the campaign files, so this means the
+            file that produced this page carries a header naming something else.
           </p>
         </div>
       </main>
@@ -92,10 +86,9 @@ export function Results({ columns }: ResultsProps) {
   return (
     <Report
       loaded={loaded}
-      campaigns={campaigns}
+      workload={workload}
       state={state}
       setState={setState}
-      columns={columns}
       pending={pending}
     />
   );
@@ -103,20 +96,19 @@ export function Results({ columns }: ResultsProps) {
 
 interface ReportProps {
   loaded: LoadedCampaign;
-  campaigns: LoadedCampaign[];
+  workload: string;
   state: ResultsState;
   setState: (state: ResultsState) => void;
-  columns?: ReactNode;
   /** The harness is re-aggregating; these numbers are the previous ones. */
   pending: boolean;
 }
 
-function Report({ loaded, campaigns, state, setState, columns, pending }: ReportProps) {
+function Report({ loaded, workload: id, state, setState, pending }: ReportProps) {
   const { analysis } = loaded;
   const { campaign } = analysis;
 
   const workload =
-    analysis.workloads.find((entry) => entry.workload === state.workload) ?? analysis.workloads[0];
+    analysis.workloads.find((entry) => entry.workload === id) ?? analysis.workloads[0];
   const aggregates = useMemo(() => workload?.aggregates ?? [], [workload]);
 
   // What the filters left standing, in the order the harness ranked it: fastest
@@ -201,6 +193,10 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
     .filter((row) => row.run_peak_bytes !== null)
     .map((row) => chartRow(row, [row.run_peak_bytes?.min ?? null]));
 
+  // What the head-to-head has to be handed: which campaign these rows came from. The
+  // filters do not travel — they narrow a table, and a pair is not a table — but a
+  // "Compare" link that quietly switched campaign would be inviting exactly the
+  // comparison the architecture rule forbids.
   const scope = {
     architecture: analysis.architecture,
     workload: workload?.workload ?? null,
@@ -210,28 +206,22 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
   return (
     <main className={pending ? "page recomputing" : "page"} aria-busy={pending}>
       <header className="masthead">
-        <h1>langbench</h1>
+        <h1>
+          {campaign.workload.id} on {analysis.architecture}
+        </h1>
         <p>
-          Compiler and runtime backends, measured on <strong>{analysis.architecture}</strong>
+          Every backend of the{" "}
+          <a href={`${import.meta.env.BASE_URL}workloads/${campaign.workload.id}/`}>
+            {campaign.workload.id}
+          </a>{" "}
+          workload, measured on <strong>{analysis.architecture}</strong>
           {analysis.hostname !== null && ` (${analysis.hostname})`} on{" "}
           {new Date(campaign.timestamp).toLocaleDateString()}. Every number below is derived from
-          the raw samples by the harness itself — the site computes no statistic of its own.
+          the raw samples by the harness itself — the site computes no statistic of its own. The
+          timings on this page are comparable to each other and to nothing else: an absolute timing
+          does not cross an architecture, and a ratio is what travels.
         </p>
       </header>
-
-      {campaigns.length > 1 && (
-        <p className="isa-note">
-          This build publishes {campaigns.length} campaigns, one per architecture, and never shows
-          them together: an <strong>absolute timing does not cross an architecture</strong>. A
-          millisecond here and a millisecond on{" "}
-          {
-            campaigns.find((entry) => entry.analysis.architecture !== analysis.architecture)
-              ?.analysis.architecture
-          }{" "}
-          are not the same claim. Compare implementations <em>within</em> one architecture — the
-          ratio is what travels.
-        </p>
-      )}
 
       {analysis.warnings.length > 0 && (
         <section className="warnings">
@@ -249,23 +239,9 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
       <Tiles rows={filtered} analysis={analysis} />
 
       <FilterBar
-        scope={scope}
-        onScope={(next) =>
-          setState({
-            ...state,
-            architecture: next.architecture,
-            workload: next.workload,
-            includeWarmup: next.includeWarmup,
-          })
-        }
         filters={state.filters}
         onFilters={(filters) => setState({ ...state, filters })}
         rows={aggregates}
-        // Every workload this build published, not the one campaign on screen: the
-        // selector's job is to offer the others.
-        workloads={[...new Set(campaigns.map((entry) => entry.analysis.campaign.workload.id))]}
-        architectures={[...new Set(campaigns.map((entry) => entry.analysis.architecture))]}
-        architecture={analysis.architecture}
       />
 
       {/* Not in the filter bar, deliberately: a filter changes which rows you are
@@ -342,10 +318,10 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
         <h2>Every number</h2>
         <p>
           Nineteen columns, and none of them mean what you would guess from the name alone. If this
-          is your first benchmark table, read <a href="#columns">what each column means</a> — it is
-          written for exactly that, and it starts with how to read a row in thirty seconds. The
-          short version: look at <strong>Dispersion</strong> first, because nothing else on a row
-          can be more trustworthy than it.
+          is your first benchmark table, read{" "}
+          <a href={`${import.meta.env.BASE_URL}measurements/`}>what each column means</a> — written
+          for exactly that. The short version: look at <strong>Dispersion</strong> first, because
+          nothing else on a row can be more trustworthy than it.
         </p>
         <p className="card-aside">
           Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
@@ -356,60 +332,20 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
           <code>strict</code> row is obliged to produce. Click any header to sort; the charts above
           keep their own order. <a href={compareHref(scope)}>Put two languages head to head →</a>
         </p>
-        <ResultsTable rows={visible} sort={state.sort} onSort={onSort} />
+        <ResultsTable
+          rows={visible}
+          sort={state.sort}
+          onSort={onSort}
+          backendsHref={`${import.meta.env.BASE_URL}workloads/${campaign.workload.id}/`}
+        />
       </section>
 
       <Failures failures={failures} total={analysis.failures.length} />
 
-      {/* What the columns mean, before what the rows are: a reader who has just met
-          this table needs `Startup` explained before they need to know which JVM ran
-          the Kotlin. Rendered from `docs/columns.md` by Astro, at build time, and
-          slotted in here — the browser never sees a Markdown renderer. */}
-      <section className="card reference">{columns}</section>
-
-      <section className="card">
-        <h2>The implementations</h2>
-        <p>
-          One card per row of the table: what it is, and what the person who wrote it wanted you to
-          know. Three fields identify an implementation — the <strong>language</strong> the program
-          is written in, the <strong>compiler</strong> that turned it into machine code, and the{" "}
-          <strong>interpreter</strong> that executed it. Most implementations have only one of the
-          last two, and <code>n/a</code> is an answer rather than a gap: a compiled binary has no
-          interpreter, and an interpreted language has nothing compiled ahead of the run.
-        </p>
-        <div className="impls">
-          {analysis.backends
-            .filter((entry) => entry.workload === workload?.workload)
-            .map((entry) => (
-              // The anchor a table row links to. Its `id` is the triple, like every
-              // other thing on this site a reader can point at.
-              <article className="impl" id={anchorId(entry)} key={entry.id}>
-                <header className="impl-head">
-                  <h3>{entry.language}</h3>
-                  <span className="impl-chain">{toolchain(entry)}</span>
-                </header>
-
-                <dl className="impl-triple">
-                  <div className="impl-field">
-                    <dt>compiler</dt>
-                    <dd>{optional(entry.compiler)}</dd>
-                  </div>
-                  <div className="impl-field">
-                    <dt>interpreter</dt>
-                    <dd>{optional(entry.interpreter)}</dd>
-                  </div>
-                </dl>
-
-                <p className="impl-desc">{entry.description}</p>
-
-                {/* The manifest's `comments`: a caveat, a pinned version, a warning about
-                    what this row does *not* say. It reads as a footnote, so it looks like
-                    one — never as a second paragraph of the description. */}
-                {entry.comments !== null && <p className="impl-note">{entry.comments}</p>}
-              </article>
-            ))}
-        </div>
-      </section>
+      {/* What the columns mean is not repeated here. They are the same on every campaign
+          — they are what this project measures — so they are explained on **Metrics**,
+          once, and the table above links to it. A reference re-rendered under every
+          campaign is a reference that gets improved in one of them. */}
 
       <section className="card">
         <h2>The machine, and the campaign</h2>
@@ -446,11 +382,13 @@ function Report({ loaded, campaigns, state, setState, columns, pending }: Report
 
       <p className="footnote">
         The samples this page is built from are{" "}
-        <a href={`${import.meta.env.BASE_URL}data/${analysis.architecture}.ndjson`}>
-          samples/{analysis.architecture}.ndjson
+        <a
+          href={`${import.meta.env.BASE_URL}data/${campaign.workload.id}/${analysis.architecture}.ndjson`}
+        >
+          samples/{campaign.workload.id}/{analysis.architecture}.ndjson
         </a>{" "}
-        — this campaign's only artefact. Everything above is recomputed from it, in Rust, in your
-        browser.
+        — this campaign's only artefact, published byte for byte. Everything above is recomputed
+        from it, in Rust, in your browser.
       </p>
     </main>
   );

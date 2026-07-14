@@ -19,12 +19,8 @@ description: >-
   time by GraalVM native-image into a standalone ELF. No JVM at run time, no JIT, no
   class loading -- the program starts like a C binary because it is one.
 comments: >-
-  Read it against java-javac-openjdk, and read the Compute column, not Startup: an
-  AOT binary arrives already compiled, while a JIT is still warming up inside the
-  measured region, and that is where the gap lives. Startup barely moves, because
-  container creation dominates that column for every fast backend alike. What AOT
-  costs instead is the Build column -- tens of seconds of whole-program analysis. It
-  is not free, it is prepaid. It is also the only JVM row with a true -march, though
-  on AArch64 native-image offers no armv8.2-a, so it takes armv8.1-a: one level
-  BELOW the campaign's baseline, never above. Binary is large because the runtime is
-  linked in rather than installed; compare `.text`.
+  javac still runs, as a step in this compiler's pipeline rather than as the compiler:
+  what ships is an ELF with the garbage collector and the runtime linked into it, and
+  no JVM is installed in the image. The only JVM row with a true -march — though on
+  AArch64 native-image offers no armv8.2-a and takes armv8.1-a: one level BELOW the
+  campaign's baseline, never above.

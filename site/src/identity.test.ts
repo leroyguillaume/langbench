@@ -48,7 +48,7 @@ describe("naming an implementation", () => {
         compiler: "cython",
         interpreter: "cpython",
       }),
-    ).toBe("cython + cpython");
+    ).toBe("cython · cpython");
     // The one the slug got wrong: a compiler, and no interpreter at all.
     expect(
       toolchain({
@@ -61,7 +61,7 @@ describe("naming an implementation", () => {
 
   it("labels a row the way the report's columns read", () => {
     expect(label({ language: "java", compiler: "javac", interpreter: "openjdk" })).toBe(
-      "java · javac + openjdk",
+      "java · javac · openjdk",
     );
   });
 });

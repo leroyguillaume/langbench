@@ -20,5 +20,5 @@ description: >-
 comments: >-
   Pinned to Zig 0.15.2. The 0.16 standard library rewrote the I/O and process APIs
   this kernel calls, and a benchmark that has to be rewritten for every release is
-  measuring the release notes. The static, libc-free binary makes Binary look
-  large next to the dynamically linked C rows: compare `.text`.
+  measuring the release notes. The binary is static and libc-free: it carries
+  everything it needs, where the C rows load libc at run time.

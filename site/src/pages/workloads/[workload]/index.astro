@@ -1,0 +1,227 @@
+---
+// A workload: the work itself, as its manifest declares it today.
+//
+// This page shows **no measurement**, and the split is the whole reason it exists. A
+// workload is a question — what is computed, how it is sized, what the right answer
+// is, what it does and does not put under the light. A campaign is one machine's
+// answer to it. Reading the second without the first is how a benchmark table becomes
+// a language ranking.
+//
+// Static: everything here comes from `workload.yaml`, through the harness, at build
+// time. The description is rendered as the paragraphs its author wrote — the manifest
+// is one YAML string, and blank lines are the only structure it has.
+
+import Layout from "../../../layouts/Layout.astro";
+import { anchorId, toolchain } from "../../../identity";
+import { campaignsOf, paragraphs, workloads } from "../../../site";
+import { NOT_AVAILABLE } from "../../../format";
+
+export function getStaticPaths() {
+	return workloads.map((workload) => ({
+		params: { workload: workload.id },
+		props: { workload },
+	}));
+}
+
+const { workload } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const measured = campaignsOf(workload.id);
+const [lede, ...rest] = paragraphs(workload.description);
+
+// By language, then by the toolchain under it — the order a reader scans for a row,
+// and never the order the manifest happened to list the directories in.
+const backends = [...workload.backends].sort(
+	(left, right) =>
+		left.language.localeCompare(right.language) ||
+		toolchain(left).localeCompare(toolchain(right)),
+);
+
+// Every machine some backend of this workload can be built on. A backend that does not
+// cover all of them is missing from a campaign *by construction*, and the card says so
+// rather than leaving the reader to notice a hole in a table and assume the campaign
+// lost it. The set is the one the manifests declare — not the one that happens to have
+// been measured, which would make the fact disappear the moment a campaign was late.
+const architectures = [...new Set(backends.flatMap((backend) => backend.architectures))].sort();
+const missing = (backend: { architectures: string[] }) =>
+	architectures.filter((architecture) => !backend.architectures.includes(architecture));
+---
+
+<Layout
+  title={`${workload.id} — langbench`}
+  description={lede ?? `The ${workload.id} workload, as langbench declares it.`}
+>
+  <main class="page">
+    <header class="masthead">
+      <h1>{workload.id}</h1>
+      {lede !== undefined && <p>{lede}</p>}
+    </header>
+
+    {
+      rest.length > 0 && (
+        <section class="card">
+          <div class="prose">
+            {rest.map((paragraph) => (
+              <p>{paragraph}</p>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    <section class="card">
+      <h2>How the work is sized</h2>
+      <p>
+        The params are an ordered list, and the order is the order the kernels receive them on
+        the command line — never compile-time constants, or a backend could fold the whole
+        computation away before the timer started.
+      </p>
+      <dl class="machine">
+        {
+          workload.params.map((param) => (
+            <div style={{ display: "contents" }}>
+              <dt>{param.name}</dt>
+              <dd>{String(param.value)}</dd>
+            </div>
+          ))
+        }
+        <dt>the answer</dt>
+        <dd>
+          {workload.checksum ?? "n/a — this workload declares none"}
+        </dd>
+        <dt>implementations</dt>
+        <dd>{workload.implementations.length}</dd>
+      </dl>
+      {
+        workload.checksum !== null ? (
+          <p class="card-aside">
+            <strong>The answer is the correctness gate.</strong> Every implementation prints a
+            64-bit checksum on every single run, and a run that disagrees with this one is not a
+            slow run — it is a wrong run, and it never enters the statistics. The backend that
+            produced it is quarantined at the point it broke, and the campaign publishes the
+            failure rather than dropping the row.
+          </p>
+        ) : (
+          <p class="card-aside">
+            <strong>This workload declares no answer</strong>, so a campaign on it has no
+            correctness gate at all — and a backend that computes nothing and returns instantly
+            would top the table. Read every number here with that in hand.
+          </p>
+        )
+      }
+      <p class="card-aside">
+        The answer belongs to the work and to <em>these</em> params: size the work differently
+        and it no longer applies, which is why a campaign that overrides a param drops it and
+        says so.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Campaigns</h2>
+      {
+        measured.length === 0 ? (
+          <p>
+            Nothing has measured this workload yet. It is declared, its implementations are on
+            disk, and no campaign has been published — which the site says plainly rather than
+            rendering an empty table.
+          </p>
+        ) : (
+          <>
+            <p>
+              One campaign per architecture, and they are never shown together: an{" "}
+              <strong>absolute timing does not cross an architecture</strong>. A millisecond on
+              x86-64 and a millisecond on AArch64 are not the same claim. Compare backends{" "}
+              <em>within</em> a campaign — the ratio is what travels.
+            </p>
+            <ul class="campaign-index">
+              {measured.map((campaign) => (
+                <li>
+                  <a href={`${base}workloads/${campaign.workload}/${campaign.architecture}/`}>
+                    {campaign.architecture}
+                  </a>
+                  <span class="muted">
+                    {campaign.hostname ?? "unknown host"}
+                    {campaign.timestamp !== null &&
+                      ` · ${new Date(campaign.timestamp).toISOString().slice(0, 10)}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+    </section>
+
+    {/* The backends, on the page about the *work* rather than under a table of results.
+        These are the ones the workload declares — which is not the same set as the rows of
+        any campaign: one declared today has no numbers yet, and one that crashed has a
+        failure instead of a row. A reader who wants to know what `cython` is should not
+        have to pick a machine first. Each row of a campaign's table links straight back
+        here, to the anchor of its triple. */}
+    <section class="card">
+      <h2>The implementations</h2>
+      <p>
+        What each one is, and what the person who wrote it wanted you to know. Three fields
+        identify an implementation — the <strong>language</strong> the program is written in,
+        the <strong>compiler</strong> that turned it into machine code, and the{" "}
+        <strong>interpreter</strong> that executed it. Most have only one of the last two, and{" "}
+        <code>{NOT_AVAILABLE}</code> is an answer rather than a gap: a compiled binary has no
+        interpreter, and an interpreted language has nothing compiled ahead of the run.
+      </p>
+      <div class="impls">
+        {
+          backends.map((backend) => (
+            <article class="impl" id={anchorId(backend)}>
+              <header class="impl-head">
+                <h3>{backend.language}</h3>
+                <span class="impl-chain">{toolchain(backend)}</span>
+              </header>
+
+              <dl class="impl-triple">
+                <div class="impl-field">
+                  <dt>compiler</dt>
+                  <dd>{backend.compiler ?? NOT_AVAILABLE}</dd>
+                </div>
+                <div class="impl-field">
+                  <dt>interpreter</dt>
+                  <dd>{backend.interpreter ?? NOT_AVAILABLE}</dd>
+                </div>
+                <div class="impl-field">
+                  <dt>architectures</dt>
+                  <dd>{backend.architectures.join(" · ")}</dd>
+                </div>
+              </dl>
+
+              {/* A toolchain that does not exist is not a slow toolchain. This backend is
+                  absent from that machine's campaign for a reason, and the reason belongs
+                  here — beside the backend — rather than in the reader's head as "the
+                  campaign must have lost it". */}
+              {
+                missing(backend).length > 0 && (
+                  <p class="impl-missing">
+                    Not built on <strong>{missing(backend).join(", ")}</strong>: the toolchain does
+                    not exist there. A campaign on that machine skips this backend and says so —
+                    it is a fact about the backend, not a row the campaign lost.
+                  </p>
+                )
+              }
+
+              <p class="impl-desc">{backend.description}</p>
+
+              {/* The manifest's `comments`: a caveat, a pinned version, what this backend
+                  had to do differently. It reads as a footnote, so it looks like one. */}
+              {backend.comments !== null && <p class="impl-note">{backend.comments}</p>}
+            </article>
+          ))
+        }
+      </div>
+    </section>
+  </main>
+</Layout>
+
+{/* The mark on the card the address bar names. See `src/target.ts` — `:target` is not
+    enough here, because the router navigates by `pushState`. */}
+<script>
+  import { watchTarget } from "../../../target";
+
+  watchTarget();
+</script>

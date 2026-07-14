@@ -1,0 +1,28 @@
+---
+// What every number a campaign records means, once.
+//
+// It used to be slotted into the results page — the whole reference, rendered under
+// every campaign's table, on every campaign there is. The columns do not depend on the
+// machine, or on the workload, or on the campaign: they are what this project measures.
+// So they are explained in one place, and every table links to it.
+//
+// The prose is `src/content/measurements.md`, a fragment with no route of its own, exactly
+// like the methodology's pages: a Markdown *page* would carry its own layout, and
+// importing its `Content` anywhere else would drag that layout in with it.
+
+import Layout from "../layouts/Layout.astro";
+import { Content, frontmatter } from "../content/measurements.md";
+---
+
+<Layout title={`${frontmatter.title} — langbench`} description={frontmatter.summary}>
+  <main class="page">
+    <header class="masthead">
+      <h1>{frontmatter.title}</h1>
+      <p>{frontmatter.summary}</p>
+    </header>
+
+    <div class="prose">
+      <Content />
+    </div>
+  </main>
+</Layout>
