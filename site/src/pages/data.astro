@@ -1,17 +1,17 @@
 ---
-// What every column of a campaign means, once.
+// What the data a campaign records actually is: every column, once.
 //
 // It used to be slotted into the results page — the whole reference, rendered under
 // every campaign's table, on every campaign there is. The columns do not depend on the
 // machine, or on the workload, or on the campaign: they are what this project measures.
 // So they are explained in one place, and every table links to it.
 //
-// The prose is `src/content/metrics.md`, a fragment with no route of its own, exactly
+// The prose is `src/content/data.md`, a fragment with no route of its own, exactly
 // like the methodology's pages: a Markdown *page* would carry its own layout, and
 // importing its `Content` anywhere else would drag that layout in with it.
 
 import Layout from "../layouts/Layout.astro";
-import { Content, frontmatter } from "../content/metrics.md";
+import { Content, frontmatter } from "../content/data.md";
 ---
 
 <Layout title={`${frontmatter.title} — langbench`} description={frontmatter.summary}>

@@ -1,25 +1,9 @@
 ---
-title: Metrics
-summary: What every column of a campaign means, and how to read a row in thirty seconds.
+title: Data
+summary: What every column of a campaign means, and what it does not mean.
 ---
 
-## How to read a row in thirty seconds
-
-1. Look at **Dispersion** first. If it is above roughly 2%, the machine was noisy
-   and you may not compare rows by a few percent. Nothing else on the row can be
-   more trustworthy than this column.
-2. Compare **Run min** between two rows *in the same mode*. That is the headline
-   number: how long the whole thing took, container startup included.
-3. If two rows have similar **Run min** but very different **Startup**, you have
-   found a runtime that pays a fixed tax before your code even begins — a JVM
-   booting, a Python interpreter loading. That tax does not shrink when the problem
-   gets bigger.
-4. **Δ strict** must be `0` on every `strict` row. It always is, by construction —
-   see the column reference.
-
-## The columns
-
-### Language
+## Language
 
 The language the kernel is written in — and the *least* interesting third of a
 row's identity. Two rows in the same language can differ by an order of magnitude,
@@ -33,7 +17,7 @@ Every implementation **describes itself**, in its own words, below the table —
 it is, and whatever caveat the person who wrote it wanted you to have. Read that
 before quoting its row.
 
-### Compiler
+## Compiler
 
 What turns the source into instructions ahead of the run — `gcc`, `cython`,
 `gc` — and the axis this project exists to compare.
@@ -41,7 +25,7 @@ What turns the source into instructions ahead of the run — `gcc`, `cython`,
 `n/a` means nothing is compiled ahead of time. That is a property of the backend,
 not a hole in the data.
 
-### Interpreter
+## Interpreter
 
 What executes the result — `cpython`, a JVM, nothing at all.
 
@@ -53,7 +37,7 @@ the clean experiment — the one place in this table where a single column chang
 
 `n/a` means the backend ships machine code and runs it directly.
 
-### Mode
+## Mode
 
 Which floating-point rules the compiler was allowed to play by. **Every mode is
 compiled with `-O3`** — the axis here is FP semantics, never "optimized vs not
@@ -95,13 +79,13 @@ It is also why some backends only ever appear in `strict`: an interpreter has on
 floating-point behaviour and no flag to change it, so an `fma` row would be the
 exact same run under a different name.
 
-### Runs
+## Runs
 
 How many measured samples went into this row. Warmup rounds are written to
 `samples.ndjson` and flagged there — never deleted — but they never reach these
 numbers.
 
-### Run min
+## Run min
 
 The shortest wall-clock time across those samples. *Wall-clock* means the time a
 stopwatch would show: the harness starts it before `docker run` and stops it after.
@@ -114,7 +98,7 @@ least disturbed, and it is your best estimate of the machine's real capability. 
 average would just be "the true value plus however much interference we happened to
 collect".
 
-### Dispersion
+## Dispersion
 
 How much the samples of this row disagreed with each other, as a percentage.
 Technically: the median absolute deviation, divided by the median. Robust by
@@ -131,13 +115,13 @@ to ignore one. For spikes, read `samples.ndjson`.
 Below three samples it prints `n/a (n=…)`: with two points the maths would return a
 number, and that number would claim a precision the campaign never had.
 
-### Compute min
+## Compute min
 
 The shortest time the *program itself* reported for its hot loop, measured inside
 the container with a monotonic clock. It excludes everything that happened before
 `main` started.
 
-### Startup
+## Startup
 
 Everything that happened before the real work began: container creation, runtime
 initialisation, JIT warmup, interpreter boot.
@@ -153,7 +137,7 @@ pays its entry fee, and it is a real cost in any program that does not run for a
 hour. Comparing this column across runtimes is one of the more interesting things
 this table offers.
 
-### CPU time
+## CPU time
 
 `user + system` time, read from the container's own accounting file
 (`/sys/fs/cgroup/cpu.stat` — the kernel's per-container bookkeeping), median over
@@ -169,7 +153,7 @@ columns is the only place you will ever see it.
 You do not have to divide this by anything: the **Cores** column beside it already
 has.
 
-### Cores
+## Cores
 
 How many cores the row actually kept busy — `CPU time / Compute min` — read against
 the {{ campaign.cpu }} threads the harness handed every kernel of this campaign.
@@ -198,7 +182,7 @@ during container creation and interpreter boot, but the stopwatch behind **Run m
 already running — divide by that and a perfectly parallel backend reports far fewer
 cores than it used, for no reason other than that Docker took its time.
 
-### Memory
+## Memory
 
 The peak memory of the **whole container**, from the cgroup's own high-water mark
 (`memory.peak`) — minimum over the measured samples.
@@ -219,7 +203,7 @@ budget would have let the *bench machine's* RAM decide how much memory a JVM dec
 it wanted, and this column would describe the host instead of the backend. It follows
 that two campaigns run under different budgets do not compare here.
 
-### Build min
+## Build min
 
 The shortest **compile time** of a timed recompile, from a clean tmpfs (an
 in-memory filesystem, so no disk cache advantage) and with no network access.
@@ -244,12 +228,12 @@ result away.
 
 `n/a` means the backend has no build step at all.
 
-### Build disp.
+## Build disp.
 
 Same dispersion metric, over the build samples. Builds are slow, so we do fewer of
 them, so this column reads `n/a (n=…)` more often.
 
-### Source
+## Source
 
 The size, in bytes, of the one kernel file the backend's manifest declares.
 
@@ -264,7 +248,7 @@ handed in from `argv`. It says how much text this language needed to express *th
 workload under *those* constraints. It does not say a language is verbose, and it
 certainly does not say how much work it was to write.
 
-### Binary
+## Binary
 
 The size of the shipped executable on disk.
 
@@ -274,7 +258,7 @@ there, in `libc.so`, just outside the file we measured. Rust links its standard
 library statically. Go embeds an entire runtime plus type metadata. These are three
 different packaging decisions, not three levels of compiler skill.
 
-### `.text`
+## `.text`
 
 The size of the `.text` section — the machine code itself, and nothing else. This
 *is* comparable across implementations.
@@ -292,7 +276,7 @@ unchanged. When it does not move, the answer is in the disassembly, not here.
 backend, not of the language — `native-image` produces a binary from the very same
 Java source that a JIT-only run does not.
 
-### Δ strict
+## Δ strict
 
 This run's checksum, minus the `strict` reference printed above the table.
 

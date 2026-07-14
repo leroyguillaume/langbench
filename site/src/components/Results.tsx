@@ -319,10 +319,9 @@ function Report({ loaded, workload: id, state, setState, pending }: ReportProps)
         <p>
           Nineteen columns, and none of them mean what you would guess from the name alone. If this
           is your first benchmark table, read{" "}
-          <a href={`${import.meta.env.BASE_URL}metrics/`}>what each column means</a> — it is written
-          for exactly that, and it starts with how to read a row in thirty seconds. The short
-          version: look at <strong>Dispersion</strong> first, because nothing else on a row can be
-          more trustworthy than it.
+          <a href={`${import.meta.env.BASE_URL}data/`}>what each column means</a> — written for
+          exactly that. The short version: look at <strong>Dispersion</strong> first, because
+          nothing else on a row can be more trustworthy than it.
         </p>
         <p className="card-aside">
           Two columns are the site's own and are not in that reference. <strong>Ratio</strong> is
