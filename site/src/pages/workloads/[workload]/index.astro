@@ -50,7 +50,7 @@ const missing = (backend: { architectures: string[] }) =>
   title={`${workload.id} — langbench`}
   description={lede ?? `The ${workload.id} workload, as langbench declares it.`}
 >
-  <main class="page narrow">
+  <main class="page">
     <header class="masthead">
       <h1>{workload.id}</h1>
       {lede !== undefined && <p>{lede}</p>}

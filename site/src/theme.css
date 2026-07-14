@@ -94,38 +94,6 @@ a {
   gap: 1.5rem;
 }
 
-/* A page that is mostly prose.
- *
- * 1200px is the width a *table* of nineteen columns and a bar chart need. A paragraph
- * needs about 46rem, and past that the eye loses the start of the next line — so on a
- * page of prose the measure does not grow to fill the page; the page shrinks to fit the
- * measure. Otherwise the card stretches to 1200px, the text stops two thirds of the way
- * across it, and the emptiness reads as a layout bug rather than as a decision.
- *
- * The number is the measure plus what sits around it: 46rem of text, a card's padding,
- * and the page's own. */
-.page.narrow {
-  max-width: 54rem;
-}
-
-/* And once the page is the measure, nothing inside it needs one of its own.
- *
- * Every block below carries a `max-width` for the 1200px page, where a paragraph left to
- * run the full width would be unreadable. Here that cap is a second, *smaller* limit
- * inside a container that is already the right size — so the text stops short of the card
- * it sits in and leaves a third of it blank. The page decides the measure once; these
- * defer to it. */
-.page.narrow .masthead p,
-.page.narrow .card > p,
-.page.narrow .card > h2 + p,
-.page.narrow .lede,
-.page.narrow .card-aside,
-.page.narrow .glossary dd,
-.page.narrow .claims,
-.page.narrow .prose {
-  max-width: none;
-}
-
 @media (min-width: 768px) {
   .page {
     padding: 2.5rem 2rem 4rem;
