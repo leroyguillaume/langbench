@@ -13,7 +13,7 @@
 
 import Layout from "../../../layouts/Layout.astro";
 import { anchorId, toolchain } from "../../../identity";
-import { campaignsOf, paragraphs, workloads } from "../../../site";
+import { campaignsOf, paragraphs, runIn, workloads } from "../../../site";
 import { NOT_AVAILABLE } from "../../../format";
 
 export function getStaticPaths() {
@@ -60,9 +60,19 @@ const missing = (backend: { architectures: string[] }) =>
       rest.length > 0 && (
         <section class="card">
           <div class="prose">
-            {rest.map((paragraph) => (
-              <p>{paragraph}</p>
-            ))}
+            {rest.map((paragraph) => {
+              const { lead, body } = runIn(paragraph);
+              return (
+                <p>
+                  {lead && (
+                    <>
+                      <strong>{lead}</strong>{" "}
+                    </>
+                  )}
+                  {body}
+                </p>
+              );
+            })}
           </div>
         </section>
       )

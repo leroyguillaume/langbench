@@ -1,5 +1,5 @@
 # What the work is. Every backend under `implementations` computes exactly this,
-# and in `strict` mode every one of them produces exactly `strict_checksum`.
+# and in every mode every one of them produces exactly `checksum`, to the bit.
 id: mandelbrot
 description: >-
   Escape-time Mandelbrot over a square grid: for every pixel, iterate z = z^2 + c
@@ -13,7 +13,7 @@ description: >-
   allocation, no branching to speak of and a working set that fits in registers: what
   it measures is the quality of the machine code a backend produces for double
   arithmetic, and how fast it can be produced at all. Because every backend computes
-  the same answer to the bit, `strict` mode turns the checksum into a correctness
+  the same answer to the bit -- in every mode -- the checksum is a correctness
   gate rather than a formality -- a compiler that reassociates or fuses a
   multiply-add to go faster is caught by it, not rewarded. Around the loop, the same
   run also prices the things a runtime charges whatever the work is: the gap between
@@ -43,7 +43,7 @@ params:
   - name: max_iter
     value: 1000
 # The answer, for the params above and for them alone. A 64-bit integer, and the
-# correctness gate of the whole project: in `strict` mode every compiler, every
+# correctness gate of the whole project: in every mode, every compiler, every
 # language and every architecture produces this, bit for bit. A backend that
 # disagrees is not slow, it is wrong, and it is quarantined out of the campaign.
 checksum: 1038538536

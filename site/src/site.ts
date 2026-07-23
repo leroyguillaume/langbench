@@ -125,3 +125,22 @@ export function paragraphs(text: string): string[] {
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => paragraph !== "");
 }
+
+/**
+ * A paragraph may open with a run-in heading: a short label sentence the author uses to
+ * structure a long description ("What it puts under the light."). It is set in bold and
+ * the body follows on the same line, the way the cards already lead with a bold phrase.
+ *
+ * The signal is deliberately narrow -- a brief opening sentence with no internal
+ * punctuation, ending in a single period -- so ordinary prose that happens to start with
+ * a short sentence is left alone. This is formatting, never structure: the manifest is
+ * still one YAML string whose only real structure is its blank lines.
+ */
+export function runIn(paragraph: string): { lead?: string; body: string } {
+  const match = paragraph.match(/^([^.?!,;:]{1,40}\.)\s+(.+)$/s);
+  if (!match) {
+    return { body: paragraph };
+  }
+  const [, lead, body] = match;
+  return lead && body ? { lead, body } : { body: paragraph };
+}
