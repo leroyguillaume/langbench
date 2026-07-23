@@ -68,7 +68,7 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       # The kernels themselves are not unit-tested -- they are verified by the
-      # strict-mode checksum invariant, which only a campaign can check.
+      # checksum invariant, which only a campaign can check.
       - name: run the test suite
         run: cargo test --locked --all-targets
 

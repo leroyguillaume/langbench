@@ -41,7 +41,13 @@ wire, on the site, in a commit message. Every rule below is written in them.
   two may be absent, and an absence is a published fact. This is the subject.
 - **implementation** — a backend doing a given workload: one `bench.yaml`, one
   Dockerfile, one source file.
-- **mode** — `strict` / `fma` / `fast`. The FP semantics, a build arg on one source.
+- **mode** — `baseline` / `native`. The **ISA target**: which machine the code is for, as
+  one build arg on one source. Not floating-point semantics — that axis existed, and it
+  is gone. Every mode is `-O3` and every mode is strict IEEE 754, so a wider vector
+  reorders no arithmetic and the checksum gates *both*. Which modes a backend *can*
+  offer is the subject: an ahead-of-time compiler must choose a machine and so has both;
+  a JIT compiles on the machine it runs on and has only `native`, which is not its
+  limitation but its selling point.
 - **unit** — `(implementation, mode)`. The atom of the schedule, and the grain of
   quarantine: a failure takes out a unit, never the campaign.
 - **sample** — one measured invocation. One NDJSON line.
@@ -89,9 +95,11 @@ the only thing the harness reads.**
   campaign where every backend is wrong the same way. `--param name=value` overrides a
   declared param and **drops the declared checksum**, because it is the answer to the
   declared work and not to this one; the campaign says so and falls back to the weaker
-  check. It is not called `strict_checksum`: `strict` is a floating-point mode, and a
-  JSON parser has no floating-point semantics to be strict about. The answer is the
-  answer whatever the mode.
+  check. It is not called `strict_checksum`, and no longer could be: `strict` was a
+  floating-point mode, and that axis is gone. The answer is the answer whatever the mode,
+  and **every mode is now held to it** — the old `fma` and `fast` rows were licensed to
+  diverge, which meant the correctness gate was switched off for the two modes most
+  likely to expose a miscompilation.
 - **How the work is sized is a property of the work**, never a flag of the harness:
   `--grid-size` was Mandelbrot leaking into the CLI. `params` is an ordered **list**,
   never a mapping — the order is the `argv` order the kernels receive (`run <params…>
@@ -101,16 +109,21 @@ the only thing the harness reads.**
   guesses which file beside the Dockerfile is the source — guessing means pattern-matching
   a filename, which is parsing the path under another name. A `source` that is not a file
   on disk fails the campaign at discovery.
-- `modes: all`, or an explicit list. An interpreter has one floating-point semantics, so
-  `fma` and `fast` would be *the same image under another tag*, and building them would
-  put three rows in a table whose only difference is noise. A mode that is requested but
+- `modes: all`, or an explicit list. A JIT has no ISA target to choose — it generates code
+  on the machine it is running on — so a `baseline` image would be *the same run under
+  another tag*, and building it would put two rows in a table whose only difference is
+  noise. Julia is the exception that proves it is a *capability* and not a category: it is
+  a JIT, it takes `--cpu-target`, and it therefore declares both. CPython is the other
+  exception, and the only row that is neither: it compiles nothing and has no JIT, so its
+  hot loop is an interpreter somebody else built — it declares `baseline` and reports the
+  ISA it actually got. A mode that is requested but
   not declared is skipped with a warning; a **misspelled** one fails the campaign — a
   manifest is a deliberate statement, and building three images where the author asked
   for one is a table carrying rows nobody meant to publish.
 - `architectures: all`, unless the backend's **toolchain does not exist** for an
   architecture — a fact, not a preference. A campaign on the other machine skips the row
   loudly at discovery rather than failing halfway through a `docker build`.
-  ([why](site/src/content/methodology.md#flags-and-the-architecture-baseline))
+  ([why](site/src/content/methodology.md#the-architecture))
 - **A manifest describes the work, never the results.** An implementation's `comments`
   are what is pinned, what its entrypoint has to do, how it deviates, what its build
   phase actually *is* — never what to expect from the table ("read this against c-gcc",
@@ -125,8 +138,10 @@ the only thing the harness reads.**
   images to build*, so it has to be known before an image exists to inspect.
 - One Dockerfile per implementation. **No templating**: per-implementation variance
   (`cargo-chef`, `CGO_ENABLED=0`, `native-image`) lives exactly where templates are
-  worst. The FP mode, the ISA baseline and the job count are **build args** — Docker's
-  own parameterization, not a codegen layer of ours. Base images are pinned **by digest**,
+  worst. The ISA target and the job count are **build args** — Docker's own
+  parameterization, not a codegen layer of ours. One arg, not two: `MARCH` carries the
+  whole mode, since `FP_MODE` had nothing left to say once the arithmetic stopped being
+  negotiable. Base images are pinned **by digest**,
   never by tag: a benchmark that silently changes when upstream pushes is not a benchmark.
   Non-root `USER` in every benchmark Dockerfile.
 - `bench.schema.json` and `workload.schema.json` (repo root) are **generated** by
@@ -253,8 +268,8 @@ change to the harness must not break.
   `langbench implementation list --json`), never with a YAML parser of its own.
 - **A row is named by its triple, never by a slug.** The `backend` slug on the wire is the
   handle the WASM picks rows by, and the site's use of it stops at that function call: never
-  displayed, never sorted on, never in a URL (`?a=java/native-image/-/strict`, not
-  `?a=java-native:strict`). `java-native-image` reads as "java, native" and is in fact java +
+  displayed, never sorted on, never in a URL (`?a=java/native-image/-/native`, not
+  `?a=java-native:native`). `java-native-image` reads as "java, native" and is in fact java +
   `native-image` + no interpreter; a name you have to decode is worse than three fields that
   say it. An absence is a published fact: it renders as `n/a` and is selectable as a filter.
 - **A gap smaller than the dispersion is a tie, not a win.** The head-to-head asks for a
@@ -286,15 +301,32 @@ change to the harness must not break.
   so. **Pushing needs network**, and a network namespace cannot be added mid-run — giving the
   container network for its whole life trades the `--network=none` guarantee for a convention.
   **Prometheus stores `float64`**, and the checksum is a sum of 64-bit integers: past 2⁵³ the
-  bit-identical strict-mode invariant would be silently lost. **A TSDB is lossy by design and
+  bit-identical checksum invariant would be silently lost. **A TSDB is lossy by design and
   pull-based**, and a container that lives four seconds is never scraped; keeping thirty
   repetitions would mean encoding the round number in a label, which is a time-series database
   used as a key-value store. Prometheus is for the bench machine's *health* — frequency,
   temperature, throttling — and never for the measurement.
 - Never publish an absolute cross-architecture timing. Within-architecture ratios only.
-  ([why](site/src/content/methodology.md#flags-and-the-architecture-baseline))
+  ([why](site/src/content/methodology.md#the-architecture))
 - Never run a benchmark under QEMU / `binfmt` emulation.
-- Never `-march=native`, in any toolchain, under any spelling.
+- Never let `native` be a **default**, and never let it stand in for the pinned baseline.
+  It is asked for explicitly (`--mode native`), it builds its own image, and it gets its own
+  row. `--march native` is rejected: that flag is the *baseline* mode's value, and a baseline
+  that varies with the CPU that built it is not one.
+
+  This rule used to read *"Never `-march=native`, in any toolchain, under any spelling"*, and
+  deleting that line was the point of the ISA axis. It was **unenforceable**: a JIT compiles
+  on the machine it runs on, so HotSpot, V8 and PyPy were native the whole time, whatever the
+  rule said. The ban never stopped the JVM from getting the machine — it only stopped `gcc`
+  from getting it, and then called the result a level playing field. What is forbidden is a
+  baseline that quietly varies, never a toolchain using the CPU it was given.
+  ([why](site/src/content/methodology.md#the-isa-target))
+- **Never `-ffast-math`, in any toolchain, under any spelling.** It is the one that survives,
+  and it is not the same rule: `-march=native` decides which *instructions* may be emitted,
+  `-ffast-math` decides what *arithmetic means*. Widening a vector reorders nothing, so both
+  modes compute the same bits and the checksum gates both. Reassociation computes a different
+  number, and a benchmark that publishes a different number under the same heading is not
+  measuring speed, it is measuring two programs.
 - **Never measure energy.** ([why](site/src/content/methodology.md#what-this-does-not-tell-you))
   Every sample of every campaign came back `null`, on both architectures. A column the bench
   machine can never fill is not a measurement, it is a promise — and the code that reads it is
@@ -304,8 +336,8 @@ change to the harness must not break.
 ## Testing
 
 - Unit tests for discovery, manifest parsing, statistics and command construction.
-- The kernels themselves are verified by the strict-mode checksum invariant, not by unit
-  tests.
+- The kernels themselves are verified by the checksum invariant — which now covers every
+  mode, not a third of them — and not by unit tests.
 - The site's tests run the **real** WASM over a **real** committed campaign. A hand-written
   fixture would agree with the schema by construction, and agreeing with the schema is the one
   thing those tests must not assume.
@@ -314,5 +346,5 @@ change to the harness must not break.
 
 1. **Noise floor** on the target machine. Nothing else is trustworthy until this number
    exists. ([why](site/src/content/methodology.md#where-it-runs))
-2. The C/gcc, C/clang, Rust/LLVM triangle on Mandelbrot, `strict`, x86-64.
+2. The C/gcc, C/clang, Rust/LLVM triangle on Mandelbrot, `baseline`, x86-64.
 3. Everything else.

@@ -5,8 +5,9 @@
 # (language x JVM) grid.
 FROM ibm-semeru-runtimes:open-25-jdk@sha256:9ecdbb9e06828e391ed1dde149e6a834f4c1bdadcb5d95dcd3006045db72d760
 
-ARG FP_MODE=strict
-ARG MARCH=x86-64-v3
+# No ISA build arg: scalac emits bytecode, which targets no CPU, and OpenJ9's JIT
+# emits the machine code during the run for whatever CPU is under it. `native` is this
+# backend's only target, and there is nothing for a build arg to select.
 ARG JOBS
 
 # 3.3 is the LTS line. A benchmark that chases the newest minor release measures
@@ -33,11 +34,9 @@ RUN set -eu; \
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads.
 LABEL langbench.version="3.3.8" \
-      langbench.flags="march=none fp=${FP_MODE} jvm=openj9"
+      langbench.flags="isa=native jvm=openj9"
 
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
-    SCALA_HOME=/usr/local/lib/scala3 \
+ENV SCALA_HOME=/usr/local/lib/scala3 \
     CLASSES=/usr/local/lib/mandelbrot \
     BUILD_DIR=/build
 

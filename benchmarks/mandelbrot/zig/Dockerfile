@@ -10,10 +10,11 @@
 # be timed, so the toolchain must survive into the runtime image.
 FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2
 
-# Floating-point semantics, ISA baseline and job count arrive as build args, so
-# one Dockerfile covers every mode the backend distinguishes -- which, here, is
-# `strict` alone. See `bench.yaml`.
-ARG FP_MODE=strict
+# The ISA target and the job count arrive as build args, so one Dockerfile covers
+# both modes: `MARCH` is either the pinned baseline of the architecture or the
+# literal `native`, and that choice *is* the mode. Floating-point is not a build
+# arg -- it is strict in every mode, and in Zig it is strict without asking: the
+# float mode is a statement in the source, and this kernel never makes it.
 ARG MARCH=x86-64-v3
 ARG JOBS=1
 
@@ -56,7 +57,7 @@ RUN set -eu; \
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="${ZIG_VERSION}" \
-      langbench.flags="-OReleaseFast mcpu=${MARCH} fp=${FP_MODE}"
+      langbench.flags="-OReleaseFast mcpu=${MARCH}"
 
 # ZIG_GLOBAL_CACHE_DIR is the *toolchain* cache: compiler_rt and the pieces of the
 # standard library this program pulls in. Zig ships no precompiled std, so a cold
@@ -64,8 +65,7 @@ LABEL langbench.version="${ZIG_VERSION}" \
 # than "Zig compiles our kernel" -- the Go trap, in another accent. It is warmed at
 # image build below and reused by every run. The *local* cache, which holds our
 # module, stays cold: the timed build points it at the tmpfs.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
     ZIG_GLOBAL_CACHE_DIR=/usr/local/share/zig-cache \
     BUILD_DIR=/build
 

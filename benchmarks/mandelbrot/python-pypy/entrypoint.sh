@@ -6,24 +6,14 @@ set -eu
 SOURCE_DIR=/usr/local/src/mandelbrot
 BUILD_DIR=${BUILD_DIR:-/build}
 
-# PyPy has exactly one floating-point semantics. Its tracing JIT emits machine
-# code, but it is not licensed to change the arithmetic while doing so: it never
-# contracts a multiply-add into an FMA, and it never reassociates. So the three
-# modes produce the same trace and, necessarily, the same checksum -- which is
-# itself the result, and it is CPython's checksum, and C's.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: PyPy has one FP semantics; mode %s behaves exactly like strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-}
+# The ISA this row reports, and it is not a choice: PyPy's tracing JIT assembles
+# the hot loop into machine code for the CPU it is running on, once the loop is hot
+# enough to be worth compiling, and there is no flag that would hold it to a lesser
+# instruction set. It only ever sees this machine. So the answer to "which
+# instruction set did this code get?" is the same word an ahead-of-time backend
+# reports when it was *asked* to target the host, and the coincidence is the
+# finding: one had to ask, the other could not refuse.
+ISA=native
 
 now_ns() {
     date +%s%N
@@ -66,7 +56,6 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
 
 case "${phase}" in
 install)
@@ -96,8 +85,8 @@ build)
     read_peak_memory
     # No machine-code artifact: the sizes are null, not zero. A .pyc is bytecode,
     # and putting its size next to an ELF's would rank packaging, not codegen.
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"build","elapsed_ns":%s,"isa":"%s","user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "${ISA}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 run)
@@ -112,8 +101,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,"isa":"%s","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${ISA}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

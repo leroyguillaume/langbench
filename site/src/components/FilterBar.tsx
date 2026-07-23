@@ -12,7 +12,7 @@
 // `<select>` that swapped the architecture would put two experiments behind one control
 // and invite the reader to read across them.
 
-import type { Aggregate, FpMode } from "../analysis";
+import type { Aggregate, Mode } from "../analysis";
 import { NOT_AVAILABLE } from "../format";
 import { ABSENT } from "../identity";
 import { MODES } from "../series";
@@ -86,12 +86,24 @@ export function FilterBar({ filters, onFilters, rows }: Props) {
     });
   };
 
-  const toggleMode = (mode: FpMode) => {
+  // The modes this campaign actually measured, in the canonical order — never the whole
+  // enum. A campaign of JIT-only backends carries no `baseline` row, and a checkbox that
+  // offers one is offering an empty table: the same rule the compiler and interpreter
+  // lists already obey, and the reason they are read off the rows. The *order* and the
+  // colour still come from `MODES`, because a series that reorders itself repaints the
+  // chart.
+  const measured = MODES.filter((mode) => rows.some((row) => row.mode === mode));
+
+  const toggleMode = (mode: Mode) => {
     const modes = filters.modes.includes(mode)
       ? filters.modes.filter((candidate) => candidate !== mode)
       : MODES.filter((candidate) => filters.modes.includes(candidate) || candidate === mode);
-    // Never leave the reader with an empty chart and no way back.
-    onFilters({ ...filters, modes: modes.length === 0 ? MODES : modes });
+    // Never leave the reader with an empty chart and no way back — and "empty" is judged
+    // against the modes this campaign has rows in, not against the enum: keeping a mode
+    // nothing was measured in would clear the table while every checkbox on screen stayed
+    // unticked, which reads as a broken page.
+    const survives = modes.some((candidate) => measured.includes(candidate));
+    onFilters({ ...filters, modes: survives ? modes : MODES });
   };
 
   const dirty =
@@ -159,9 +171,9 @@ export function FilterBar({ filters, onFilters, rows }: Props) {
       </label>
 
       <div className="filter">
-        <span>FP mode</span>
+        <span>ISA target</span>
         <div className="chart-bars">
-          {MODES.map((mode) => (
+          {measured.map((mode) => (
             <label className="toggle" key={mode}>
               <input
                 type="checkbox"

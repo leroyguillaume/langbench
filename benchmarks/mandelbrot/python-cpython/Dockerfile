@@ -10,22 +10,25 @@
 # and the pin agree.
 FROM python:3.13-slim-trixie@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
 
-# `MARCH` and `JOBS` are accepted and unused: CPython is not compiled here, and
-# bytecode compilation of one module has nothing to parallelise. Declaring them
-# keeps this image a drop-in for the harness's build-arg contract.
-ARG FP_MODE=strict
-ARG MARCH
+# There is no `MARCH` here, and its absence is the whole story of this row: nothing
+# in this image compiles to machine code, so there is no ISA to target and no flag
+# that could take one. The interpreter that runs the hot loop was compiled by the
+# packager, long before this build, for whatever machine a packager has to run on --
+# see the entrypoint, which is where the row reports what it actually got. A build
+# arg nobody reads would only promise otherwise.
+#
+# `JOBS` is accepted and unused: bytecode compilation of one module has nothing to
+# parallelise. Declaring it keeps this image a drop-in for the harness's contract.
 ARG JOBS
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS -- its
-# language, its interpreter, the FP modes it distinguishes -- lives in
+# language, its interpreter, the ISA targets it distinguishes -- lives in
 # `bench.yaml`, which is the only thing the harness reads. A label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="3.13" \
-      langbench.flags="fp=${FP_MODE}"
+      langbench.flags="none: this backend compiles nothing"
 
-ENV FP_MODE=${FP_MODE} \
-    BUILD_DIR=/build \
+ENV BUILD_DIR=/build \
     PYTHONDONTWRITEBYTECODE=
 
 WORKDIR /usr/local/src/mandelbrot

@@ -13,7 +13,7 @@
 //! other. That is the one place this could silently rot, which is why it is tested
 //! from both sides.
 
-use langbench::mode::FpMode;
+use langbench::mode::Mode;
 use langbench::sample::{Phase, Sample};
 use langbench::workload::{Param, ParamValue, Workload};
 use langbench::{discovery, workload};
@@ -107,7 +107,8 @@ fn sample() -> Sample {
         interpreter: None,
         description: "The reference C kernel.".to_owned(),
         comments: None,
-        mode: FpMode::Strict,
+        mode: Mode::Baseline,
+        isa: Some("x86-64-v3".to_owned()),
         phase: Phase::Run,
         round: 1,
         warmup: false,

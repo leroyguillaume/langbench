@@ -6,16 +6,21 @@ compiler: scalac
 interpreter: openjdk
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.scala
-# One floating-point semantics, inherited from the JVM: a Double is an IEEE 754
-# double, and neither scalac nor the JIT may contract a multiply-add.
+# One mode, and it is not a choice this backend made. scalac emits bytecode, which
+# targets no CPU at all; the machine code appears at run time, when C2 compiles the
+# hot loop on the machine it is running on and takes that machine's instruction set
+# as it finds it. A JIT has no `baseline` to give -- `native` is what a JIT *is*.
 modes:
-  - strict
+  - native
 description: >-
   The kernel in Scala 3, compiled by scalac to JVM bytecode and run on the same
   HotSpot as java-javac-openjdk and kotlin-kotlinc-openjdk. A plain while loop,
   deliberately: the algorithm is the contract, and a foldLeft over a lazy Iterator
   would measure the collections library instead of the backend.
 comments: >-
-  One scalac invocation on one file — no sbt, no Gradle, no jar — so the build phase
-  times the compiler and nothing else. Both the Scala 3 library and the 2.13 one it
-  still stands on are on the classpath, and the JVM loads them at startup.
+  Floating point is the JVM's, inherited whole: a Double is an IEEE 754 double, and
+  neither scalac nor the JIT may contract a multiply-add. One scalac invocation on one
+  file — no sbt, no Gradle, no jar — so the build phase times the compiler and nothing
+  else. Both the Scala 3 library and the 2.13 one it still stands on are on the classpath,
+  and the JVM loads them at startup. The JVM is handed nothing else: no -Xmx, no cap on
+  vector width, the defaults a Scala program gets.

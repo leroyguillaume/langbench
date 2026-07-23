@@ -108,7 +108,7 @@ pub fn list_implementations(args: &ImplementationListArgs) -> Result<()> {
             implementation.compiler.as_deref().unwrap_or("n/a"),
             implementation.interpreter.as_deref().unwrap_or("n/a"),
             implementation
-                .fp_modes
+                .modes
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
@@ -137,7 +137,7 @@ mod tests {
 
     use super::*;
     use crate::machine::Machine;
-    use crate::mode::FpMode;
+    use crate::mode::Mode;
     use crate::sample::{Campaign, Phase, Sample, SampleWriter};
 
     /// A one-sample campaign on disk, as `run` would have left it.
@@ -156,7 +156,7 @@ mod tests {
                     build_rounds: 3,
                     warmup_rounds: 1,
                     march: "x86-64-v3".to_owned(),
-                    modes: vec!["strict".to_owned()],
+                    modes: vec!["baseline".to_owned()],
                 },
             )
             .unwrap();
@@ -168,7 +168,8 @@ mod tests {
                 interpreter: None,
                 description: "The reference C kernel.".to_owned(),
                 comments: None,
-                mode: FpMode::Strict,
+                mode: Mode::Baseline,
+                isa: Some("x86-64-v3".to_owned()),
                 phase: Phase::Run,
                 round: 1,
                 warmup: false,

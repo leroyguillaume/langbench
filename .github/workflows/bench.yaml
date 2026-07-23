@@ -7,7 +7,7 @@ name: bench
 # `samples/<workload>/aarch64.ndjson`, side by side, never merged. An absolute timing does
 # not cross an architecture, and the site enforces that by showing one campaign at a
 # time.
-# See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+# See `site/src/content/methodology.md#the-architecture`.
 #
 # A GitHub runner is shared, virtualised and frequency-scaled -- which is to say
 # the worst benchmark target money can rent. The numbers this workflow produces
@@ -102,8 +102,8 @@ jobs:
           path: samples/${{ inputs.workload }}/${{ matrix.arch }}.ndjson
           if-no-files-found: error
 
-  # One job, one push. Two matrix jobs committing to `main` would race, and the
-  # loser would have to rebase a file it holds the only copy of.
+  # One job, one push. Two matrix jobs committing to the same branch would race, and
+  # the loser would have to rebase a file it holds the only copy of.
   commit:
     needs: bench
     runs-on: ubuntu-24.04
@@ -117,11 +117,18 @@ jobs:
       - name: check out the repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # **`path` is not optional here, and leaving it out cost a campaign.** An artefact
+      # uploaded from `samples/<workload>/<arch>.ndjson` is rooted at that file's parent
+      # directory, so what it *contains* is a bare `<arch>.ndjson`. Downloaded with no
+      # `path`, that lands in the workspace root -- next to `Cargo.toml`, not under
+      # `samples/` -- and the `git add samples` below then finds nothing to add and says
+      # so cheerfully. Put the files back where they were measured.
       - name: download every campaign
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: campaign-*
           merge-multiple: true
+          path: samples/${{ inputs.workload }}
 
       - name: set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -154,20 +161,45 @@ jobs:
       # them, in the browser, so there is no conclusion to commit beside the
       # evidence and no rendered file to drift from it.
       #
-      # A campaign that reproduced the committed one, byte for byte, has nothing to
-      # commit and is not a failure: HEAD already holds those samples, so it is HEAD
-      # the site renders.
+      # **An empty diff is a failure, and it used to be a shrug.** This step once said
+      # "the campaigns reproduced the committed ones, byte for byte; nothing to commit"
+      # and exited 0 -- which sounds reasonable and is impossible. Every campaign header
+      # carries `timestamp: Utc::now()`, so no two campaigns are byte-identical, ever;
+      # add thirty timings measured in nanoseconds and the odds do not improve. That
+      # branch could therefore never fire for the reason it claimed. It could only fire
+      # when the samples never reached `samples/` at all -- which is exactly what
+      # happened when the download landed them in the workspace root -- and it reported
+      # that as a success. A campaign that measured for an hour and committed nothing is
+      # the loudest thing this workflow has to say.
+      #
+      # **Back to the branch it was dispatched from**, never to `main` by name. A campaign
+      # is measured by the harness *of the branch it ran on*, and the samples it produces
+      # are readable only by that harness: a branch that changes what a `mode` is, or adds
+      # a column, records a file the other branch's site refuses to parse. Pushing those
+      # onto `main` would drop one world's data into another's, and the first thing anyone
+      # would see is a published page that cannot read its own campaign.
+      #
+      # `github.ref_name` is the branch the operator picked in the dispatch UI, so a
+      # campaign lands where it was asked for and a run from `main` behaves exactly as it
+      # always did.
       - name: commit the samples
         id: commit
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add samples
           if git diff --cached --quiet; then
-            echo 'the campaigns reproduced the committed ones, byte for byte; nothing to commit'
+            echo '::error::the campaigns ran but samples/ is unchanged. No two campaigns are' \
+                 'byte-identical -- the header alone carries a fresh timestamp -- so this does' \
+                 'not mean the numbers reproduced. It means the samples never arrived: check' \
+                 'that the download put them under samples/<workload>/ and not in the' \
+                 'workspace root.'
+            exit 1
           else
             git commit -m 'bench: campaigns of ${{ github.sha }}'
-            git push origin HEAD:main
+            git push origin "HEAD:${BRANCH}"
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -175,8 +207,16 @@ jobs:
   # is a pure function of the samples the job above committed. `bench` calls it
   # here so a campaign still ends with a published page -- but the page can also be
   # rebuilt on its own, without re-measuring a thing.
+  #
+  # **Only from the default branch.** GitHub Pages has one environment, so publishing a
+  # branch's render does not preview it -- it *replaces* the live site with unreleased
+  # work, and the campaign that motivated the branch is exactly what makes the two
+  # renders disagree. A campaign dispatched from a branch still runs, still commits its
+  # samples to that branch, and is still downloadable as an artefact; it simply does not
+  # take the site with it. Merge the branch and the samples publish themselves.
   pages:
     needs: commit
+    if: github.ref_name == github.event.repository.default_branch
     permissions:
       contents: read
       pages: write

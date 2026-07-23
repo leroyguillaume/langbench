@@ -15,15 +15,26 @@ use crate::cli::{Architecture, RunArgs};
 use crate::discovery::{Implementation, discover, workloads};
 use crate::engine::{BuildSpec, ContainerEngine, RunSpec};
 use crate::machine::Machine;
-use crate::mode::FpMode;
+use crate::mode::Mode;
 use crate::sample::{Campaign, Failure, Phase, Sample, SampleWriter, Stage};
 use crate::shutdown;
 use crate::workload::{self, Workload};
 
-/// One (implementation, FP mode) pair: the atom of the schedule.
+/// What `MARCH` carries in [`Mode::Native`]: gcc's own spelling, which every other
+/// entrypoint translates into its own.
+///
+/// It is a value the harness hands out, not a flag it forbids. `-march=native` was
+/// once banned outright here — "in any toolchain, under any spelling" — and the ban
+/// was quietly unenforceable: a JIT compiles on the machine it runs on and is
+/// therefore native whatever the rule says. The rule did not stop the JVM from
+/// getting the machine; it only stopped gcc from getting it, and called the result
+/// a level playing field. See `site/src/content/methodology.md#the-isa-target`.
+const NATIVE_MARCH: &str = "native";
+
+/// One (implementation, mode) pair: the atom of the schedule.
 struct Unit {
     implementation: Implementation,
-    mode: FpMode,
+    mode: Mode,
     image: String,
 }
 
@@ -92,7 +103,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         ),
         args.mode
             .iter()
-            .map(FpMode::to_string)
+            .map(Mode::to_string)
             .collect::<Vec<_>>()
             .join(", "),
     );
@@ -112,7 +123,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
         build_rounds: args.build_rounds,
         warmup_rounds: args.warmup_rounds,
         march: args.march.clone(),
-        modes: args.mode.iter().map(FpMode::to_string).collect(),
+        modes: args.mode.iter().map(Mode::to_string).collect(),
     };
 
     let mut writer = SampleWriter::create(&args.output)?;
@@ -121,7 +132,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
     let mut runner = Runner {
         engine,
         args: &args,
-        strict_checksum: workload.checksum,
+        checksum: workload.checksum,
         reference_is_declared: workload.checksum.is_some(),
         workload,
         writer,
@@ -202,7 +213,7 @@ pub fn execute(args: RunArgs, engine: &impl ContainerEngine) -> Result<()> {
 /// elsewhere drops the row *before* spending a `docker build` on discovering it.
 fn schedule(
     implementations: &[Implementation],
-    requested: &[FpMode],
+    requested: &[Mode],
     host: Option<Architecture>,
 ) -> Vec<Unit> {
     let mut units = Vec::new();
@@ -240,9 +251,9 @@ fn schedule(
                     interpreter = none_if_absent(implementation.interpreter.as_deref()),
                     %mode,
                     declares = %implementation
-                        .fp_modes
+                        .modes
                         .iter()
-                        .map(FpMode::to_string)
+                        .map(Mode::to_string)
                         .collect::<Vec<_>>()
                         .join(","),
                     "skipping: the implementation declares it does not distinguish this mode",
@@ -263,20 +274,20 @@ struct Runner<'a, E: ContainerEngine> {
     engine: &'a E,
     args: &'a RunArgs,
     /// The workload as it ran: its params are the kernels' `argv`, and its
-    /// reference is what `strict` is checked against.
+    /// reference is what every run is checked against.
     workload: Workload,
     writer: SampleWriter,
     /// Samples are streamed to disk, never accumulated: the harness holds a
     /// count, and whoever renders reads them back.
     written: usize,
-    /// The value every strict-mode run must agree on, bit for bit.
+    /// The value every run must agree on, bit for bit — in every mode.
     ///
     /// Seeded from the workload's declared `checksum` when it has one — and
     /// then the *first* backend is checked against it, like every other. Without one,
-    /// the first strict sample becomes the reference and the campaign can only
+    /// the first sample becomes the reference and the campaign can only
     /// establish that its backends agree with each other, which a campaign where they
     /// are all wrong the same way passes.
-    strict_checksum: Option<u64>,
+    checksum: Option<u64>,
     /// Whether that reference came from the workload rather than from a run. It
     /// changes what a divergence *means*, so it changes what the error says.
     reference_is_declared: bool,
@@ -303,12 +314,24 @@ impl<E: ContainerEngine> Runner<'_, E> {
         for unit in units {
             shutdown::checkpoint()?;
             info!(image = %unit.image, "preparing image");
-            let mut build_args = vec![
-                ("FP_MODE".to_owned(), unit.mode.to_string()),
-                ("JOBS".to_owned(), self.args.cpu.to_string()),
-            ];
-            if !self.args.march.is_empty() {
-                build_args.push(("MARCH".to_owned(), self.args.march.clone()));
+            // One build arg, not two. `FP_MODE` is gone with the floating-point
+            // axis: every image is strict IEEE 754 now, so there is nothing left to
+            // parameterize. The mode *is* the ISA target, and `MARCH` is how it
+            // reaches the toolchain.
+            //
+            // The harness speaks gcc, as it always has: it hands out `x86-64-v3` or
+            // `native`, and each entrypoint translates that into its own spelling —
+            // `-C target-cpu=` for rustc, `-mcpu=` for zig, `GOAMD64=` for go. A
+            // backend that cannot express the value it was handed must fail its
+            // build loudly rather than fall back to generic; see
+            // `site/src/content/methodology.md#the-isa-target`.
+            let march = match unit.mode {
+                Mode::Baseline => self.args.march.clone(),
+                Mode::Native => NATIVE_MARCH.to_owned(),
+            };
+            let mut build_args = vec![("JOBS".to_owned(), self.args.cpu.to_string())];
+            if !march.is_empty() {
+                build_args.push(("MARCH".to_owned(), march));
             }
             let built = self.engine.build(&BuildSpec {
                 image: unit.image.clone(),
@@ -485,6 +508,13 @@ impl<E: ContainerEngine> Runner<'_, E> {
             description: unit.implementation.description.clone(),
             comments: unit.implementation.comments.clone(),
             mode: unit.mode,
+            // Off the container, not off `unit.mode`: the mode is what the harness
+            // asked for, and this is what the toolchain actually did with it. They
+            // are different fields because they disagree — Go has no `native` and
+            // stops at `v4`, CPython compiles nothing at all. A harness that derived
+            // this from the mode it handed out would be writing down its own
+            // intention and calling it a measurement.
+            isa: record.isa.clone(),
             phase,
             round,
             warmup,
@@ -523,39 +553,47 @@ impl<E: ContainerEngine> Runner<'_, E> {
         }
     }
 
-    /// Every strict-mode run, warmup included. A wrong run is not a slow run.
+    /// Every run, in every mode, warmup included. A wrong run is not a slow run.
+    ///
+    /// **There is no mode to exempt.** This used to return early on anything that
+    /// was not `strict`, because `fma` and `fast` were licensed to compute a
+    /// different number — which meant the correctness gate of the whole harness
+    /// covered a third of the campaign, and the two modes most likely to expose a
+    /// miscompilation were the two nobody checked. The ISA axis grants no such
+    /// licence: `baseline` and `native` are both strict IEEE 754, and widening a
+    /// vector reorders nothing. So the guard is gone, and every sample recorded by
+    /// this harness has agreed with the reference, bit for bit.
     fn verify(&mut self, sample: &Sample) -> Result<()> {
-        if sample.mode != FpMode::Strict {
-            return Ok(());
-        }
         let Some(checksum) = sample.checksum else {
             return Ok(());
         };
-        match self.strict_checksum {
+        match self.checksum {
             None => {
-                self.strict_checksum = Some(checksum);
+                self.checksum = Some(checksum);
                 Ok(())
             }
             Some(reference) if reference == checksum => Ok(()),
             Some(reference) if self.reference_is_declared => bail!(
-                "strict-mode checksum mismatch on {}: {} produced {checksum}, but the `{}` \
-                 workload declares the answer is {reference}. This backend is wrong — not slow, \
-                 wrong — and a wrong run never enters the statistics. In strict mode every \
-                 compiler, language and architecture agrees bit for bit; a divergence is a bug in \
-                 the code or the flags, never a rounding difference.",
+                "checksum mismatch on {}: {} produced {checksum} in {} mode, but the `{}` workload \
+                 declares the answer is {reference}. This backend is wrong — not slow, wrong — and \
+                 a wrong run never enters the statistics. Every compiler, language, ISA target and \
+                 architecture agrees bit for bit; a divergence is a bug in the code or the flags, \
+                 never a rounding difference.",
                 sample.workload,
                 sample.backend(),
+                sample.mode,
                 self.workload.id,
             ),
             Some(reference) => bail!(
-                "strict-mode checksum mismatch on {}: {} produced {checksum}, and the backends \
-                 before it produced {reference}. In strict mode every compiler, language and \
+                "checksum mismatch on {}: {} produced {checksum} in {} mode, and the backends \
+                 before it produced {reference}. Every compiler, language, ISA target and \
                  architecture must agree bit for bit; a divergence is a bug in the code or the \
-                 flags, never a rounding difference. Note that `{}` declares no `checksum`, \
-                 so the reference here is simply whichever backend ran first — declare one and the \
-                 answer stops depending on the schedule.",
+                 flags, never a rounding difference. Note that `{}` declares no `checksum`, so the \
+                 reference here is simply whichever backend ran first — declare one and the answer \
+                 stops depending on the schedule.",
                 sample.workload,
                 sample.backend(),
+                sample.mode,
                 self.workload.id,
             ),
         }
@@ -576,6 +614,7 @@ mod tests {
 
     fn record(checksum: Option<u64>) -> ContainerRecord {
         ContainerRecord {
+            isa: Some("x86-64-v3".to_owned()),
             elapsed_ns: 1_000,
             user_usec: 10,
             system_usec: 1,
@@ -642,7 +681,7 @@ mod tests {
     /// the whole point of the change these tests cover — a campaign reads the list a
     /// workload declares, so the fixture has to *build* that list, and it rebuilds it
     /// each time a benchmark is added so that tests can compose them freely.
-    fn declare_workload(root: &Path, workload: &str, strict_checksum: Option<u64>) {
+    fn declare_workload(root: &Path, workload: &str, checksum: Option<u64>) {
         let dir = root.join(workload);
         let mut names: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
@@ -662,7 +701,7 @@ mod tests {
              \x20 - name: max_iter\n\
              \x20   value: 10\n",
         );
-        if let Some(checksum) = strict_checksum {
+        if let Some(checksum) = checksum {
             yaml.push_str(&format!("checksum: {checksum}\n"));
         }
         yaml.push_str("implementations:\n");
@@ -695,7 +734,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 1;
@@ -710,7 +749,7 @@ mod tests {
         assert_eq!(sample.checksum, Some(42));
     }
 
-    fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<FpMode>) -> RunArgs {
+    fn args(benchmarks_dir: &Path, output: &Path, modes: Vec<Mode>) -> RunArgs {
         RunArgs {
             workload: WORKLOAD.to_owned(),
             params: Vec::new(),
@@ -737,7 +776,7 @@ mod tests {
 
         let engine = MockContainerEngine::new();
         let err =
-            execute(args(root.path(), out.path(), vec![FpMode::Strict]), &engine).unwrap_err();
+            execute(args(root.path(), out.path(), vec![Mode::Baseline]), &engine).unwrap_err();
         assert!(
             err.to_string().contains("declares no implementation"),
             "{err}"
@@ -761,7 +800,7 @@ mod tests {
             })
         });
 
-        let args = args(root.path(), out.path(), vec![FpMode::Strict, FpMode::Fast]);
+        let args = args(root.path(), out.path(), vec![Mode::Baseline, Mode::Native]);
         execute(args, &engine).unwrap();
 
         // The samples, and strictly nothing else: converting is a separate command,
@@ -787,8 +826,8 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
-        args.output = out.path().join("x86-64/strict/samples.ndjson");
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
+        args.output = out.path().join("x86-64/baseline/samples.ndjson");
         let path = args.output.clone();
         execute(args, &engine).unwrap();
 
@@ -797,12 +836,13 @@ mod tests {
 
     #[test]
     fn an_implementation_is_never_built_under_a_mode_it_does_not_distinguish() {
-        // CPython has one FP semantics: `fma` and `fast` would be the same image
-        // under another tag, and three identical rows in the report.
+        // CPython compiles nothing ahead of the run, so it has no ISA target to
+        // choose: a `native` image would be the `baseline` image under another tag,
+        // and two identical rows in the table.
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks(root.path(), &["c-gcc"]);
-        benchmark_declaring(root.path(), "python-cpython", "strict");
+        benchmark_declaring(root.path(), "python-cpython", "baseline");
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         let recorded = Arc::clone(&seen);
@@ -819,17 +859,16 @@ mod tests {
             })
         });
 
-        execute(args(root.path(), out.path(), FpMode::ALL.to_vec()), &engine).unwrap();
+        execute(args(root.path(), out.path(), Mode::ALL.to_vec()), &engine).unwrap();
 
-        // Three images for gcc, one for CPython — not six.
+        // Two images for gcc, one for CPython — not four.
         let images = seen.lock().unwrap().clone();
         assert_eq!(
             images,
             [
-                "langbench/mandelbrot-c-gcc:strict",
-                "langbench/mandelbrot-c-gcc:fma",
-                "langbench/mandelbrot-c-gcc:fast",
-                "langbench/mandelbrot-python-cpython:strict",
+                "langbench/mandelbrot-c-gcc:baseline",
+                "langbench/mandelbrot-c-gcc:native",
+                "langbench/mandelbrot-python-cpython:baseline",
             ],
         );
     }
@@ -840,10 +879,10 @@ mod tests {
         // header and no samples.
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
-        benchmark_declaring(root.path(), "python-cpython", "strict");
+        benchmark_declaring(root.path(), "python-cpython", "baseline");
 
         let engine = MockContainerEngine::new();
-        let err = execute(args(root.path(), out.path(), vec![FpMode::Fast]), &engine).unwrap_err();
+        let err = execute(args(root.path(), out.path(), vec![Mode::Native]), &engine).unwrap_err();
         // The message must name both ways a campaign can end up empty — a mode
         // nobody declares, or an architecture nobody builds on — because the two
         // call for different fixes and the reader has to know which one this was.
@@ -874,7 +913,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 2;
@@ -884,10 +923,10 @@ mod tests {
         assert_eq!(
             images,
             [
-                "langbench/mandelbrot-c-gcc:strict",
-                "langbench/mandelbrot-rust-llvm:strict",
-                "langbench/mandelbrot-c-gcc:strict",
-                "langbench/mandelbrot-rust-llvm:strict",
+                "langbench/mandelbrot-c-gcc:baseline",
+                "langbench/mandelbrot-rust-llvm:baseline",
+                "langbench/mandelbrot-c-gcc:baseline",
+                "langbench/mandelbrot-rust-llvm:baseline",
             ],
         );
     }
@@ -895,7 +934,7 @@ mod tests {
     /// A divergence is a bug in the backend, and the backend is what it costs:
     /// the campaign keeps every other row it was measuring.
     #[test]
-    fn a_strict_mode_checksum_divergence_quarantines_the_backend_not_the_campaign() {
+    fn a_checksum_divergence_quarantines_the_backend_not_the_campaign() {
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks(root.path(), &["c-gcc", "c-clang"]);
@@ -911,7 +950,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 3;
@@ -946,7 +985,7 @@ mod tests {
     fn two_algorithms_are_each_verified_against_their_own_reference() {
         // The checksum is a property of (workload, grid size, max_iter), so two
         // workloads legitimately disagree. A campaign-wide reference would abort
-        // on the first strict run of the second workload.
+        // on the first run of the second workload.
         let root = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         benchmarks_for(root.path(), "mandelbrot", &["c-gcc"]);
@@ -962,7 +1001,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 2;
@@ -986,7 +1025,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Fast]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Native]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 1;
@@ -1010,7 +1049,7 @@ mod tests {
                 "language: kotlin\n\
                  compiler: kotlin-native\n\
                  source: {SOURCE}\n\
-                 modes: [strict]\n\
+                 modes: [baseline]\n\
                  architectures: [x86_64]\n\
                  description: No linux-aarch64 host compiler exists.\n",
             ),
@@ -1024,14 +1063,14 @@ mod tests {
         // On x86-64 both are scheduled; on AArch64 only the C one survives.
         let on_x86 = schedule(
             &implementations,
-            &[FpMode::Strict],
+            &[Mode::Baseline],
             Some(Architecture::X86_64),
         );
         assert_eq!(on_x86.len(), 2);
 
         let on_arm = schedule(
             &implementations,
-            &[FpMode::Strict],
+            &[Mode::Baseline],
             Some(Architecture::Aarch64),
         );
         assert_eq!(on_arm.len(), 1);
@@ -1063,7 +1102,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 4;
@@ -1101,7 +1140,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 4;
@@ -1141,7 +1180,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         // The build phase kills it, and the run phase must not resurrect it.
         args.build_rounds = 2;
@@ -1177,7 +1216,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 2;
@@ -1192,7 +1231,7 @@ mod tests {
     }
 
     /// Quarantine is per `(implementation, mode)`, never per implementation: a
-    /// backend whose `fast` build is broken still has a `strict` one to publish.
+    /// backend whose `native` build is broken still has a `baseline` one to publish.
     #[test]
     fn quarantine_takes_the_unit_and_not_the_whole_implementation() {
         let root = TempDir::new().unwrap();
@@ -1201,8 +1240,8 @@ mod tests {
 
         let mut engine = MockContainerEngine::new();
         engine.expect_build().returning(|spec| {
-            if spec.image.ends_with(":fast") {
-                bail!("`docker build` failed: -ffast-math is not a flag this fixture likes");
+            if spec.image.ends_with(":native") {
+                bail!("`docker build` failed: this fixture's CPU is not one gcc has heard of");
             }
             Ok(())
         });
@@ -1213,7 +1252,7 @@ mod tests {
             })
         });
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict, FpMode::Fast]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline, Mode::Native]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 1;
@@ -1222,9 +1261,9 @@ mod tests {
 
         let recording = crate::sample::load(&output).unwrap();
         assert_eq!(recording.samples.len(), 1);
-        assert_eq!(recording.samples[0].mode, FpMode::Strict);
+        assert_eq!(recording.samples[0].mode, Mode::Baseline);
         assert_eq!(recording.failures.len(), 1);
-        assert_eq!(recording.failures[0].mode, FpMode::Fast);
+        assert_eq!(recording.failures[0].mode, Mode::Native);
     }
 
     /// Quarantine is not a way to smile through a campaign that measured nothing.
@@ -1242,7 +1281,7 @@ mod tests {
             .expect_run()
             .returning(|_| bail!("`docker run` failed for langbench/mandelbrot-c-gcc:strict"));
 
-        let mut args = args(root.path(), out.path(), vec![FpMode::Strict]);
+        let mut args = args(root.path(), out.path(), vec![Mode::Baseline]);
         args.warmup_rounds = 0;
         args.build_rounds = 0;
         args.rounds = 1;

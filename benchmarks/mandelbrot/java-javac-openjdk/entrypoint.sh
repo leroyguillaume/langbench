@@ -10,50 +10,16 @@ CLASSES=${CLASSES:-/usr/local/lib/mandelbrot}
 MAIN_CLASS=Mandelbrot
 BUILD_DIR=${BUILD_DIR:-/build}
 
-# The JVM has exactly one floating-point semantics, and it is the strict one.
-# Since JEP 306 (Java 17) every expression is evaluated as if `strictfp`, and the
-# JLS forbids javac *and* HotSpot's JIT from contracting `a * b + c` into an FMA:
-# fusing is `Math.fma`, which the source has to ask for. So the three modes produce
-# the same bytecode, the same machine code and the same checksum -- which is itself
-# the result, and it is C's checksum.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: the JVM has one FP semantics; mode %s behaves exactly like strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-}
-
-# The ISA baseline, as close as a JVM lets us get to one -- which is not very.
+# The ISA this run actually got, reported on stdout with the numbers it explains.
 #
-# HotSpot's C2 compiles for the *host* CPU and offers no `-march`. This project
-# forbids `-march=native` precisely because a backend must not get a private head
-# start from whatever silicon the bench machine happens to have, and a JIT hands
-# itself exactly that. What the JVM does offer is a cap on the vector width it may
-# use, so that is what we pin: AVX2 on x86-64 (which is what v3 means), and NEON
-# without SVE on AArch64.
-#
-# It is an approximation and it is published as one -- see `bench.yaml`. An
-# unrecognised flag makes the JVM refuse to start, so a wrong baseline fails loudly
-# rather than quietly granting this row an ISA the C rows were denied.
-jvm_isa_flag() {
-    case "${MARCH:-}" in
-    '') ;;
-    x86-64-v3) printf -- '-XX:UseAVX=2\n' ;;
-    armv8.2-a) printf -- '-XX:UseSVE=0\n' ;;
-    *)
-        printf 'unknown MARCH for the JVM: %s. Add its HotSpot spelling to jvm_isa_flag()\n' "${MARCH}" >&2
-        printf 'rather than letting the JIT compile for whatever CPU it finds.\n' >&2
-        exit 1
-        ;;
-    esac
-}
+# It is a constant here, and that is the whole point: C2 compiles the hot loop while
+# the program runs, on the machine it is running on, and takes that machine's
+# instruction set as it finds it. There is no `-march` to pass and no baseline to ask
+# for -- a JIT cannot be given a CPU older than the one under it. So this backend
+# declares `native`, reports `native`, and the word means exactly what it means on a
+# c-gcc native row: this machine's ISA. One of them had to ask for it; this one could
+# not refuse it.
+ISA=native
 
 now_ns() {
     date +%s%N
@@ -105,7 +71,6 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
 
 case "${phase}" in
 install)
@@ -133,8 +98,8 @@ build)
     # No machine-code artifact: the sizes are null, not zero. A .class file is
     # bytecode, and putting its size next to an ELF's would rank packaging, not
     # codegen.
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"build","elapsed_ns":%s,"isa":"%s","user_usec":%s,"system_usec":%s,"binary_bytes":null,"binary_stripped_bytes":null,"text_bytes":null,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "${ISA}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 run)
@@ -144,19 +109,19 @@ run)
     # -- here, the JVM booting -- and it is a result rather than overhead to be
     # subtracted. It is the largest such gap in the table, and that is the point.
     #
-    # No -Xss, no -Xmx, no -XX:TieredStopAtLevel: the defaults are what a Java
-    # program gets, and tuning them would measure our tuning.
-    # jvm_isa_flag prints one flag, or nothing at all: it must split, and an empty
-    # quoted expansion would hand the JVM an empty argument and fail the run.
-    # shellcheck disable=SC2046
-    output=$(java $(jvm_isa_flag) -cp "${CLASSES}" "${MAIN_CLASS}" "$2" "$3" "$4")
+    # No -Xss, no -Xmx, no -XX:TieredStopAtLevel, and no -XX:UseAVX: the defaults are
+    # what a Java program gets, and tuning them would measure our tuning. The vector
+    # cap in particular is gone on purpose -- this row declares `native`, so capping
+    # its vector width would deny it the very thing the mode says it gets, and publish
+    # a JVM slower than the one anybody actually runs.
+    output=$(java -cp "${CLASSES}" "${MAIN_CLASS}" "$2" "$3" "$4")
     checksum=${output% *}
     elapsed_ns=${output#* }
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,"isa":"%s","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${ISA}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

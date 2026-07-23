@@ -7,7 +7,7 @@
 //! quietly rounded. The correctness gate of this harness would be corrupted by
 //! the act of displaying it. So the file is parsed here, by `serde_json`, in
 //! Rust — and the checksums leave through [`crate::analysis`], which serializes
-//! them as strings. See `site/src/content/methodology.md#floating-point-modes`.
+//! them as strings. See `site/src/content/methodology.md#the-strict-mode-invariant`.
 //!
 //! The second reason this module exists at all is [`crate::analysis`]: the site
 //! gets the harness's own min-of-N, its own bucketing, its own definition of
@@ -96,17 +96,18 @@ pub fn compare(
 /// The same, with each row drawn from a campaign of its own — which is how a reader
 /// puts x86-64 next to AArch64.
 ///
-/// The comparison comes back with `cross_isa` set, and the caller is expected to say
+/// The comparison comes back with `cross_architecture` set, and the caller is expected to say
 /// so, loudly: the timings are computed exactly as they are within one campaign, and
 /// **they mean nothing across two**. Two machines, two clock speeds, two instruction
 /// sets, and a ratio of their milliseconds that describes neither. It is computed
 /// anyway because refusing would only send somebody off to divide the two numbers by
 /// hand, with nothing on screen to tell them not to.
 ///
-/// The checksums are the exception, and the reason this is worth having at all: in
-/// `strict` mode they are obliged to be bit-identical across every architecture, and a
-/// divergence here is a genuine bug rather than a curiosity.
-/// See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+/// The checksums are the exception, and the reason this is worth having at all: they
+/// are obliged to be bit-identical across every architecture — in *both* ISA targets,
+/// since neither relaxes the arithmetic — and a divergence here is a genuine bug rather
+/// than a curiosity.
+/// See `site/src/content/methodology.md#the-architecture`.
 #[wasm_bindgen]
 pub fn compare_across(
     left_ndjson: &str,

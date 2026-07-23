@@ -6,13 +6,15 @@ compiler: gcc
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.c
-# gcc distinguishes all three: `-ffp-contract=off`, `-ffp-contract=fast` and
-# `-ffast-math` are three different code generators over the same source.
+# gcc compiles ahead of the run, so it has to be told which machine to emit code
+# for, and it emits a different one for each answer: a baseline every CPU of the
+# architecture can run, or the exact CPU it happens to be compiling on. Both are
+# real builds of the same source, so both are built.
 modes: all
 description: >-
-  The reference kernel. Hand-written C, compiled by gcc at -O3 against a pinned
-  ISA baseline, with std threads and an atomic work queue. Every other row in
-  this table is read against this one.
+  The reference kernel. Hand-written C, compiled by gcc at -O3 against the ISA the
+  mode names, with std threads and an atomic work queue. Every other row in this
+  table is read against this one.
 comments: >-
   gcc links libc dynamically: the binary this row ships does not contain the C
   library. The code is in libc.so, outside the file the harness measures.

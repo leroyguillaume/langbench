@@ -11,10 +11,11 @@
 # the toolchain, so a cold build of our one file never recompiles std.
 FROM rust:1.93-slim-trixie@sha256:c0a38f5662afdb298898da1d70b909af4bda4e0acff2dc52aea6360a9b9c6956
 
-# Floating-point semantics, ISA baseline and job count arrive as build args, so
-# one Dockerfile covers every mode the backend distinguishes -- which, here, is
-# `strict` alone. See `bench.yaml`.
-ARG FP_MODE=strict
+# The ISA target and the job count arrive as build args, so one Dockerfile covers
+# both modes: `MARCH` is either the pinned baseline of the architecture or the
+# literal `native`, and that choice *is* the mode. Floating-point is not a build
+# arg -- it is strict in every mode, and in Rust it is strict without asking: there
+# is no `-ffast-math` to pass and no flag to leave out.
 ARG MARCH=x86-64-v3
 ARG JOBS=1
 
@@ -22,12 +23,11 @@ ARG JOBS=1
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="1.93" \
-      langbench.flags="-C opt-level=3 -C codegen-units=1 march=${MARCH} fp=${FP_MODE}"
+      langbench.flags="-C opt-level=3 -C codegen-units=1 march=${MARCH}"
 
 # The entrypoint reads these at run time to rebuild with exactly the flags the
 # shipped binary was compiled with.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
     BUILD_DIR=/build
 
 WORKDIR /usr/local/src/mandelbrot

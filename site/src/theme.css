@@ -17,7 +17,8 @@
   --text-secondary: #52514e;
   --text-muted: #79776f;
 
-  /* Categorical slots, in the order the validator picked. strict / fma / fast. */
+  /* Categorical slots, in the order the validator picked. baseline / native, and a
+     third kept for whatever the modes become — a slot is cheap, a repaint is not. */
   --series-1: #2a78d6;
   --series-2: #1baf7a;
   --series-3: #eda100;

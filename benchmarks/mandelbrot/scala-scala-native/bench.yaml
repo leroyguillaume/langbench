@@ -6,12 +6,11 @@ compiler: scala-native
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.scala
-# One mode. The code generator underneath is clang, which would understand `fma` and
-# `fast` perfectly well -- but Scala the language says nothing about fusing, so a
-# relaxed build here would be a claim about clang's flags rather than about this
-# backend. It speaks for the one mode it can honestly speak for.
-modes:
-  - strict
+# Both, and this row expresses them exactly. The code generator underneath is clang: it
+# compiles before it meets the machine, so it has to be told which machine to compile
+# for, and it takes the harness's `-march` verbatim -- baseline or `native`, no
+# translation table and no cap. No JVM Scala row can say that.
+modes: all
 description: >-
   The same Mandelbrot.scala as scala-scalac-openjdk, byte for byte, compiled by
   Scala Native through LLVM into a standalone ELF. No JVM, no bytecode, no JIT --
@@ -20,7 +19,10 @@ description: >-
 comments: >-
   One source, and the choice is a JVM or LLVM — no edit to the kernel, because Scala
   Native's javalib supplies the very java.lang.Thread and AtomicInteger the JVM rows
-  use. The only Scala row that can honour the architecture rule exactly: clang takes
-  the harness's -march verbatim, where every JVM row can only approximate it. Not to
+  use. The only Scala row whose ISA target is exact: clang takes the harness's -march
+  verbatim, in both modes, where every JVM row can only approximate it — so its isa is
+  what its mode asked for, and nothing else in this language group can say that. clang
+  is handed -ffp-contract=off in every mode, for the reason c-clang is: it contracts
+  into an FMA by default, and the checksum is not negotiable at any ISA target. Not to
   be confused with scala-native-image, which is GraalVM AOT-compiling JVM bytecode: a
   different compiler, a different runtime, and a confusingly similar name.

@@ -7,10 +7,12 @@ compiler: ~
 interpreter: deno
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.mts
-# One floating-point semantics, and no flag to change it: ECMAScript specifies the
-# result of every arithmetic operator.
+# `native`, and nothing else to offer. The types are stripped, and what V8 then
+# runs is machine code its JIT generates *during* the run, on this machine, for the
+# instruction set this CPU turned out to have. There is no ISA to pin ahead of
+# time, and no flag that would pin one.
 modes:
-  - strict
+  - native
 description: >-
   The same mandelbrot.mts as ts-nodejs, byte for byte, executed by Deno -- the
   runtime that has run TypeScript natively since its first release, on the same V8

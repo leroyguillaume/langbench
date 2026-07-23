@@ -78,38 +78,133 @@ measures the split, not the backend.
   (The *harness* auto-detects a default for `--cpu`. That is correct: it then
   passes the value explicitly. The prohibition applies to the kernels.)
 
-## Floating-point modes
+## The ISA target
 
-Three modes, built from the same source via build args. The axis is **FP
-semantics**, not "optimization on or off" — every mode is `-O3`.
+Two modes, built from the same source via one build arg. The axis is **which
+machine the code is for** — not floating-point semantics, and not "optimization on
+or off". Every mode is `-O3`, and every mode is strict IEEE 754.
 
-| Mode     | Flags                             | Meaning |
-| -------- | --------------------------------- | ------- |
-| `strict` | `-ffp-contract=off`, no fast-math | Bit-reproducible IEEE 754 |
-| `fma`    | FMA contraction allowed           | Bit-different but *more* accurate: one rounding instead of two |
-| `fast`   | `-ffast-math`                     | Reassociation allowed: precision sold for speed |
+| Mode       | Flags                                 | Meaning |
+| ---------- | ------------------------------------- | ------- |
+| `baseline` | `-march=x86-64-v3` / `-march=armv8.2-a` | A pinned ISA, identical for every backend on the architecture. The binary does not depend on the CPU that built it. |
+| `native`   | `-march=native`                       | Whatever this CPU offers, resolved by the toolchain against the machine it is on. |
 
-Splitting `fma` out of `fast` matters. FMA contraction changes the result in the
-last bit, but in the *right direction* — it is not cheating, it is a different
-definition of the computation. Reassociation is the real relaxation. Lumping them
-together throws away the most interesting column: the cost of demanding
-bit-reproducibility.
+The two are the two answers a toolchain can give to *"which machine is this code
+for?"* — and **which answers a backend is capable of giving is the subject of this
+project.**
+
+An ahead-of-time compiler must choose. It emits machine code before it knows where
+that code will run, so it either targets a floor every CPU of the architecture
+clears, or it targets the CPU in front of it and gives up portability. Both are
+real builds of the same source, so both are built, and the gap between them is
+**what portability costs**.
+
+A JIT does not choose. It generates code at run time, on the machine it is running
+on, and it uses that machine's instruction set whether anybody asks it to or not.
+HotSpot has no `-march`; neither does V8, nor JavaScriptCore, nor PyPy's tracing
+JIT. They declare `modes: [native]`, and it is not a limitation they are apologising
+for — **it is what a JIT sells.** The specialisation an ahead-of-time compiler buys
+by giving up portability, a JIT gets for free, because it compiles late enough to
+know the answer.
+
+That asymmetry is not a flaw in the measurement. It is the measurement.
+
+### Two exceptions, and each is worth knowing
+
+**Julia is a JIT that can be pinned.** It compiles at run time like the others, but
+it takes `--cpu-target`, and it *validates* the name — one of the few toolchains
+here that rejects a CPU it has never heard of rather than silently falling back. So
+Julia declares both modes. It proves that the `baseline` column is not "the
+ahead-of-time compilers": it is "the toolchains that let you choose the target",
+and the two sets are not the same. A JIT is native **by default**, not by necessity.
+
+**CPython is neither.** It compiles nothing ahead of the run, and it has no JIT —
+3.13's is experimental, off by default, and not enabled in the image we pin. No machine
+code is ever generated for this CPU, at any point. The code that executes the hot
+loop is CPython's own `eval` loop — a C interpreter compiled by whoever packaged it,
+and we checked: there is **no `-march` anywhere in its CFLAGS**. It was built for the
+toolchain's floor, plain `x86-64`, because an image that has to start on every machine
+there is cannot assume otherwise. So CPython declares `baseline` — the column of "did
+not get the machine", which is the column a reader wants to read it against — while
+the ISA it actually got sits *below* the baseline every compiled row was held to.
+Which brings us to the next section.
+
+### The mode is a request; the ISA is what came back
+
+Every sample carries **both**, because they disagree, and every disagreement below
+is real:
+
+| Row | Mode | ISA it actually got |
+| --- | ---- | ------------------- |
+| `c-gcc`, `rust-rustc`, `zig`, … | `baseline` | `x86-64-v3` — the contract, honoured |
+| the same, native | `native` | `native` |
+| every JIT row | `native` | `native` — same word, and that is the finding |
+| **`go-gc`** | `native` | **`v3`** on an AVX2 machine — Go has no `-march=native`, so the entrypoint detects the CPU and names the psABI level it clears. Ties with its own baseline, because it *is* its own baseline |
+| **`native-image`, AArch64** | `baseline` | **`armv8.1-a`** — GraalVM offers no `armv8.2-a`, so it takes one level *below* the campaign's |
+| **`python-cpython`** | `baseline` | **`distro`** — an interpreter built with no `-march` at all, at the toolchain's floor |
+
+Before this column existed, every one of those divergences lived in the free text of
+a manifest's `comments` field — which is to say, **nowhere a reader of the table
+would ever find them.** A column whose meaning varies from row to row is not a sin.
+A column whose meaning varies from row to row *in silence* is, and it is the exact
+sin this project spent a schema, a generated manifest and a validator trying to
+prevent everywhere else.
+
+So the row says what it got. When the mode and the ISA agree, the pair is boring and
+you may ignore it. When they disagree, the row is telling you something you would
+otherwise have had to already know.
+
+### `native` is not `fast-math`, and the distinction is load-bearing
+
+`-march=native` decides **which instructions** the compiler may emit. `-ffast-math`
+decides **what arithmetic means**. They are orthogonal, and only the first one is in
+this table.
+
+Widening a vector reorders nothing. Under strict IEEE 754 semantics, a `native`
+build and a `baseline` build of the same source compute **the same bits** — the
+compiler is allowed to do four multiplications at once, and it is not allowed to do
+them in a different order. So the checksum holds across both modes, and `-ffast-math`
+is spelled nowhere in this repository.
+
+This is why the ISA axis could replace the floating-point one without weakening
+anything. The old `fma` and `fast` modes were *licensed to compute a different
+number*, which meant the correctness gate covered only the `strict` rows — the two
+modes most likely to expose a miscompilation were the two nobody checked. The new
+axis grants no such licence. **Every sample, in every mode, is now held to the
+checksum**, and a divergence quarantines the backend on the spot.
+
+Whether relaxed floating-point is worth what it costs is a real question, and this
+project no longer answers it. It could not answer it honestly anyway: `-ffast-math`,
+`-Ofast`, Zig's `@setFloatMode(.optimized)` and the JVM's *nothing at all* are not
+the same relaxation, so a `fast` column was comparing rows whose treatment differed
+by row. That question belongs to a campaign of its own, not to a permanent column of
+every table.
 
 ### The strict-mode invariant
 
-`strict` mode is the **correctness gate for the entire harness**.
+Strict IEEE 754 arithmetic — in **every** mode — is the **correctness gate for the
+entire harness**.
 
 Mandelbrot uses only multiply, add, subtract and compare. All four are correctly
 rounded under IEEE 754 — the result is specified to the bit, and both x86-64 (on
 SSE2, not the old 80-bit x87) and AArch64 conform. With no FMA contraction, no
 reassociation and no denormal flushing, the checksum **must be bit-identical
-across every compiler, every language and both architectures.**
+across every compiler, every language, every ISA target and both
+architectures.**
 
-One reference value. Seventeen implementations across ten languages — C, C++,
-Rust, Zig, Go, Julia, Python, JavaScript, TypeScript — and **every one of them
-agrees on it, bit for bit**, from `gcc -O3` to a JIT-compiled Julia script to
-JavaScript in a Bun worker. Any divergence is a bug — in the code, in the flags,
-or in our understanding of them. Never a rounding excuse.
+One reference value. Every implementation across ten languages — C, C++, Rust, Zig,
+Go, Julia, Python, JavaScript, TypeScript — and **every one of them agrees on it,
+bit for bit**, from `gcc -O3` to a JIT-compiled Julia script to JavaScript in a Bun
+worker. Any divergence is a bug — in the code, in the flags, or in our understanding
+of them. Never a rounding excuse.
+
+**And now it binds every row.** Under the old floating-point axis this claim was
+about the `strict` rows alone: `fma` and `fast` were licensed to compute a different
+number, so the gate that catches a miscompilation was switched off for exactly the
+two modes most likely to contain one. The ISA axis licenses nothing — a wider vector
+executes the same arithmetic in the same order — so the harness now checks the
+checksum on **every sample it records**, `baseline` and `native` alike, warmup rounds
+included. A backend that disagrees is quarantined at the sample that disagreed.
 
 This invariant catches the class of error that unit tests do not. Measured: C/gcc
 and CPython agree exactly, and rewriting `zr2 - zi2 + cr` as `cr + zr2 - zi2` in
@@ -135,15 +230,20 @@ obvious `2.0*zr*zi + ci` is not enough: the compiler also fuses `zr2 - zi2` back
 into an `FMSUB` on `zr*zr`, because it can still see where `zr2` came from. Every
 product that feeds an add or a subtract needs its own rounding point.
 
-This is the difference between C and Go on this axis. C says "do not contract" on
-the command line (`-ffp-contract=off`), where it is visible and where a build arg
-can flip it. Go says it in the source — so a fused Go build is a *different
-program*, not a different flag, and `fma` cannot be a mode over one kernel the
-way it is for C. Hence `modes: [strict]`.
+This is the difference between C and Go here. C says "do not contract" on the command
+line (`-ffp-contract=off`), where it is visible and where a flag could have flipped
+it. Go says it in the *source* — so a fused Go build is a different **program**, not
+a different flag.
 
 **Zig relaxes in the source too**, for the same structural reason:
-`@setFloatMode(.optimized)` is a statement inside the program, not a compiler
-flag. Same conclusion, same one-mode manifest.
+`@setFloatMode(.optimized)` is a statement inside the program, not a compiler flag.
+
+Both facts used to be an argument about *modes*: since neither language can relax its
+arithmetic with a build arg, neither could offer an `fma` image, and both declared
+`modes: [strict]`. The floating-point axis is gone and that argument with it — but the
+rounding points in `mandelbrot.go` are not decoration, and deleting them would still
+silently change what the program computes. They are load-bearing for the same reason
+they always were, and now they are load-bearing in **both** modes.
 
 **It is a necessary condition, not a sufficient one.** The gate sees a change only
 when it flips a pixel's iteration count, so a perturbation that lands nowhere near
@@ -152,15 +252,26 @@ with `max_iter=100`. Sensitivity grows with grid size and iteration ceiling, sin
 both increase the number of pixels sitting on a boundary. A passing checksum means
 "no evidence of divergence at this resolution", not "provably identical".
 
-For `fma` and `fast` we do not gate on the checksum. We report its **delta from
-the strict reference** in a column beside the timing, so the reader sees the
-speed gained and the precision sold in one glance.
+**There is no mode we do not gate.** There used to be: `fma` and `fast` were scored
+against the strict reference rather than held to it, and their divergence was
+published as a `Δ strict` column — the speed gained and the precision sold, side by
+side. Both the licence and the column are gone. `baseline` and `native` compute the
+same bits, so a divergence in either is not a trade-off with a magnitude worth
+printing. It is a wrong run, and it takes the backend out of the campaign.
 
-## Flags, and the architecture baseline
+## Flags, and how each toolchain spells the ISA target
 
-- **Never `-march=native`.** The CPU model varies between runs; the architecture baseline
-  would vary with it. Pin an explicit baseline per architecture (e.g. `x86-64-v3`) as a
-  build arg and record it in the results.
+- **`native` is a mode, never a default.** A native build depends on the CPU that
+  built it, so it is asked for explicitly, published as its own row, and never
+  allowed to stand in for the pinned one. What is forbidden is not the flag — it is a
+  *baseline* that quietly varies with the machine. The `baseline` mode pins one; the
+  `native` mode says out loud that it does not.
+
+  This rule used to read *"Never `-march=native`, in any toolchain, under any
+  spelling"*, and it was quietly unenforceable. A JIT compiles on the machine it runs
+  on: HotSpot, V8 and PyPy were native the whole time, whatever the rule said. The ban
+  never stopped the JVM from getting the machine. It only stopped **gcc** from getting
+  it — and then called the result a level playing field.
 - `x86-64-v3` and any AArch64 baseline are **not equivalent** and we never claim
   they are. NEON is 128-bit wide — two `f64` lanes. AVX2 is 256-bit — four. A
   factor of two on a vectorized kernel comes straight out of the architecture and has
@@ -169,64 +280,91 @@ speed gained and the precision sold in one glance.
   Rust's `codegen-units`, `strip`, the linker (`ld` / `lld` / `mold`). Otherwise
   we benchmark a default rather than a decision.
 
-### Every toolchain spells the baseline differently, and some ignore it silently
+### Every toolchain spells the target differently, and some ignore it silently
 
-The harness speaks gcc: it hands every backend `MARCH=x86-64-v3` or
-`MARCH=armv8.2-a`. Only the C and C++ compilers take that verbatim. Each of the
-others translates it in its entrypoint — `-C target-feature=+v8.2a` for rustc,
-`-mcpu=generic+v8_2a` for zig, `GOARM64=v8.2` for go, `--cpu-target` for julia —
-and **an unrecognised baseline must fail the build, loudly**.
+The harness speaks gcc: it hands every backend `MARCH=x86-64-v3`, `MARCH=armv8.2-a`,
+or the literal `MARCH=native`. Only the C and C++ compilers take that verbatim. Each
+of the others translates it in its entrypoint — `-C target-cpu=` for rustc, `-mcpu=`
+for zig, `GOAMD64=` for go, `--cpu-target=` for julia — and **a target the toolchain
+cannot express must fail the build, loudly, or be reported as what it settled for.**
 
 That rule is not defensive pedantry. Measured:
 
 - **rustc only warns.** `-C target-cpu=armv8.2-a` prints *"not a recognized
   processor (ignoring processor)"* and hands back a generic binary — and it says
   exactly the same thing about `-C target-cpu=nonsense-v9`. A campaign would run
-  to completion and publish a row claiming an architecture baseline it was never compiled
+  to completion and publish a row claiming an ISA target it was never compiled
   for. The Rust entrypoint therefore both translates the name *and* greps rustc's
   stderr for that warning, failing if it appears.
-- **Go silently no-ops.** `GOAMD64=v3` on an arm64 build is not an error; it is
-  ignored.
-- **Julia defaults to `native`** — the one thing this project forbids outright —
-  so the baseline must always be passed explicitly. To its credit it is one of the
-  few toolchains here that *rejects* a name it does not know.
+- **Go silently no-ops**, and **Go has no `native` at all.** `GOAMD64=v3` on an arm64
+  build is not an error; it is ignored. And `GOAMD64` accepts only the psABI levels
+  `v1`…`v4` — there is no way to say "this exact CPU". So the entrypoint does the CPU
+  detection `-march=native` would have done, and names the highest level the machine
+  actually clears. Naming the *ceiling* instead (`v4`) would be a claim, not a
+  measurement: v4 is AVX-512, the Go runtime verifies it at startup, and on an AVX2 bench
+  machine that binary refuses to run — the `native` row would delete itself. Detected, it
+  answers `v3`, ties with its own baseline, and that tie is the finding: Go has no
+  instruction set left to reach for here.
+- **Julia defaults to `native`**, so the baseline must always be passed explicitly —
+  a forgotten flag there does not fail, it publishes a native row in the pinned
+  column. To its credit it is one of the few toolchains here that *rejects* a name it
+  does not know, which is why it is the one JIT in this table that can honour both
+  modes.
 - **OpenJ9 ignores unknown `-XX:` options entirely.** Measured:
   `java -XX:CompleteNonsenseFlag=42 -version` starts happily, where HotSpot refuses
-  to boot on the same flag. So the vector caps the HotSpot rows use would have
-  pinned *nothing* there while the manifest claimed otherwise. That backend
-  therefore passes no architecture flag at all and publishes the gap — an honest hole beats
-  a false guarantee.
+  to boot on the same flag. Any flag we passed it hoping to pin something would have
+  pinned *nothing* while the manifest claimed otherwise.
 
 A build that quietly falls back to generic does not break the campaign. It
 publishes a wrong number with a straight face, which is worse.
 
-### The JVM cannot honour this rule, and says so
+### The JIT gets the machine for free, and that is the result
 
-HotSpot has no `-march`. C2 compiles for **whatever CPU it finds at run time** —
-which is exactly the `native` targeting forbidden everywhere else in this
-methodology, and the JVM rows get it whether we like it or not. There is no flag that
-pins an architecture baseline the way `-march=x86-64-v3` does for gcc.
+HotSpot has no `-march`. C2 compiles for **whatever CPU it finds at run time**, and
+there is no flag that pins an ISA the way `-march=x86-64-v3` does for gcc. The same
+is true of OpenJ9's Testarossa, of Graal-as-a-JIT, of V8 and JavaScriptCore, and of
+PyPy's tracing JIT.
 
-What the JVM does offer is a *cap on vector width*: `-XX:UseAVX=2` on x86-64,
-`-XX:UseSVE=0` on AArch64. The Java, Kotlin and Scala entrypoints pin those, which
-stops the JIT from reaching for wider vectors than the compiled rows were allowed.
-It is an approximation and it is published as one, in each manifest's `comments`.
-Read a JVM row against the C rows with that caveat in hand: the architecture floor is
-pinned, the ceiling is not.
+For a long time this page called that a limitation. It listed the *cap on vector
+width* the JVM does offer — `-XX:UseAVX=2` on x86-64, `-XX:UseSVE=0` on AArch64 —
+explained that the entrypoints pinned those to stop the JIT reaching for wider
+vectors than the compiled rows were allowed, and admitted the result was an
+approximation: **the floor is pinned, the ceiling is not.**
 
-The alternative — dropping the JVM from the table — would be a worse answer to an
-honest limitation.
+That was the wrong conclusion, and the caps are gone.
+
+The JVM was never failing to honour a rule. It was doing the thing it exists to do.
+A JIT compiles *late* — after the program has started, on the silicon it is standing
+on — and the specialisation an ahead-of-time compiler can only buy by giving up
+portability, a JIT gets for nothing. That has been the headline argument for
+just-in-time compilation since the 1990s. Capping it to make the C rows look fair was
+not levelling the field: it was **deleting the JVM's actual advantage so that the
+table would look symmetrical**, and then publishing a JVM slower than the one anybody
+runs.
+
+So the JIT rows declare `modes: [native]` — a fact, stated once, in the same manifest
+field where an interpreter states that it compiles nothing. And the compiled rows are
+built **both** ways, so the reader can see the same specialisation being bought
+explicitly, and see what it costs in portability.
+
+The honest comparison was never "everyone pinned" or "everyone native". It is: *here
+is what each toolchain can be asked for, and here is what it did.*
 
 **Except for one row.** GraalVM `native-image` compiles *ahead* of the run, so it
-takes a real `-march` and is the only JVM backend with a genuine architecture baseline. It
-comes with its own wrinkle: on AArch64 native-image offers `armv8-a` and
-`armv8.1-a` and stops, with no `armv8.2-a` to match the campaign's. The rule there
-is **never above the campaign's baseline** — it takes the highest level it can
-express that does not exceed what every other backend was held to, which is one
-below. The row is handicapped rather than flattered, and that is the safe direction
-to be wrong in.
+takes a real `-march` and is the only JVM backend that can be pinned. It comes with
+its own wrinkle: on AArch64 native-image offers `armv8-a` and `armv8.1-a` and stops,
+with no `armv8.2-a` to match the campaign's. The rule there is **never above the
+campaign's baseline** — it takes the highest level it can express that does not exceed
+what every other backend was held to, which is one below. The row is handicapped
+rather than flattered, that is the safe direction to be wrong in, and it reports
+`armv8.1-a` as its ISA so the reader can see it.
 
-### The architecture rule
+## The architecture
+
+**The chip, and nothing else: `x86_64` or `aarch64`.** Not to be confused with the ISA
+target above — that is what a compiler is asked to emit *for* this chip, and the two
+words are kept apart on purpose. One campaign runs on one architecture; a backend
+declares which architectures it can be built on; the ISA target varies *within* one.
 
 **Absolute cross-architecture timings are never published.**
 
@@ -529,7 +667,7 @@ made a small error. It has made the only error that matters.
 
 ### A backend that fails is not a campaign that fails
 
-Sixteen backends, three modes, an hour of wall-clock. One of them segfaults in
+Thirty backends, two modes, an hour of wall-clock. One of them segfaults in
 round seven. Aborting there throws away fifteen backends' worth of correct
 measurement to report a fact about the sixteenth — and on a bench machine you
 booked for the evening, you find out about it in the morning.

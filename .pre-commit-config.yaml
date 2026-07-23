@@ -77,7 +77,7 @@ repos:
         name: bench.schema.json is up to date
         entry: cargo run --quiet -- implementation jsonschema
         language: system
-        files: ^(src/discovery\.rs|src/cli\.rs|bench\.schema\.json)$
+        files: ^(src/discovery\.rs|src/cli\.rs|src/mode\.rs|bench\.schema\.json)$
         pass_filenames: false
 
       - id: workload-schema

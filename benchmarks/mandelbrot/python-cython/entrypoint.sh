@@ -6,27 +6,45 @@ set -eu
 SOURCE_DIR=/usr/local/src/mandelbrot
 BUILD_DIR=${BUILD_DIR:-/build}
 
-# Cython emits C, and gcc compiles it, so the floating-point flags do reach a
-# real compiler. They change nothing: without type annotations the generated C
-# manipulates `PyFloat` objects through the C-API, never raw doubles, so there
-# is no multiply-add for gcc to contract and nothing to reassociate. The three
-# modes therefore produce the same checksum -- which is itself the result.
+# Cython emits C and gcc compiles it, so every flag here reaches a real code
+# generator -- which makes this the one Python row where an ISA target means anything
+# at all.
+#
+# `-ffp-contract=off` is unconditional, and it is the load-bearing line in this file.
+# gcc contracts `a * b + c` into an FMA by default; the checksum is not negotiable, in
+# any mode. The ISA target chooses which instructions gcc may emit and never what the
+# arithmetic means, so it is passed beside the flag rather than instead of it -- and
+# `-ffast-math` is not something this backend has to offer, because a run that
+# computes a different number is not a faster run. (In this kernel the generated C
+# manipulates `PyFloat` objects through the C-API rather than raw doubles, so there is
+# nothing for gcc to contract in the first place. That is a property of today's
+# unannotated source, not a guarantee, and a guarantee is what the flag is for.)
+#
+# `-march` goes through verbatim: gcc's spelling is the one the harness hands out,
+# baseline or `native`, and there is no translation table to get wrong.
 export_cflags() {
-    flags="-O3"
+    flags="-O3 -ffp-contract=off"
     if [ -n "${MARCH:-}" ]; then
         flags="${flags} -march=${MARCH}"
     fi
-    case "${FP_MODE:-strict}" in
-    strict) flags="${flags} -ffp-contract=off" ;;
-    fma) flags="${flags} -ffp-contract=fast" ;;
-    fast) flags="${flags} -ffast-math" ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
     CFLAGS="${flags}"
     export CFLAGS
+}
+
+# What the code generator was actually targeted at: the `-march` it got, spelled the
+# way it got it. A JSON value, not a string -- nothing pinned is `null`, an absence
+# rather than a claim.
+#
+# `native` is reported as `native`, and gcc is not asked to resolve it into a
+# microarchitecture name. That query is another `gcc` process, and a process spawned
+# inside a measured phase lands in the very cgroup the CPU column is read from: the
+# name would cost a measurement.
+resolve_isa() {
+    if [ -n "${MARCH:-}" ]; then
+        isa="\"${MARCH}\""
+    else
+        isa=null
+    fi
 }
 
 # The shipped extension module, built once at `docker build`.
@@ -82,6 +100,7 @@ EOF
 [ "$#" -ge 1 ] || usage
 phase=$1
 export_cflags
+resolve_isa
 
 case "${phase}" in
 install)
@@ -115,8 +134,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,"isa":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "${isa}" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -130,8 +149,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,"isa":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${isa}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

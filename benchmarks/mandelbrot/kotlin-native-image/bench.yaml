@@ -3,8 +3,11 @@ compiler: native-image
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.kt
-modes:
-  - strict
+# Both, and it is the only Kotlin row where the question can be put at all: Graal
+# compiles before it meets the machine, so it must be told which machine to compile for.
+# Every other Kotlin row's code generator runs *on* the CPU it generates for and has no
+# choice to make.
+modes: all
 description: >-
   The same Mandelbrot.kt as every other Kotlin row, compiled ahead of time by
   GraalVM native-image into a standalone ELF -- with the Kotlin standard library
@@ -14,4 +17,7 @@ comments: >-
   kotlinc runs first, as a step in this compiler's pipeline, exactly as javac does for
   java-native-image; native-image then has to analyse and link the Kotlin standard
   library into the ELF. On AArch64 it takes armv8.1-a: one level BELOW the campaign's
-  baseline, never above.
+  baseline, never above, and the sample's isa column says so where its mode says
+  baseline. Floating point is strict in both modes and cannot be otherwise: the JLS
+  binds Graal ahead of time exactly as it binds C2 on the fly, so a wider ISA changes
+  which instructions are emitted and never what they compute.

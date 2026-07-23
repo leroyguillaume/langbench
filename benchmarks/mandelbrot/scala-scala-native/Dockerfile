@@ -14,7 +14,10 @@
 # the toolchain must survive into the runtime image.
 FROM eclipse-temurin:25-jdk-noble@sha256:3eb81ed94d8c1a34422f19f8188548bdf02cae69c91d0328afdbb7abed90f617
 
-ARG FP_MODE=strict
+# The ISA target, and the whole of the mode: a pinned baseline, or the literal `native`.
+# It reaches clang verbatim -- clang speaks gcc's spelling, which is the harness's. There
+# is no floating-point arg: clang is handed `-ffp-contract=off` whatever the mode, and
+# always will be.
 ARG MARCH=x86-64-v3
 ARG JOBS
 
@@ -54,7 +57,7 @@ RUN set -eu; \
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads.
 LABEL langbench.version="${SCALA_VERSION}" \
-      langbench.flags="release-fast -march=${MARCH} fp=${FP_MODE} llvm"
+      langbench.flags="release-fast -march=${MARCH} -ffp-contract=off llvm"
 
 # COURSIER_CACHE is the *toolchain* cache: the Scala Native runtime jars, the
 # compiler plugin, the standard library. It is warmed at image build -- where the
@@ -62,8 +65,7 @@ LABEL langbench.version="${SCALA_VERSION}" \
 # fail trying to reach Maven Central. The *project* cache stays cold: the timed
 # build compiles our kernel from scratch in the tmpfs. Hot for the toolchain, cold
 # for our code, exactly as for Go and Deno.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
     SCALA_VERSION=${SCALA_VERSION} \
     COURSIER_CACHE=/usr/local/share/coursier \
     BUILD_DIR=/build

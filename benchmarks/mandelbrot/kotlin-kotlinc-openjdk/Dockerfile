@@ -13,8 +13,9 @@
 # be timed, so kotlinc must survive into the runtime image.
 FROM eclipse-temurin:25-jdk-noble@sha256:3eb81ed94d8c1a34422f19f8188548bdf02cae69c91d0328afdbb7abed90f617
 
-ARG FP_MODE=strict
-ARG MARCH=x86-64-v3
+# No ISA build arg: kotlinc emits bytecode, which targets no CPU, and C2 emits the
+# machine code during the run for whatever CPU is under it. `native` is this backend's
+# only target, and there is nothing for a build arg to select.
 ARG JOBS
 
 ARG KOTLIN_VERSION=2.4.0
@@ -41,14 +42,12 @@ RUN set -eu; \
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads.
 LABEL langbench.version="${KOTLIN_VERSION}" \
-      langbench.flags="march=${MARCH} fp=${FP_MODE}"
+      langbench.flags="isa=native jit=c2"
 
 # The Kotlin stdlib is not a third-party dependency: it is the language's runtime,
 # the way libstdc++ is C++'s. It has to be on the classpath at run time, and its
 # loading cost is part of what this backend costs.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
-    KOTLIN_HOME=/usr/local/lib/kotlinc \
+ENV KOTLIN_HOME=/usr/local/lib/kotlinc \
     CLASSES=/usr/local/lib/mandelbrot \
     BUILD_DIR=/build
 

@@ -6,13 +6,14 @@ compiler: clang
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.c
-# clang distinguishes all three, and spells them exactly as gcc does:
-# `-ffp-contract=off`, `-ffp-contract=fast` and `-ffast-math`.
+# clang compiles ahead of the run, so it too has to be told which machine to emit
+# code for -- a baseline every CPU of the architecture can run, or the exact CPU it
+# is compiling on -- and it spells the choice exactly as gcc does, with `-march`.
 modes: all
 description: >-
   The same mandelbrot.c as c-gcc, byte for byte, compiled by clang at -O3 against
-  the same ISA baseline, on the same Debian, with the same flags. One source, two
-  code generators: whatever separates these two rows is LLVM against GCC.
+  the same ISA, on the same Debian, with the same flags. One source, two code
+  generators: whatever separates these two rows is LLVM against GCC.
 comments: >-
   Debian's clang, on the same base image, against the same libc and the same linker as
   c-gcc: the distribution and the standard library are held constant so that the code

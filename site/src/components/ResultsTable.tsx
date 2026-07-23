@@ -11,11 +11,10 @@
 // `"1000.0 ms"` sorts before `"2.0 ms"` alphabetically, and a table that does that
 // is worse than no table. The formatting happens on the way out.
 
-import type { Aggregate, FpMode, Summary } from "../analysis";
+import type { Aggregate, Mode, Summary } from "../analysis";
 import {
   bytes,
   cores,
-  delta,
   dispersion,
   mebibytes,
   milliseconds,
@@ -36,6 +35,7 @@ export type SortKey =
   | "compiler"
   | "interpreter"
   | "mode"
+  | "isa"
   | "runs"
   | "run"
   | "dispersion"
@@ -86,6 +86,10 @@ const COLUMNS: Column[] = [
     value: (row) => row.interpreter,
   },
   { key: "mode", label: "Mode", text: true, value: (row) => row.mode },
+  // Beside the mode, because it is only readable *against* it: the mode is what the row
+  // asked for and this is what it got, and the interesting rows are the ones where the
+  // two disagree — `native` that came back `v3`, `baseline` that came back `distro`.
+  { key: "isa", label: "ISA", text: true, value: (row) => row.isa },
   { key: "runs", label: "Runs", value: (row) => row.run_wall?.n ?? null },
   { key: "run", label: "Run min", value: (row) => min(row.run_wall) },
   {
@@ -128,6 +132,12 @@ const COLUMNS: Column[] = [
   { key: "source", label: "Source", value: (row) => row.source_bytes },
   { key: "binary", label: "Binary", value: (row) => row.binary_bytes },
   { key: "text", label: ".text", value: (row) => row.text_bytes },
+  // No checksum column, and not because it does not matter: it is the correctness gate
+  // for the whole harness. It is because `langbench` already enforced it. Every row that
+  // reached this table agreed with the reference, bit for bit, in both modes — a row that
+  // did not was quarantined and is in the failures list instead. A column where every
+  // cell is obliged to hold the same value tells a reader nothing they can act on; it
+  // reports that the gate ran, which the absence of a failure already reports.
 ];
 
 /**
@@ -153,7 +163,7 @@ function matches(value: string | null, filter: string | null): boolean {
  * `gcc` means the compiler, and matching them against an internal slug would hand
  * them rows for reasons they cannot see on screen.
  */
-export function filterRows<T extends Triple & { mode: FpMode }>(rows: T[], filters: Filters): T[] {
+export function filterRows<T extends Triple & { mode: Mode }>(rows: T[], filters: Filters): T[] {
   const needle = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
     if (!filters.modes.includes(row.mode)) {
@@ -260,7 +270,6 @@ export function ResultsTable({ rows, sort, onSort, backendsHref }: Props) {
                 ratio is against the fastest row *on screen*, and the report has no
                 screen. Explained where it appears, above the table. */}
             <th className="text">Ratio</th>
-            <th className="text">Δ strict</th>
           </tr>
         </thead>
         <tbody>
@@ -297,6 +306,15 @@ export function ResultsTable({ rows, sort, onSort, backendsHref }: Props) {
                     {row.mode}
                   </span>
                 </td>
+                {/* What the toolchain actually targeted, beside what the row asked for.
+                    They disagree by design — Go has no `native` and names a psABI level,
+                    `native-image` on AArch64 takes `armv8.1-a` where the campaign's
+                    baseline is `armv8.2-a`, CPython runs a Debian-built interpreter — and
+                    a table printing only the request would mislead. `n/a` is a backend
+                    that did not answer: an absence, and never a claim. */}
+                <td className={row.isa === null ? "text muted-cell" : "text"}>
+                  {optional(row.isa)}
+                </td>
                 {/* How many measured samples went into this row. The warmup rounds
                     are in `samples.ndjson`, flagged, and out of these numbers. */}
                 <td className="numeric">{row.run_wall?.n ?? NOT_AVAILABLE}</td>
@@ -328,7 +346,6 @@ export function ResultsTable({ rows, sort, onSort, backendsHref }: Props) {
                 <td className="numeric text">
                   {run !== null && fastest !== null ? ratio(run, fastest) : "n/a"}
                 </td>
-                <td className="numeric text">{delta(row.checksum_delta)}</td>
               </tr>
             );
           })}

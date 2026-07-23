@@ -37,7 +37,8 @@ function row(
     language: triple.language,
     compiler,
     interpreter,
-    mode: "strict",
+    mode: "baseline",
+    isa: "armv8.2-a",
     run_wall: runMin === null ? null : summary(runMin),
     run_elapsed: null,
     run_startup: null,
@@ -53,7 +54,6 @@ function row(
     binary_stripped_bytes: null,
     text_bytes: null,
     checksum: "42",
-    checksum_delta: "0",
     ...overrides,
   };
 }
@@ -125,7 +125,7 @@ describe("filtering", () => {
   });
 
   it("drops a mode the reader turned off", () => {
-    expect(filterRows([C_GCC], { ...NO_FILTERS, modes: ["fast"] })).toStrictEqual([]);
+    expect(filterRows([C_GCC], { ...NO_FILTERS, modes: ["native"] })).toStrictEqual([]);
   });
 });
 
@@ -202,6 +202,46 @@ describe("the table", () => {
     const cell = screen.getByText("7.40%");
     expect(cell).toHaveClass("suspect");
     expect(cell).toHaveAttribute("title", expect.stringContaining("not defensible"));
+  });
+
+  // The mode is what the row asked for; the ISA is what the toolchain gave it. Go asks
+  // for the machine and gets `v4`, because `GOAMD64` has no finer name for one — a
+  // divergence that used to live in the free text of a manifest, where no reader of this
+  // table would ever have met it.
+  it("prints the ISA a row got beside the mode it asked for", () => {
+    render(
+      <ResultsTable
+        rows={[
+          row({ language: "go", compiler: "gc" }, 2_000_000_000, {
+            mode: "native",
+            isa: "v4",
+          }),
+        ]}
+        sort={{ key: "run", descending: false }}
+        onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
+      />,
+    );
+    expect(screen.getByText("native")).toBeInTheDocument();
+    expect(screen.getByText("v4")).toBeInTheDocument();
+  });
+
+  // A backend that reported no ISA has an absence, and an absence renders like every
+  // other one on this table. A blank cell reads as a rendering bug.
+  it("spells an unreported ISA as an absence rather than blanking it", () => {
+    render(
+      <ResultsTable
+        rows={[row({ language: "silent", compiler: "cc" }, 1_000_000_000, { isa: null })]}
+        sort={{ key: "run", descending: false }}
+        onSort={() => {}}
+        backendsHref="/workloads/mandelbrot/"
+      />,
+    );
+    const absent = screen
+      .getAllByText("n/a")
+      .filter((cell) => cell.classList.contains("muted-cell"));
+    // The interpreter it does not have, and the ISA it did not report.
+    expect(absent).toHaveLength(2);
   });
 
   it("reports a two-sample dispersion as unavailable rather than as zero", () => {

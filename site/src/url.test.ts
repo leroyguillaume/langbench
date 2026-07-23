@@ -27,10 +27,18 @@ describe("reading the results view out of the URL", () => {
   });
 
   it("keeps the modes it recognizes and drops the ones it does not", () => {
-    at("?mode=fast,rubbish,strict");
+    at("?mode=native,rubbish,baseline");
     // Canonical order, not the order they were typed: the colour of a series is
     // its slot, and the slot is fixed.
-    expect(readResults().filters.modes).toStrictEqual(["strict", "fast"]);
+    expect(readResults().filters.modes).toStrictEqual(["baseline", "native"]);
+  });
+
+  // The floating-point modes this axis replaced. They are not aliases of anything —
+  // `fma` and `fast` computed a *different number* — so a bookmarked link naming one
+  // must fall back to every mode, never quietly reinterpret it as a row that ran.
+  it("drops the floating-point modes a stale link still asks for", () => {
+    at("?mode=strict,fma,fast");
+    expect(readResults().filters.modes).toStrictEqual(["baseline", "native"]);
   });
 
   it("falls back to the default sort rather than trusting a key it has no column for", () => {
@@ -48,7 +56,7 @@ describe("reading the results view out of the URL", () => {
 
   it("never lands on an empty mode list, whatever the query string says", () => {
     at("?mode=nonsense");
-    expect(readResults().filters.modes).toStrictEqual(["strict", "fma", "fast"]);
+    expect(readResults().filters.modes).toStrictEqual(["baseline", "native"]);
   });
 
   it("round-trips a view, so a filtered table is a link somebody else can open", () => {
@@ -59,7 +67,7 @@ describe("reading the results view out of the URL", () => {
         compiler: "cython",
         interpreter: "cpython",
         search: "cy",
-        modes: ["strict"],
+        modes: ["baseline"],
       },
       sort: { key: "binary", descending: true },
     };
@@ -109,10 +117,10 @@ describe("reading the head-to-head out of the URL", () => {
   beforeEach(() => at(""));
 
   it("carries the two rows, spelled as the triple and never as a slug", () => {
-    at("?a=c/gcc/-/strict&b=python/-/cpython/fast");
+    at("?a=c/gcc/-/baseline&b=python/-/cpython/native");
     const state = readCompare();
-    expect(state.left).toBe("c/gcc/-/strict");
-    expect(state.right).toBe("python/-/cpython/fast");
+    expect(state.left).toBe("c/gcc/-/baseline");
+    expect(state.right).toBe("python/-/cpython/native");
   });
 
   it("round-trips a pair", () => {
@@ -120,8 +128,8 @@ describe("reading the head-to-head out of the URL", () => {
       architecture: "aarch64",
       workload: "mandelbrot",
       includeWarmup: false,
-      left: "java/native-image/-/strict",
-      right: "java/javac/openjdk/strict",
+      left: "java/native-image/-/baseline",
+      right: "java/javac/openjdk/native",
     };
     writeCompare(state);
     expect(readCompare()).toStrictEqual(state);

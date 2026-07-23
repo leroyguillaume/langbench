@@ -7,10 +7,12 @@ compiler: ~
 interpreter: nodejs
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.mts
-# One floating-point semantics, and no flag to change it: the types are gone before
-# V8 ever sees the program, and ECMAScript specifies the result of every operator.
+# `native`, and nothing else to offer. The types are gone before V8 ever sees the
+# program, and what V8 then runs is machine code its JIT generates *during* the
+# run, on this machine, for the instruction set this CPU turned out to have. There
+# is no ISA to pin ahead of time, and no flag that would pin one.
 modes:
-  - strict
+  - native
 description: >-
   The kernel in TypeScript, executed by Node 24, which strips the types and runs
   the JavaScript underneath. Same worker_threads, same SharedArrayBuffer row queue,

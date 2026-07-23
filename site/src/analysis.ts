@@ -38,7 +38,15 @@ export const summarySchema = z.object({
   mad_pct: z.number(),
 });
 
-export const fpModeSchema = z.enum(["strict", "fma", "fast"]);
+/**
+ * What a row *asked* for: a pinned ISA baseline, or the machine it ran on.
+ *
+ * The axis is which instructions the code generator was allowed to emit — never
+ * floating-point semantics. Every mode is `-O3` and every mode is strict IEEE 754,
+ * so the checksum binds `baseline` and `native` alike. What a row actually *got* is
+ * `isa`, and the two disagree often enough to be two fields.
+ */
+export const modeSchema = z.enum(["baseline", "native"]);
 
 /**
  * A checksum, as it crosses the wire: a string, always. See the header.
@@ -54,7 +62,19 @@ export const aggregateSchema = z.object({
   compiler: z.string().nullable(),
   /** `null` for a backend that ships machine code and no runtime. */
   interpreter: z.string().nullable(),
-  mode: fpModeSchema,
+  mode: modeSchema,
+  /**
+   * The ISA this row actually got: `x86-64-v3`, `native`, `armv8.1-a`, `v4`, `distro`.
+   *
+   * The mode is a request and this is the answer, and they disagree by design — Go has
+   * no `-march=native` and stops at `v4`, GraalVM's `native-image` takes `armv8.1-a`
+   * where the campaign's baseline is `armv8.2-a`, CPython runs machine code Debian
+   * compiled for plain `x86-64`. Every one of those divergences used to live in a
+   * manifest's free text, which is to say nowhere a reader of the table would find it.
+   *
+   * `null` is a backend that did not answer — an absence, never a claim.
+   */
+  isa: z.string().nullable(),
   run_wall: summarySchema.nullable(),
   run_elapsed: summarySchema.nullable(),
   run_startup: summarySchema.nullable(),
@@ -82,8 +102,16 @@ export const aggregateSchema = z.object({
   binary_bytes: z.number().nullable(),
   binary_stripped_bytes: z.number().nullable(),
   text_bytes: z.number().nullable(),
+  /**
+   * The answer this row computed — and there is no delta beside it any more.
+   *
+   * `checksum_delta` priced a relaxed mode's distance from the strict reference, and it
+   * existed because `fma` and `fast` were licensed to compute a different number. Both
+   * modes are strict now, so a row that disagrees with the reference is not a trade-off
+   * with a magnitude worth printing: it is a wrong run, and the campaign quarantined it
+   * long before it reached this table.
+   */
   checksum: checksumSchema,
-  checksum_delta: checksumSchema,
 });
 
 export const backendSchema = z.object({
@@ -114,7 +142,7 @@ export const failureSchema = z.object({
   interpreter: z.string().nullable(),
   description: z.string(),
   comments: z.string().nullable(),
-  mode: fpModeSchema,
+  mode: modeSchema,
   /** `prepare`: the image never built. `measure`: it built, and the run went wrong. */
   stage: z.enum(["prepare", "measure"]),
   phase: z.enum(["build", "run"]).nullable(),
@@ -176,7 +204,15 @@ export const analysisSchema = z.object({
   workloads: z.array(
     z.object({
       workload: z.string(),
-      strict_checksum: checksumSchema,
+      /**
+       * The value every run of this workload agreed on — with no mode qualifying it.
+       *
+       * It was `strict_checksum` while a mode was allowed to compute a different
+       * number. Both modes are strict IEEE 754 now, so the reference binds every row
+       * rather than a third of them, which is the stronger claim and the one the
+       * harness enforces on every sample it records.
+       */
+      checksum: checksumSchema,
       aggregates: z.array(aggregateSchema),
     }),
   ),
@@ -223,7 +259,7 @@ export const sideSchema = z.object({
   language: z.string(),
   compiler: z.string().nullable(),
   interpreter: z.string().nullable(),
-  mode: fpModeSchema,
+  mode: modeSchema,
   /** The architecture of the campaign this row was measured on. */
   architecture: z.string(),
 });
@@ -238,24 +274,39 @@ export const comparisonSchema = z.object({
     right: checksumSchema,
     /** `null` when either side never reported one. Compared in Rust, on the full 64 bits. */
     same: z.boolean().nullable(),
-    /** Two `strict` rows that disagree. The harness aborts over it; a file carrying one did not come from here. */
-    violates_strict_invariant: z.boolean(),
+    /**
+     * The two answers disagree — in **any** mode, which is every mode there is.
+     *
+     * It was `violates_strict_invariant`, and it required both rows to be `strict`,
+     * because `fma` and `fast` were licensed to compute a different number. Nothing is
+     * licensed to diverge any more: the arithmetic is strict IEEE 754 in `baseline` and
+     * in `native` alike, a wider vector reorders nothing, and the harness quarantines a
+     * backend at the sample that disagreed. So a file carrying this flag did not come
+     * from a clean run.
+     */
+    violates_checksum_invariant: z.boolean(),
   }),
   /**
-   * The two rows come from two architectures, and **every timing above is therefore
-   * meaningless as a comparison**. The harness decides this, and the site's only job
-   * is to say it out loud: a ratio travels between architectures, a millisecond does not.
-   * See `site/src/content/methodology.md#flags-and-the-architecture-baseline`.
+   * The two rows come from two **CPU architectures**, and **every timing above is
+   * therefore meaningless as a comparison**. The harness decides this, and the site's
+   * only job is to say it out loud: a ratio travels between architectures, a
+   * millisecond does not.
+   * See `site/src/content/methodology.md#the-architecture`.
+   *
+   * Not `cross_isa`, and the distinction is the whole reason for the name: `isa` is a
+   * published column now — the `-march` target a row got — and one word cannot mean
+   * both that and "x86-64 against AArch64".
    *
    * The checksums are the exception, and the reason the crossing is worth offering:
-   * in `strict` mode they are obliged to be bit-identical on x86-64 and on AArch64
-   * alike, and a divergence is a bug in one of them.
+   * the arithmetic is strict IEEE 754 in every mode, so they are obliged to be
+   * bit-identical on x86-64 and on AArch64 alike, and a divergence is a bug in one of
+   * them.
    */
-  cross_isa: z.boolean(),
+  cross_architecture: z.boolean(),
 });
 
 export type Summary = z.infer<typeof summarySchema>;
-export type FpMode = z.infer<typeof fpModeSchema>;
+export type Mode = z.infer<typeof modeSchema>;
 export type Aggregate = z.infer<typeof aggregateSchema>;
 export type Backend = z.infer<typeof backendSchema>;
 export type Failure = z.infer<typeof failureSchema>;
@@ -269,7 +320,7 @@ export type Comparison = z.infer<typeof comparisonSchema>;
 /** One side of a pair, named the way the samples name it — never by row index. */
 export interface Row {
   backend: string;
-  mode: FpMode;
+  mode: Mode;
 }
 
 /** The pair a reader asked for. `snake_case`: it is deserialized straight into Rust. */
@@ -354,7 +405,7 @@ export async function fetchCampaign(
  * Every campaign this build publishes, summarized — one per architecture.
  *
  * They are kept apart on purpose. **An absolute timing never crosses an architecture**
- * (`site/src/content/methodology.md#flags-and-the-architecture-baseline`): an x86-64 millisecond and an aarch64
+ * (`site/src/content/methodology.md#the-architecture`): an x86-64 millisecond and an aarch64
  * millisecond are not the same claim, and a chart that puts them in one bar
  * group invites exactly the comparison the methodology forbids. So the site
  * loads them all and shows one at a time.
@@ -398,7 +449,7 @@ export function compare(ndjson: string, options: Options, selection: Selection):
  * The same, with each row drawn from a campaign of its own — which is how a reader
  * puts x86-64 next to AArch64.
  *
- * The comparison comes back with `cross_isa` set, and the page is obliged to say so.
+ * The comparison comes back with `cross_architecture` set, and the page is obliged to say so.
  * The harness computes the timings exactly as it does within one campaign, because
  * refusing would only send somebody off to divide the two numbers by hand, with
  * nothing on screen to tell them not to — and they mean nothing across two machines.

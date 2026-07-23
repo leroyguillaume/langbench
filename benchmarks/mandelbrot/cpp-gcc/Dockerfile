@@ -10,9 +10,11 @@
 # `atomic_fetch_add`. What that costs is the question the row answers.
 FROM gcc:15-trixie@sha256:a80e634009e139c140c5a4149c2c4069e05d78c5d049576ba23f3c0b7608cd73
 
-# Floating-point semantics, ISA baseline and job count arrive as build args, so
-# one Dockerfile covers all three modes. `MARCH` is never `native`.
-ARG FP_MODE=strict
+# The ISA target and the job count arrive as build args, so one Dockerfile covers
+# both modes: `MARCH` is either the pinned baseline of the architecture or the
+# literal `native`, and that choice *is* the mode. Floating-point is not a build
+# arg and never was a knob worth turning -- it is strict in every mode, and the
+# entrypoint says so unconditionally.
 ARG MARCH=x86-64-v3
 ARG JOBS=1
 
@@ -20,12 +22,11 @@ ARG JOBS=1
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="15" \
-      langbench.flags="-O3 -std=c++20 -march=${MARCH} fp=${FP_MODE}"
+      langbench.flags="-O3 -std=c++20 -march=${MARCH} -ffp-contract=off"
 
 # The entrypoint reads these at run time to rebuild with exactly the flags the
 # shipped binary was compiled with.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
     BUILD_DIR=/build
 
 WORKDIR /usr/local/src/mandelbrot

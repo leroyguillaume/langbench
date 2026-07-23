@@ -5,10 +5,12 @@ compiler: ~
 interpreter: bun
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.mts
-# One floating-point semantics, and no flag to change it: ECMAScript specifies the
-# result of every arithmetic operator, whichever engine runs it.
+# `native`, and nothing else to offer. The types are stripped on load, and what
+# JavaScriptCore then runs is machine code its top tier generates *during* the run,
+# on this machine, for the instruction set this CPU turned out to have. There is no
+# ISA to pin ahead of time, and no flag that would pin one.
 modes:
-  - strict
+  - native
 description: >-
   The same mandelbrot.mts as ts-nodejs and ts-deno, byte for byte, executed by Bun
   on JavaScriptCore. The only TypeScript row not running on V8, which makes it the

@@ -4,18 +4,17 @@ compiler: rustc
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.rs
-# One mode, and it is not a shortcut. rustc has no `-ffast-math`, and LLVM may not
-# contract `a * b + c` into an FMA unless the source asked for `mul_add`. So `fma`
-# and `fast` would be the same image under another tag -- an absence that is a
-# published fact about the language, not a gap in the campaign.
-modes:
-  - strict
+# rustc compiles ahead of the run, so it must be told which machine to emit code
+# for: LLVM will target a pinned baseline every CPU of the architecture can run, or
+# the one it is compiling on. Two different code generators over the same source.
+modes: all
 description: >-
-  The reference kernel in Rust, compiled by rustc at -O3 against a pinned ISA
-  baseline, with std::thread scoped threads and an AtomicU32 work queue. No cargo,
-  no rayon, no dependency: one file, one rustc invocation.
+  The reference kernel in Rust, compiled by rustc at -O3 against the ISA the mode
+  names, with std::thread scoped threads and an AtomicU32 work queue. No cargo, no
+  rayon, no dependency: one file, one rustc invocation.
 comments: >-
-  rustc only *warns* when it does not recognise an ISA baseline, then hands back a
+  rustc only *warns* when it does not recognise an ISA target, then hands back a
   generic binary — so the entrypoint translates the harness's gcc-spelled -march into
-  LLVM's spelling and fails outright on anything it does not know. It links std
-  statically: the binary carries the Rust runtime rather than loading it.
+  LLVM's spelling, and reads rustc's stderr back to refuse a binary it ignored the
+  flag for. It links std statically: the binary carries the Rust runtime rather than
+  loading it.

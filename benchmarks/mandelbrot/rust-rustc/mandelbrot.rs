@@ -14,8 +14,8 @@
 //! bit, flips a boundary pixel from 999 to 1000 iterations, and breaks the
 //! invariant. Rust makes this easy to keep: `f64` arithmetic is IEEE 754 and the
 //! compiler is never allowed to contract or reassociate it -- there is no
-//! `-ffast-math` to reach for, which is why this backend declares `strict` alone.
-//! See site/src/content/methodology.md#floating-point-modes.
+//! `-ffast-math` to reach for, in any mode, and the checksum gates every one of
+//! them. See site/src/content/methodology.md#the-strict-mode-invariant.
 //!
 //! `std::thread` and an atomic cursor, never `rayon`: a third-party work-stealing
 //! scheduler is a different experiment, and this one is about the backend.

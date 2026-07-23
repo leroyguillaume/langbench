@@ -12,7 +12,7 @@
 // into Rust, and Rust picks rows by it), and it stops there. Everything a reader
 // sees, links to, filters or sorts by is the triple.
 
-import type { Aggregate, FpMode, Row } from "./analysis";
+import type { Aggregate, Mode, Row } from "./analysis";
 import { NOT_AVAILABLE } from "./format";
 
 /** The three fields a manifest declares. `compiler` and `interpreter` are each optional — not both. */
@@ -22,9 +22,9 @@ export interface Triple {
   interpreter: string | null;
 }
 
-/** An implementation, in a given FP mode: the thing a chart bar or a table row is. */
+/** An implementation, at a given ISA target: the thing a chart bar or a table row is. */
 export interface Identity extends Triple {
-  mode: FpMode;
+  mode: Mode;
 }
 
 /**
@@ -47,7 +47,7 @@ export function label(triple: Triple): string {
   return `${triple.language} · ${toolchain(triple)}`;
 }
 
-/** The same, with the FP mode that produced these numbers. Two modes are two measurements. */
+/** The same, with the mode that produced these numbers. Two modes are two measurements. */
 export function labelWithMode(identity: Identity): string {
   return `${label(identity)} · ${identity.mode}`;
 }
@@ -64,12 +64,12 @@ export function labelWithMode(identity: Identity): string {
 export const ABSENT = "-";
 
 /**
- * A row as the query string spells it: `c/gcc/-/strict`, `java/native-image/-/fast`.
+ * A row as the query string spells it: `c/gcc/-/baseline`, `java/native-image/-/native`.
  *
  * Four segments, in the order the report's columns run — language, compiler,
  * interpreter, mode — because a link is a claim somebody else has to be able to
- * read. `?a=java-native:strict` needs the reader to know which half of the slug is
- * the compiler; `?a=java/native-image/-/strict` says it.
+ * read. `?a=java-native:native` needs the reader to know which half of the slug is
+ * the compiler, and which `native` is which; `?a=java/native-image/-/native` says it.
  */
 export function identityKey(identity: Identity): string {
   return [

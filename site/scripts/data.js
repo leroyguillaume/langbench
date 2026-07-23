@@ -17,7 +17,7 @@
 // from three months ago says it ran.
 //
 // One campaign per (workload, architecture), because **an absolute timing never
-// crosses an architecture** (`site/src/content/methodology.md#flags-and-the-architecture-baseline`).
+// crosses an architecture** (`site/src/content/methodology.md#the-architecture`).
 // The
 // path is a convenience for a human reading `ls`; it is *not* what the site keys on.
 // The workload and the architecture are read out of the header the run recorded — a

@@ -6,16 +6,21 @@ compiler: kotlinc
 interpreter: openjdk
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.kt
-# One floating-point semantics, inherited from the JVM: a Double is an IEEE 754
-# double, and neither kotlinc nor the JIT may contract a multiply-add.
+# One mode, and it is not a choice this backend made. kotlinc emits bytecode, which
+# targets no CPU at all; the machine code appears at run time, when C2 compiles the
+# hot loop on the machine it is running on and takes that machine's instruction set
+# as it finds it. A JIT has no `baseline` to give -- `native` is what a JIT *is*.
 modes:
-  - strict
+  - native
 description: >-
   The kernel in Kotlin, compiled by kotlinc to JVM bytecode and run on the same
   HotSpot as java-javac-openjdk. Same platform threads, same AtomicInteger queue,
   same arithmetic -- the language in front of the JIT is the only thing that
   changes.
 comments: >-
-  One kotlinc invocation on one file — no Gradle, no Maven, no jar — so the build
-  phase times the compiler and nothing else. The Kotlin standard library is on the
-  classpath, and the JVM loads it at startup.
+  Floating point is the JVM's, inherited whole: a Double is an IEEE 754 double, and
+  neither kotlinc nor the JIT may contract a multiply-add. One kotlinc invocation on one
+  file — no Gradle, no Maven, no jar — so the build phase times the compiler and nothing
+  else. The Kotlin standard library is on the classpath, and the JVM loads it at startup.
+  The JVM is handed nothing else: no -Xmx, no cap on vector width, the defaults a Kotlin
+  program gets.

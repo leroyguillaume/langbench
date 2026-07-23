@@ -4,7 +4,9 @@ compiler: gcc
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.cpp
-# Same compiler as c-gcc, same three code generators over the same source.
+# Same compiler as c-gcc, and it makes the same choice: an ahead-of-time compiler
+# must pick a machine to emit code for, and a pinned baseline is not the machine it
+# is running on.
 modes: all
 description: >-
   The C kernel written the way a C++ programmer would write it -- std::thread,

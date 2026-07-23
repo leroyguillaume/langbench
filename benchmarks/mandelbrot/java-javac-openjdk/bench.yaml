@@ -8,18 +8,21 @@ compiler: javac
 interpreter: openjdk
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.java
-# One floating-point semantics. Since JEP 306 (Java 17) every expression is
-# evaluated strictly, and the JLS forbids javac *and* the JIT from contracting a
-# multiply-add: fusing is `Math.fma`, which the source has to write. `fma` and
-# `fast` would be this same run under another tag.
+# One mode, and it is not a choice this backend made. The machine code does not exist
+# until the run: C2 emits it on the machine it is running on, for the CPU it finds
+# there, and no flag offers it a lesser one. A JIT has no `baseline` to give --
+# `native` is what a JIT *is*, and this manifest declares it the way an interpreter
+# declares the thing it cannot do.
 modes:
-  - strict
+  - native
 description: >-
   The reference kernel in Java, compiled by javac and run on HotSpot with platform
   threads and an AtomicInteger work queue. No Maven, no Gradle, no jar: one file,
   one javac invocation, so the Build column times the compiler and nothing else.
 comments: >-
-  HotSpot has no -march: C2 compiles for whatever CPU it finds, which is the `native`
-  targeting this project forbids everywhere else. The closest the JVM offers is a cap
-  on vector width (-XX:UseAVX / -XX:UseSVE), and that is what the entrypoint pins — an
-  approximation, published as one.
+  Floating point is strict here and could not be anything else: since JEP 306 the JLS
+  forbids javac — and every JIT — from contracting a multiply-add, so fusing is Math.fma
+  and the source has to write it. The JVM is handed nothing but the classpath: no -Xss,
+  no -Xmx, no -XX:TieredStopAtLevel, no cap on vector width. The defaults are what a Java
+  program gets. javac is what the Build column times; C2 compiles during the run, and its
+  time is billed there.

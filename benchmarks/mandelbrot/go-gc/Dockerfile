@@ -22,24 +22,30 @@
 # absent -- no matter how many rounds the campaign runs.
 FROM golang:1.25-trixie@sha256:75eb6e343bdac854462811220a5bcae3442af3fb25e8c8644c7494e5e5545aed
 
-# Floating-point semantics, ISA baseline and job count arrive as build args, so
-# one Dockerfile covers every mode the backend distinguishes -- which, here, is
-# `strict` alone. See `bench.yaml`.
-ARG FP_MODE=strict
+# The ISA target and the job count arrive as build args: one Dockerfile, one source,
+# and the mode is `MARCH` -- a pinned baseline, or the literal `native`. There is no
+# floating-point arg, and in this backend there could not be one: gc's fusing is
+# forbidden in the *source*, not by a flag. See `bench.yaml` and `entrypoint.sh`.
 ARG MARCH=x86-64-v3
 ARG JOBS=1
+
+# Set by BuildKit, never by us: amd64 or arm64. Go is the one backend that needs to be
+# told, because `MARCH=native` does not say which of GOAMD64/GOARM64 to set and Go
+# silently ignores the wrong one -- a no-op, not an error, and a row claiming a level it
+# never had. See `export_march()`.
+ARG TARGETARCH
 
 # Provenance of the *image*, for `docker inspect`. What this backend IS lives in
 # `bench.yaml`, which is the only thing the harness reads: a label the harness
 # consumed would be a second source of truth, and two sources of truth drift.
 LABEL langbench.version="1.25" \
-      langbench.flags="march=${MARCH} fp=${FP_MODE}"
+      langbench.flags="march=${MARCH}"
 
 # GO111MODULE=off: one file, no dependency, no go.mod. GOPROXY=off and GOFLAGS
 # belt-and-braces with `--network=none` -- a build that tries to fetch must fail
 # loudly, not add four seconds to the measurement.
-ENV FP_MODE=${FP_MODE} \
-    MARCH=${MARCH} \
+ENV MARCH=${MARCH} \
+    TARGETARCH=${TARGETARCH} \
     GO111MODULE=off \
     GOPROXY=off \
     GOCACHE=/usr/local/share/go-cache \

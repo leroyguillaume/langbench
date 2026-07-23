@@ -9,28 +9,13 @@ BINARY=/usr/local/bin/mandelbrot
 BUILD_DIR=${BUILD_DIR:-/build}
 
 # Scala Native has one floating-point semantics, and it is the strict one. It emits
-# LLVM IR and clang compiles it -- so the flags below are the *same* ones the C rows
-# use, reaching the same code generator. `-ffp-contract=off` is passed for exactly
-# the reason c-clang passes it: clang contracts into FMA by default, and the
-# checksum is not negotiable.
-#
-# `fma` and `fast` are not offered, though the compiler underneath would understand
-# them. Scala the language says nothing about fusing, and a fused build here would
-# be a claim about clang's flags rather than about Scala Native -- so this backend
-# distinguishes the one mode it can honestly speak for.
-check_fp_mode() {
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    fma | fast)
-        printf 'note: this backend distinguishes only strict; mode %s is built as strict\n' \
-            "${FP_MODE}" >&2
-        ;;
-    *)
-        printf 'unknown FP_MODE: %s\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-}
+# LLVM IR and clang compiles it -- the same code generator the C rows use, reached the
+# same way -- so `-ffp-contract=off` is passed in `compile_to()` for exactly the reason
+# c-clang passes it: clang contracts into an FMA by default, and the checksum is not
+# negotiable. Unconditionally, in every mode: the ISA target chooses which instructions
+# clang may emit and never what the arithmetic means, and `-ffast-math` is not something
+# this backend has to offer, because a run that computes a different number is not a
+# faster run.
 
 now_ns() {
     date +%s%N
@@ -60,13 +45,28 @@ read_peak_memory() {
     fi
 }
 
-# The ISA baseline. Unlike every JVM row, this one can honour it exactly: the code
-# generator is clang, and clang takes gcc's spelling verbatim -- the same
-# `-march=x86-64-v3` or `-march=armv8.2-a` the C rows are built with. No
-# translation table, no approximation, no cap.
+# The ISA target. Unlike every JVM row, this one honours it exactly: the code generator
+# is clang, and clang takes gcc's spelling verbatim -- the same `-march=x86-64-v3`,
+# `-march=armv8.2-a` or `-march=native` the C rows are built with. No translation table,
+# no approximation, no cap, and so nothing for `isa` to disagree with `mode` about.
 march_flag() {
     if [ -n "${MARCH:-}" ]; then
         printf -- '-march=%s\n' "${MARCH}"
+    fi
+}
+
+# What clang was actually targeted at: the `-march` it got, spelled the way it got it.
+# A JSON value, not a string -- nothing pinned is `null`, an absence rather than a claim.
+#
+# `native` is reported as `native`, and clang is not asked to resolve it into a
+# microarchitecture name. That query is another compiler process, and a process spawned
+# inside a measured phase lands in the very cgroup the CPU column is read from: the name
+# would cost a measurement.
+resolve_isa() {
+    if [ -n "${MARCH:-}" ]; then
+        isa="\"${MARCH}\""
+    else
+        isa=null
     fi
 }
 
@@ -83,8 +83,9 @@ march_flag() {
 # while COURSIER_CACHE stays warm with the Scala Native runtime jars. Hot for the
 # toolchain, cold for our code.
 #
-# `--native-compile` hands flags straight to clang, which is what makes the ISA
-# baseline and the FP mode real here rather than aspirational.
+# `--native-compile` hands flags straight to clang, which is what makes the ISA target
+# real here rather than aspirational -- and what makes `-ffp-contract=off` a guarantee
+# rather than a hope.
 compile_to() {
     output=$1
     workspace=$2
@@ -117,7 +118,9 @@ EOF
 
 [ "$#" -ge 1 ] || usage
 phase=$1
-check_fp_mode
+# Resolved once, up front, for every phase: the measured phases have to report the ISA
+# the shipped binary was built for, and that is the one the image was built with.
+resolve_isa
 
 case "${phase}" in
 install)
@@ -151,8 +154,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,"isa":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "${isa}" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -167,8 +170,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,"isa":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "${isa}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

@@ -39,24 +39,41 @@ read_peak_memory() {
     fi
 }
 
-# The ISA baseline, translated out of gcc's spelling into Zig's.
+# The ISA target, translated out of gcc's spelling into Zig's.
 #
-# The harness speaks gcc: it hands every backend `-march=x86-64-v3` or
-# `-march=armv8.2-a`. Zig spells the first with underscores and expresses the
-# second as a feature added to a generic CPU. An unknown baseline dies here rather
-# than being silently downgraded to `-mcpu=baseline`: a row that claims an ISA it
-# was not compiled for is worse than a row that is missing.
+# The harness speaks gcc: it hands every backend `-march=x86-64-v3`,
+# `-march=armv8.2-a` or `-march=native`. Zig spells the first with underscores,
+# expresses the second as a feature added to a generic CPU, and calls the third
+# `-mcpu=native` -- the same word, a different flag. An unknown target dies here
+# rather than being silently downgraded to `-mcpu=baseline`: a row that claims an
+# ISA it was not compiled for is worse than a row that is missing.
 mcpu_flag() {
     case "${MARCH:-}" in
     '') ;;
     x86-64-v3) printf -- '-mcpu=x86_64_v3\n' ;;
     armv8.2-a) printf -- '-mcpu=generic+v8_2a\n' ;;
+    native) printf -- '-mcpu=native\n' ;;
     *)
         printf 'unknown MARCH for zig: %s. Add its Zig spelling to mcpu_flag() rather than\n' "${MARCH}" >&2
         printf 'letting the build fall back to a baseline nobody asked for.\n' >&2
         exit 1
         ;;
     esac
+}
+
+# What the compiler was actually given, echoed back so that a sample can say it.
+# The mode says what was *asked for*; this says what was got. It is the `MARCH`
+# that reached mcpu_flag() and nothing else -- not the Zig spelling it came back as,
+# which is this backend's private business, and not anything read off the host.
+#
+# An empty `MARCH` means zig fell back to its own default target and told nobody
+# which, so the field is omitted rather than guessed at. It prints its own trailing
+# comma: the caller splices it into a JSON object that has to stay well-formed
+# without it.
+isa_json() {
+    if [ -n "${MARCH:-}" ]; then
+        printf '"isa":"%s",' "${MARCH}"
+    fi
 }
 
 # Single source of truth for the compiler flags, shared by the image build and by
@@ -66,22 +83,16 @@ mcpu_flag() {
 # somewhere cold. `ZIG_GLOBAL_CACHE_DIR` is the toolchain cache and stays warm
 # across runs; see the Dockerfile for why that split is the honest one.
 #
-# There is no floating-point mode to choose. Zig's float mode is `.strict` unless
-# the source says `@setFloatMode(.optimized)` -- a statement in the program, not a
-# flag on the compiler -- so a relaxed build would be a different kernel, and this
-# backend distinguishes `strict` alone. That is a published fact about the
-# language, not a gap in the campaign.
+# Floating-point is strict here, in every mode, and no flag says so. Zig's float
+# mode is `.strict` unless the source says `@setFloatMode(.optimized)` -- a
+# statement in the program, not a flag on the compiler -- and this kernel does not
+# say it. `-OReleaseFast` is an optimization level and touches none of that: it is
+# named after speed, not after the arithmetic, which is exactly the confusion worth
+# writing down here. The checksum the run reports is the checksum the source asks
+# for, in both modes.
 compile_to() {
     output=$1
     cache=$2
-    case "${FP_MODE:-strict}" in
-    strict) ;;
-    *)
-        printf 'unknown FP_MODE: %s (this backend distinguishes only strict)\n' "${FP_MODE:-}" >&2
-        exit 1
-        ;;
-    esac
-
     # mcpu_flag prints one flag, or nothing at all: it must split.
     # shellcheck disable=SC2046
     zig build-exe -OReleaseFast $(mcpu_flag) \
@@ -139,8 +150,8 @@ build)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"build","elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
-        "${elapsed_ns}" "${user_usec}" "${system_usec}" \
+    printf '{"phase":"build","elapsed_ns":%s,%s"user_usec":%s,"system_usec":%s,"binary_bytes":%s,"binary_stripped_bytes":%s,"text_bytes":%s,"peak_bytes":%s}\n' \
+        "${elapsed_ns}" "$(isa_json)" "${user_usec}" "${system_usec}" \
         "${binary_bytes}" "${binary_stripped_bytes}" "${text_bytes}" "${peak_bytes}"
     ;;
 
@@ -155,8 +166,8 @@ run)
 
     read_cpu_time
     read_peak_memory
-    printf '{"phase":"run","checksum":%s,"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
-        "${checksum}" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
+    printf '{"phase":"run","checksum":%s,%s"elapsed_ns":%s,"user_usec":%s,"system_usec":%s,"peak_bytes":%s}\n' \
+        "${checksum}" "$(isa_json)" "${elapsed_ns}" "${user_usec}" "${system_usec}" "${peak_bytes}"
     ;;
 
 disasm)

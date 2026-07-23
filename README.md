@@ -26,7 +26,7 @@ The campaigns themselves are in **[`samples/`](samples/)**, as
 `samples/<workload>/<architecture>.ndjson`: the only artefact a run produces that
 cannot be recomputed, and the source of every chart, table and ratio anywhere else.
 They are never merged, because **an absolute timing does not cross an architecture**
-([why](site/src/content/methodology.md#flags-and-the-architecture-baseline)).
+([why](site/src/content/methodology.md#the-architecture)).
 
 ## Requirements
 
@@ -85,14 +85,14 @@ Every flag also reads an environment variable:
 | --- | --- | --- | --- |
 | *(positional)* | `WORKLOAD` | — | The workload to measure. Required, and exactly one |
 | `--param` | — | as declared | Override a workload param: `--param grid_size=256`. Repeatable |
-| `--mode` | `FP_MODE` | `strict,fma,fast` | Floating-point semantics |
+| `--mode` | `MODE` | `baseline,native` | The ISA target: a pinned baseline, the machine itself, or both |
 | `--cpu` | `CPUS` | machine parallelism | Threads for the kernels *and* the compilers |
 | `--output`, `-o` | `SAMPLES_OUTPUT` | `samples.ndjson` | The samples file the campaign writes |
 | `--benchmarks-dir` | `BENCHMARKS_DIR` | `benchmarks` | Root of the benchmark tree |
 | `--rounds` | `ROUNDS` | `10` | Measured run rounds |
 | `--build-rounds` | `BUILD_ROUNDS` | `3` | Measured build rounds |
 | `--warmup-rounds` | `WARMUP_ROUNDS` | `1` | Rounds recorded but flagged |
-| `--march` | `MARCH` | per-architecture baseline | The ISA baseline. `native` is rejected |
+| `--march` | `MARCH` | per-architecture baseline | What `baseline` *means*. `native` is rejected here — it is a mode, not a baseline |
 | `--memory-limit-mb` | `MEMORY_LIMIT_MB` | `8192` | Memory budget of every measured container |
 | `--run-timeout` | `RUN_TIMEOUT` | `600` | Seconds before a container is killed |
 | `--log-filter` | `LOG_FILTER` | `info` | [`tracing` filter directive][directives] |
@@ -100,8 +100,8 @@ Every flag also reads an environment variable:
 [directives]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
 
 ```sh
-# The strict mode only, on four threads, into a file of its own.
-langbench workload run mandelbrot --mode strict --cpu 4 --output results/strict-4.ndjson
+# The pinned baseline only, on four threads, into a file of its own.
+langbench workload run mandelbrot --mode baseline --cpu 4 --output results/baseline-4.ndjson
 
 # A quarter-size grid, to find out whether the Dockerfile has a typo before
 # committing an hour to it. Overriding a param drops the declared checksum,
@@ -179,7 +179,7 @@ docker run --rm \
   --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume "$PWD/results:/var/lib/langbench" \
-  langbench workload run mandelbrot --mode strict
+  langbench workload run mandelbrot --mode baseline
 ```
 
 **macOS** (Docker Desktop, OrbStack, Colima). The daemon lives in a Linux VM, and the
@@ -192,7 +192,7 @@ docker run --rm \
   --group-add 0 \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume "$PWD/results:/var/lib/langbench" \
-  langbench workload run mandelbrot --mode strict
+  langbench workload run mandelbrot --mode baseline
 ```
 
 Do not port the Linux line across by swapping `stat -c` for BSD's `stat -f '%g'`: it
@@ -242,7 +242,7 @@ harness's own code compiled to WebAssembly. The machine-readable one is:
 
 ```sh
 langbench sample convert                              # samples.ndjson -> samples.csv
-langbench sample convert results/strict-4.ndjson -o results/strict-4.csv
+langbench sample convert results/baseline-4.ndjson -o results/baseline-4.csv
 langbench sample convert --format csv                 # csv is the only format today
 ```
 
@@ -297,7 +297,7 @@ compiler: cython      # omit if nothing is compiled ahead of the run
 interpreter: cpython  # omit if the binary runs on the bare CPU
 source: mandelbrot.py # the one kernel file, beside this manifest
 modes:
-  - strict            # or `modes: all`
+  - baseline          # or `modes: all`, or `[native]` for a JIT
 architectures: all    # the default; omit unless the toolchain does not exist somewhere
 description: >-
   The same mandelbrot.py as python-cpython, byte for byte, compiled by Cython to
@@ -330,10 +330,14 @@ A few rules the manifests enforce, each of which has cost somebody an afternoon:
   `architectures: [x86_64]` is simply the truth about it; a campaign on the other
   machine skips the row and says why, rather than failing halfway through a `docker
   build`.
-- **`modes: all`**, or the list of modes the backend actually distinguishes. An
-  interpreter has one floating-point semantics, so `fma` and `fast` would be the same
-  image under another tag. A mode requested but not declared is skipped with a warning;
-  a *misspelled* one fails the campaign.
+- **`modes: all`**, or the list of modes the backend actually distinguishes. The modes are
+  ISA targets — `baseline` (a pinned instruction set) and `native` (this CPU) — and *which
+  ones a backend can offer is the point*. An ahead-of-time compiler must choose a machine
+  to emit code for, so it has both. A JIT compiles on the machine it is running on and
+  cannot do otherwise, so it declares `[native]` alone: a `baseline` image would be the same
+  run under another tag. That is not a hole in the table, it is what a JIT sells. A mode
+  requested but not declared is skipped with a warning; a *misspelled* one fails the
+  campaign.
 
 Check it before you spend an hour on it:
 
@@ -414,8 +418,11 @@ Five things the entrypoint is responsible for:
   imposes both. A build that tries to fetch fails loudly instead of silently adding four
   seconds to a number.
 
-The floating-point mode, the ISA baseline and the job count arrive as **build args**
-(`FP_MODE`, `MARCH`, `JOBS`), so one Dockerfile covers every mode. Base images are pinned
+The ISA target and the job count arrive as **build args** (`MARCH`, `JOBS`), so one
+Dockerfile covers both modes: `MARCH` is either the architecture's pinned baseline or the
+literal `native`, and that choice *is* the mode. There is no floating-point build arg —
+the arithmetic is strict in every mode, so there was nothing left to parameterize. Base
+images are pinned
 by digest, never by tag: a benchmark that silently changes when upstream pushes is not a
 benchmark. Docker `LABEL`s are welcome as provenance for `docker inspect`, and the
 harness never reads them — two sources of truth is one source of drift.

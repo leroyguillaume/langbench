@@ -6,15 +6,26 @@ compiler: ~
 interpreter: cpython
 # The kernel. One file, and its size in bytes is a published metric.
 source: mandelbrot.py
-# One floating-point semantics, and no flag to change it: the interpreter never
-# contracts a multiply-add and never reassociates. An `fma` image would be the
-# same run under another tag.
+# The one row in this matrix that is neither, and `baseline` is the honest half of the
+# answer. It cannot be `native`: nothing here ever targets this CPU -- CPython compiles
+# nothing ahead of the run, and it has no JIT during it (3.13's is experimental, off by
+# default, and absent from this image). The machine code that runs the hot loop is the
+# interpreter's own eval loop, compiled by whoever packaged it. So the row belongs in
+# the column of "did not get the machine", which is `baseline` -- and the ISA it really
+# got is not the campaign's. The entrypoint reports that, and does not pretend.
 modes:
-  - strict
+  - baseline
 description: >-
   The kernel as written, executed by the CPython interpreter. Parallelism comes
   from multiprocessing with the fork start method, because the GIL serialises
   CPU-bound bytecode -- threading here would measure the GIL, not the machine.
 comments: >-
   Forking the pool is inside the timer on purpose: what a parallel runtime costs to
-  start is part of what that runtime costs.
+  start is part of what that runtime costs. The row reports `isa: distro`, not the
+  campaign's baseline: no `-march` appears in this interpreter's own CFLAGS or configure
+  line, so its eval loop was built for the toolchain's floor -- plain `x86-64` (v1) --
+  one level below the baseline every compiled row here was held to, and chosen by the
+  packager rather than by this campaign. What that costs is bounded by what the code is:
+  an eval loop is a branchy dispatch over one bytecode at a time, with nothing to
+  vectorise, so the instructions v3 adds over v1 are mostly instructions it has no use
+  for. It goes in a column because it is true, not because it is large.

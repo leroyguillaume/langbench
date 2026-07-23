@@ -3,13 +3,19 @@ compiler: kotlinc
 interpreter: graalvm
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.kt
+# One mode, and it is not a choice this backend made. Graal replaces C2 as the code
+# generator, not as the *moment* of generation: it still compiles the hot loop while
+# the program runs, on the machine it is running on, and takes that machine's
+# instruction set as it finds it. `native` is what a JIT *is*.
 modes:
-  - strict
+  - native
 description: >-
   The same Mandelbrot.kt as kotlin-kotlinc-openjdk, byte for byte, compiled by the
   same kotlinc -- with Graal replacing C2 as the JIT. One cell of the (language x
   JVM) grid.
 comments: >-
-  One cell of the (language × JVM) grid. The entrypoint passes -XX:+UseJVMCICompiler
-  explicitly rather than trusting a default: a silent fall back to C2 would make this
-  row kotlin-kotlinc-openjdk under another name.
+  One cell of the (language × JVM) grid: same bytecode, same VM, same GC, a different
+  code generator. The entrypoint passes -XX:+EnableJVMCI -XX:+UseJVMCICompiler explicitly
+  rather than trusting a default: a silent fall back to C2 would make this row
+  kotlin-kotlinc-openjdk under another name. Floating point is the JLS's, and Graal is
+  bound by it exactly as C2 is.

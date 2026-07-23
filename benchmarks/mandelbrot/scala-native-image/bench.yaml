@@ -3,8 +3,10 @@ compiler: native-image
 interpreter: ~
 # The kernel. One file, and its size in bytes is a published metric.
 source: Mandelbrot.scala
-modes:
-  - strict
+# Both: Graal compiles before it meets the machine, so it must be told which machine to
+# compile for. The JVM Scala rows never make that choice -- their code generator runs on
+# the CPU it generates for -- and scala-scala-native makes it through clang instead.
+modes: all
 description: >-
   The same Mandelbrot.scala as every other Scala row, compiled ahead of time by
   GraalVM native-image into a standalone ELF -- with the Scala runtime linked in.
@@ -12,5 +14,9 @@ description: >-
 comments: >-
   scalac runs first, as a step in this compiler's pipeline; native-image then analyses
   and links the whole Scala runtime — the 3.x library plus the 2.13 one it still
-  stands on — into the ELF. Not to be confused with scala-scala-native, which is Scala
-  Native through LLVM: a different compiler entirely.
+  stands on — into the ELF. On AArch64 it takes armv8.1-a: one level BELOW the campaign's
+  baseline, never above, and the sample's isa column says so where its mode says
+  baseline. Floating point is strict in both modes and cannot be otherwise: the JLS binds
+  Graal ahead of time exactly as it binds C2 on the fly. Not to be confused with
+  scala-scala-native, which is Scala Native through LLVM: a different compiler entirely,
+  and one that takes the -march verbatim.

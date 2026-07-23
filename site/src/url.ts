@@ -5,7 +5,7 @@
 // string: the address bar always describes what is on screen.
 //
 // The query string is an I/O boundary like any other — it is validated, never
-// trusted. `?mode=strict,rubbish` narrows to `strict`; `?sort=drop_table` falls
+// trusted. `?mode=baseline,rubbish` narrows to `baseline`; `?sort=drop_table` falls
 // back to the default rather than reaching the sort with a key it has no column for.
 //
 // **A campaign is not in the query string on the results page: it is the path.**
@@ -18,7 +18,7 @@
 // the x86-64 one.
 
 import { z } from "zod";
-import { type FpMode, fpModeSchema } from "./analysis";
+import { type Mode, modeSchema } from "./analysis";
 import type { Sort, SortKey } from "./components/ResultsTable";
 import { MODES } from "./series";
 
@@ -27,6 +27,7 @@ const sortKeySchema = z.enum([
   "compiler",
   "interpreter",
   "mode",
+  "isa",
   "runs",
   "run",
   "dispersion",
@@ -58,7 +59,7 @@ export interface Filters {
   interpreter: string | null;
   /** A free-text needle, matched against the triple — never against a slug. */
   search: string;
-  modes: FpMode[];
+  modes: Mode[];
 }
 
 /**
@@ -81,7 +82,7 @@ export interface CompareState extends Scope {
    * `null` — the site pairs the fastest with the fastest of another language.
    *
    * The architecture belongs to the *row's* address, not to the page's, because the two sides
-   * may come from two campaigns: `?a=x86_64:c/gcc/-/strict&b=aarch64:c/gcc/-/strict`
+   * may come from two campaigns: `?a=x86_64:c/gcc/-/baseline&b=aarch64:c/gcc/-/baseline`
    * is a legitimate thing to ask for and an alarming thing to be handed — the page
    * says so when it happens. Without a prefix a side falls back to `architecture`, so every
    * link written before this existed still opens the pair it named.
@@ -103,7 +104,7 @@ export interface SideRef {
 }
 
 /**
- * `x86_64:c/gcc/-/strict` — the architecture, then the row.
+ * `x86_64:c/gcc/-/baseline` — the architecture, then the row.
  *
  * Validated, never trusted, like every other thing the query string says: an architecture this
  * build never published is dropped by whoever holds the campaigns, and so is a row.
@@ -163,7 +164,7 @@ export function readResults(): ResultsState {
 
   const modes = (query.get("mode") ?? "")
     .split(",")
-    .map((raw) => fpModeSchema.safeParse(raw))
+    .map((raw) => modeSchema.safeParse(raw))
     .flatMap((parsed) => (parsed.success ? [parsed.data] : []));
 
   const sortKey = sortKeySchema.safeParse(query.get("sort"));
@@ -255,7 +256,7 @@ function replace(query: URLSearchParams): void {
  * The filters do not travel: they narrow a table, and a pair is not a table. But
  * the campaign and the workload do — an absolute timing never crosses an architecture, and
  * a "Compare" link that quietly switched architecture would be inviting exactly the
- * comparison `site/src/content/methodology.md#flags-and-the-architecture-baseline` forbids.
+ * comparison `site/src/content/methodology.md#the-architecture` forbids.
  */
 export function compareHref(scope: Scope, left?: string, right?: string): string {
   const query = new URLSearchParams();
