@@ -61,14 +61,26 @@ def _row_iterations(row: int) -> int:
         raise RuntimeError("worker started without an initializer")
     grid = _GRID
 
+    # Bound to locals before the loops, never read off `grid` inside them. The loop
+    # guard runs once per iteration -- the checksum counts exactly those iterations,
+    # ~1.0e9 at the declared params -- and `grid.max_iter` there is an attribute
+    # lookup where a local is a frame slot.
+    # CPython 3.13 specialises that lookup away on a slotted class and PyPy's JIT
+    # hoists it entirely, so for those two this is a wash; Cython, which compiles
+    # this same file, emits a real C-API attribute fetch and cannot. The arithmetic
+    # below is untouched, and so is the checksum.
+    n = grid.n
+    max_iter = grid.max_iter
+    dx = grid.dx
+
     ci = Y_MIN + (row + 0.5) * grid.dy
     total = 0
-    for col in range(grid.n):
-        cr = X_MIN + (col + 0.5) * grid.dx
+    for col in range(n):
+        cr = X_MIN + (col + 0.5) * dx
         zr = 0.0
         zi = 0.0
         iterations = 0
-        while iterations < grid.max_iter:
+        while iterations < max_iter:
             zr2 = zr * zr
             zi2 = zi * zi
             if zr2 + zi2 > 4.0:

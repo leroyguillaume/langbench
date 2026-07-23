@@ -26,14 +26,16 @@
 // there too, unchanged -- which is what makes scala-scala-native a backend swap
 // rather than a rewrite.)
 //
-// A CAVEAT ABOUT COMPARING THIS ROW TO THE JAVA ONE. Scala has no `break`, so the
-// inner loop carries an `escaped` flag in its guard where C, Java and Kotlin simply
-// break out. Same arithmetic, same iteration counts, same checksum -- but one extra
-// boolean test per iteration, and it shows: the Scala JVM rows compute about 30%
-// slower than the Java ones on the very same HotSpot. That gap is the flag, not the
-// language, and certainly not scalac. Read the Scala rows against each other -- that
-// is the axis this benchmark is built to measure -- and treat Scala-versus-Java as
-// the weak cross-language comparison it is. See METHODOLOGY.md#two-axes.
+// HOW THE ESCAPE IS SPELLED. Scala has no `break` statement, and the obvious
+// workaround -- an `escaped` flag in the loop guard -- puts a boolean test in front
+// of every iteration of the hot loop (the checksum is the count of exactly those
+// iterations: ~1.0e9 at the declared params), which is the workaround showing up in
+// the measurement rather than the backend. The escape is therefore a
+// `return` out of `pixelIterations`: a *local* return, because the loop it leaves is
+// in the method that owns it, so scalac emits an ordinary IRETURN -- no flag, no
+// `scala.util.boundary`, no exception, and no closure for a JIT to see through. Same
+// arithmetic, same order, same checksum, and the same shape of inner loop the C,
+// Java and Kotlin rows run, which is what makes those comparisons about the backend.
 
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -45,6 +47,28 @@ object Mandelbrot:
   private val XMax = 0.5
   private val YMin = -1.25
   private val YMax = 1.25
+
+  /** Iterations one pixel completes before it escapes, capped at `maxIter`.
+    *
+    * The escape is a `return`, which is what gives this row the same inner loop as
+    * the C kernel's `break` -- see the note at the top of the file. `iter` counts
+    * *completed* iterations: a pixel that escapes on its k-th test contributes k,
+    * not `maxIter`.
+    */
+  private def pixelIterations(cr: Double, ci: Double, maxIter: Int): Int =
+    var zr = 0.0
+    var zi = 0.0
+    var iter = 0
+
+    while iter < maxIter do
+      val zr2 = zr * zr
+      val zi2 = zi * zi
+      if zr2 + zi2 > 4.0 then return iter
+      zi = 2.0 * zr * zi + ci
+      zr = zr2 - zi2 + cr
+      iter += 1
+
+    iter
 
   /** Sum the iteration counts of one row. The unit of work.
     *
@@ -59,26 +83,7 @@ object Mandelbrot:
     var col = 0
 
     while col < n do
-      val cr = XMin + (col + 0.5) * dx
-      var zr = 0.0
-      var zi = 0.0
-      var iter = 0
-      // Scala has no `break`, so the escape condition is a flag in the loop guard.
-      // It must not be folded into the arithmetic: `iter` counts *completed*
-      // iterations, exactly as the C kernel's does, and a pixel that escapes on its
-      // k-th test contributes k, not maxIter.
-      var escaped = false
-
-      while iter < maxIter && !escaped do
-        val zr2 = zr * zr
-        val zi2 = zi * zi
-        if zr2 + zi2 > 4.0 then escaped = true
-        else
-          zi = 2.0 * zr * zi + ci
-          zr = zr2 - zi2 + cr
-          iter += 1
-
-      sum += iter
+      sum += pixelIterations(XMin + (col + 0.5) * dx, ci, maxIter)
       col += 1
 
     sum

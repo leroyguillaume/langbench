@@ -127,10 +127,12 @@ func main() {
 	// Go's are cheap, and that is a result rather than a reason to hide them.
 	started := time.Now()
 
-	for i := uint32(0); i < threads; i++ {
-		pool.Add(1)
-		go func(worker uint32) {
-			defer pool.Done()
+	// `pool.Go` (Go 1.25) rather than Add/go/defer Done: one call that cannot be
+	// mismatched, and `range threads` rather than a three-clause `for`, because
+	// since Go 1.22 the loop variable is per-iteration and the closure can capture
+	// it directly instead of taking it as a parameter.
+	for worker := range threads {
+		pool.Go(func() {
 			var sum uint64
 			for {
 				// Add returns the value *after* the increment, where C's
@@ -143,7 +145,7 @@ func main() {
 				sum += rowIterations(row, n, maxIter, dx, dy)
 			}
 			sums[worker] = sum
-		}(i)
+		})
 	}
 	pool.Wait()
 	elapsed := time.Since(started)

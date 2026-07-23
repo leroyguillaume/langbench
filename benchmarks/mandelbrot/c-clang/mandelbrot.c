@@ -76,7 +76,14 @@ static void *work(void *arg)
     uint64_t sum = 0;
 
     for (;;) {
-        const uint32_t row = atomic_fetch_add(worker->next_row, 1);
+        /* Relaxed, and explicitly so. The cursor publishes no data: every worker
+         * accumulates into a local and stores it once, and `pthread_join` is what
+         * makes that store visible to `main`. Bare `atomic_fetch_add` would be
+         * sequentially consistent -- `ldaddal` on aarch64, an acquire-release RMW
+         * paying for an ordering nothing here depends on -- and would leave this row
+         * spelling the hand-out differently from the C++, Rust and Zig ones, which
+         * all say relaxed. Same row order (none is promised), same checksum. */
+        const uint32_t row = atomic_fetch_add_explicit(worker->next_row, 1, memory_order_relaxed);
         if (row >= worker->n) {
             break;
         }
