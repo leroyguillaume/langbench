@@ -202,8 +202,10 @@ has.
 
 ## Cores
 
-How many cores the row actually kept busy — `CPU time / Compute min` — read against
-the {{ campaign.cpu }} threads the harness handed every kernel of this campaign.
+How many cores the row actually kept busy. The ratio is taken **within each
+sample** — one run's CPU time over that same run's compute time — and the row
+publishes the **median** of those per-sample ratios, read against the
+{{ campaign.cpu }} threads the harness handed every kernel of this campaign.
 
 This is the column that separates *this backend is slow* from *this backend cannot
 use the machine*. Two rows with the same **Run min**, one at `7.8 / {{ campaign.cpu }}`
@@ -224,10 +226,14 @@ kernel computes on the others is spending CPU that the hot loop's clock never se
 and a reader comparing a JVM to a static binary deserves to see it rather than have it
 normalised away.
 
-Note the denominator is **Compute min**, never **Run min**. The threads do not exist
-during container creation and interpreter boot, but the stopwatch behind **Run min** is
-already running — divide by that and a perfectly parallel backend reports far fewer
-cores than it used, for no reason other than that Docker took its time.
+Two things the quotient is *not*. The denominator is the sample's **compute**
+clock, never its **run** wall: the threads do not exist during container creation
+and interpreter boot, but the run stopwatch is already running — divide by the wall
+and a perfectly parallel backend reports fewer cores than it used, for no reason
+other than that Docker took its time. And the ratio is taken **before** any
+statistic, never between two of them: the row's median CPU time and its fastest
+compute time come from different rounds, and their quotient — like a startup
+computed from two minima — would describe a run that never happened.
 
 ## Memory
 
